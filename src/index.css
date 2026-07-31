@@ -1,0 +1,220 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Charcoal base, warm cream foreground, muted sage accent. No purple. */
+    --background: 220 8% 7%;
+    --foreground: 40 20% 94%;
+
+    --card: 220 8% 9%;
+    --card-foreground: 40 20% 94%;
+
+    --popover: 220 8% 10%;
+    --popover-foreground: 40 20% 94%;
+
+    --primary: 40 30% 88%;            /* cream — used as foreground accent */
+    --primary-foreground: 220 10% 8%;
+
+    --secondary: 220 8% 12%;
+    --secondary-foreground: 40 20% 94%;
+
+    --muted: 220 8% 13%;
+    --muted-foreground: 40 8% 62%;
+
+    --accent: 145 18% 38%;            /* muted sage */
+    --accent-foreground: 40 20% 96%;
+
+    --destructive: 8 62% 52%;
+    --destructive-foreground: 40 20% 96%;
+
+    --border: 220 8% 16%;
+    --input: 220 8% 16%;
+    --ring: 145 18% 45%;
+
+    --radius: 0.375rem;
+
+    /* Brand tones — kept as notez-* so existing components don't break */
+    --notez-purple: 145 18% 42%;       /* sage replaces purple */
+    --notez-purple-glow: 145 22% 52%;
+    --notez-purple-dark: 145 14% 24%;
+    --notez-violet: 30 28% 70%;        /* warm sand */
+    --notez-indigo: 200 18% 48%;       /* slate blue */
+    --notez-surface: 220 8% 10%;
+    --notez-surface-hover: 220 8% 14%;
+    --notez-success: 145 35% 45%;
+    --notez-warning: 32 70% 55%;
+
+    /* Gradients (subtle, no glow) */
+    --gradient-purple: linear-gradient(135deg, hsl(145 18% 38%), hsl(200 18% 42%));
+    --gradient-dark: linear-gradient(180deg, hsl(220 8% 9%), hsl(220 8% 7%));
+    --gradient-glow: radial-gradient(ellipse at center, hsl(40 20% 94% / 0.04), transparent 70%);
+    --gradient-card: linear-gradient(145deg, hsl(220 8% 10%), hsl(220 8% 8%));
+
+    /* Shadows — flat, refined */
+    --shadow-glow: 0 1px 0 hsl(40 20% 94% / 0.04) inset, 0 8px 24px hsl(0 0% 0% / 0.35);
+    --shadow-card: 0 1px 0 hsl(40 20% 94% / 0.03) inset, 0 1px 2px hsl(0 0% 0% / 0.4);
+    --shadow-card-hover: 0 1px 0 hsl(40 20% 94% / 0.05) inset, 0 6px 20px hsl(0 0% 0% / 0.45);
+
+    /* Sidebar (unused now but kept for shadcn sidebar component) */
+    --sidebar-background: 220 8% 8%;
+    --sidebar-foreground: 40 20% 94%;
+    --sidebar-primary: 145 18% 45%;
+    --sidebar-primary-foreground: 40 20% 96%;
+    --sidebar-accent: 220 8% 12%;
+    --sidebar-accent-foreground: 40 20% 94%;
+    --sidebar-border: 220 8% 16%;
+    --sidebar-ring: 145 18% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-feature-settings: 'ss01', 'ss02', 'cv11';
+    font-size: 14px;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'IBM Plex Serif', Georgia, serif;
+    letter-spacing: -0.015em;
+    font-weight: 500;
+  }
+
+  .font-mono, code, kbd, pre {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  /* Refined hover lift (no 3D tilt) */
+  .card-3d {
+    transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  }
+
+  .card-3d:hover {
+    transform: translateY(-1px);
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--notez-surface-hover));
+  }
+
+  .glow-purple {
+    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.4);
+  }
+
+  .glow-text {
+    text-shadow: none;
+  }
+
+  .glass {
+    background: hsl(var(--card) / 0.85);
+    backdrop-filter: blur(8px) saturate(1.1);
+    border: 1px solid hsl(var(--border));
+  }
+
+  .gradient-text {
+    color: hsl(var(--foreground));
+  }
+
+  .animated-bg {
+    background:
+      linear-gradient(hsl(var(--background)), hsl(var(--background))),
+      repeating-linear-gradient(
+        0deg,
+        hsl(var(--border) / 0.0) 0 31px,
+        hsl(var(--border) / 0.35) 31px 32px
+      );
+    background-blend-mode: normal;
+  }
+
+  /* Fade animations */
+  .fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Pulse glow */
+  .pulse-glow {
+    animation: none;
+  }
+
+  @keyframes pulseGlow {
+    0%, 100% {
+      box-shadow: 0 0 0 1px hsl(var(--border));
+    }
+    50% {
+      box-shadow: 0 0 0 1px hsl(var(--accent));
+    }
+  }
+
+  /* Floating animation */
+  .float {
+    animation: none;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  /* Shimmer effect */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted-foreground) / 0.1) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  /* New utilities for the refined dark UI */
+  .surface-1 { background-color: hsl(var(--card)); border: 1px solid hsl(var(--border)); }
+  .surface-2 { background-color: hsl(var(--notez-surface-hover)); border: 1px solid hsl(var(--border)); }
+  .hairline  { border-color: hsl(var(--border)); }
+  .grid-paper {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.35) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.35) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .kbd {
+    @apply font-mono text-[11px] px-1.5 py-0.5 rounded border border-border bg-secondary text-muted-foreground;
+  }
+}

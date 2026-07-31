@@ -1,0 +1,125 @@
+import React from 'react';
+import { Card, CardHeader, CardContent, CardFooter, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+type IconType = React.ElementType;
+
+export interface CardDisplayItem {
+  id: string;
+  title: string;
+  value: string;
+  description: string;
+  icon?: IconType;
+  actionLabel?: string;
+  isDisabled?: boolean;
+  onActionClick?: (id: string) => void;
+  /** Optional trend indicator: positive shows up, negative shows down */
+  trend?: 'up' | 'down' | 'flat';
+}
+
+export interface CardDisplayProps {
+  items: CardDisplayItem[];
+  className?: string;
+  /** Grid columns at lg breakpoint. Default 4. */
+  columns?: 2 | 3 | 4;
+}
+
+const colsClass = {
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-2 lg:grid-cols-3',
+  4: 'sm:grid-cols-2 lg:grid-cols-4',
+};
+
+/**
+ * Monochrome data card grid with advanced hover effects:
+ *  - subtle lift + shadow on hover
+ *  - moving shimmer sheen
+ *  - corner accent line that grows on hover
+ *  - icon scale-in micro-interaction
+ */
+const CardDisplay: React.FC<CardDisplayProps> = ({ items, className, columns = 4 }) => {
+  if (!items || items.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground italic">No display items configured.</p>
+    );
+  }
+
+  return (
+    <div className={cn('grid grid-cols-1 gap-4', colsClass[columns], className)}>
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <Card
+            key={item.id}
+            className={cn(
+              'group relative overflow-hidden',
+              'border-border/80 bg-card',
+              'transition-all duration-300 ease-out',
+              'hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-[0_10px_40px_-12px_hsl(0_0%_0%/0.6)]',
+            )}
+          >
+            {/* Top accent line that grows on hover */}
+            <span
+              aria-hidden
+              className="absolute left-0 top-0 h-px w-8 bg-foreground/40 transition-all duration-500 group-hover:w-full group-hover:bg-foreground/60"
+            />
+            {/* Diagonal shimmer sheen */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-foreground/[0.04] to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
+            />
+            {/* Soft radial backdrop on hover */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-foreground/[0.03] opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100"
+            />
+
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
+              <CardTitle className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                {item.title}
+              </CardTitle>
+              {Icon && (
+                <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-border/60 bg-secondary/40 transition-all duration-300 group-hover:border-foreground/40 group-hover:bg-secondary/80">
+                  <Icon className="h-4 w-4 text-muted-foreground transition-colors duration-300 group-hover:text-foreground" />
+                </div>
+              )}
+            </CardHeader>
+
+            <CardContent className="relative pb-3">
+              <p className="text-3xl font-serif font-semibold tracking-tight text-foreground">
+                {item.value}
+              </p>
+              <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+                {item.description}
+              </p>
+            </CardContent>
+
+            {item.actionLabel && (
+              <CardFooter className="relative pt-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => item.onActionClick?.(item.id)}
+                  disabled={item.isDisabled}
+                  aria-label={`${item.title}: ${item.actionLabel}`}
+                  className={cn(
+                    'w-full justify-between text-xs font-mono uppercase tracking-[0.16em]',
+                    'border border-border/60 bg-transparent text-muted-foreground',
+                    'transition-all duration-200',
+                    'hover:bg-foreground hover:text-background hover:border-foreground',
+                  )}
+                >
+                  <span>{item.actionLabel}</span>
+                  <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+                </Button>
+              </CardFooter>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
+};
+
+export default CardDisplay;
