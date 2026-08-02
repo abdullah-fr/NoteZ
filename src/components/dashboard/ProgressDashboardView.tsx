@@ -1,46 +1,176 @@
-import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { useTimer } from '@/lib/timer';
-import { useCalendar, dayLabel, type CalendarEvent } from '@/lib/calendar';
+import { useCalendar, dayLabel } from '@/lib/calendar';
 import {
-  fetchProgressData,
-  subscribeToProgressUpdates,
-  type UserProgress,
-  type ExamResult,
-  type StudySession,
+  fetchProgressData, subscribeToProgressUpdates,
+  type UserProgress, type ExamResult, type StudySession,
 } from '@/services';
 import {
-  Flame, Clock, GraduationCap, Sparkles, CalendarRange, Loader2, Activity,
-  CheckSquare, Flag, CalendarDays, Timer, ChevronRight, AlertCircle,
+  Flame, Clock, GraduationCap, Sparkles, CalendarRange, Loader2,
+  Activity, CheckSquare, Flag, CalendarDays, AlertCircle, BookOpen, Brain,
 } from 'lucide-react';
 import {
-  format, startOfMonth, endOfMonth,
-  isWithinInterval, parseISO, eachDayOfInterval, getDay, differenceInCalendarDays,
-  addMonths, isToday,
+  format, startOfMonth, endOfMonth, isWithinInterval, parseISO,
+  eachDayOfInterval, getDay, differenceInCalendarDays, addMonths,
 } from 'date-fns';
 import CardDisplay, { type CardDisplayItem } from './CardDisplay';
 
-
 const MONTHLY_EXAM_GOAL = 10;
 
+/* ── static study suggestions ────────────────────────────────── */
+const SUGGESTIONS = [
+  { icon: BookOpen,      text: 'Review your weakest flashcard deck today' },
+  { icon: Brain,         text: 'Take a 5-min quiz to reinforce recent notes' },
+  { icon: Sparkles,      text: 'Consistent short sessions beat marathon cramming' },
+  { icon: Clock,         text: 'Schedule a 25-min focus block before the day ends' },
+  { icon: GraduationCap, text: 'Check your exam history and target weak topics' },
+  { icon: Flag,          text: 'Set a deadline for your next assignment to stay on track' },
+];
+
+/* ══════════════════════════════════════════════════════════════
+   UPCOMING TASKS TICKER
+══════════════════════════════════════════════════════════════ */
+function UpcomingTicker({
+  monthlyExamRate,
+}: {
+  monthlyExamRate: { pct: number; count: number; daysLeft: number };
+}) {
+  const { getUpcoming } = useCalendar();
+  const { tasks: timerTasks } = useTimer();
+  const [idx, setIdx] = useState(0);
+  const ivRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /* Build the full item list every time dependencies change */
+  const items = useMemo(() => {
+    const result: { icon: any; label: string; badge?: string }[] = [];
+
+    /* 1 — calendar deadlines / tasks from the next 14 days */
+    getUpcoming(14).forEach(ev => {
+      const Icon = ev.type === 'task' ? CheckSquare : ev.type === 'deadline' ? Flag : CalendarDays;
+      result.push({ icon: Icon, label: ev.title, badge: dayLabel(ev.date) });
+    });
+
+    /* 2 — pending timer tasks */
+    timerTasks.filter(t => !t.done).forEach(t => {
+      result.push({ icon: Clock, label: t.label, badge: `${t.minutes}m` });
+    });
+
+    /* 3 — exam score reminder */
+    if (monthlyExamRate.pct < 50) {
+      result.push({
+        icon: AlertCircle,
+        label: `${monthlyExamRate.count}/${MONTHLY_EXAM_GOAL} exams this month`,
+        badge: `${monthlyExamRate.daysLeft}d left`,
+      });
+    }
+
+    /* 4 — static suggestions / recommendations */
+    SUGGESTIONS.forEach(s => result.push({ icon: s.icon, label: s.text }));
+
+    return result;
+  }, [getUpcoming, timerTasks, monthlyExamRate]);
+
+  /* Advance the ticker every 3 s */
+  useEffect(() => {
+    if (items.length === 0) return;
+    ivRef.current = setInterval(() => setIdx(i => (i + 1) % items.length), 3000);
+    return () => { if (ivRef.current) clearInterval(ivRef.current); };
+  }, [items.length]);
+
+  /* Reset index when list rebuilds so it never goes out of range */
+  useEffect(() => { setIdx(0); }, [items.length]);
+
+  const current = items[idx] ?? null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.08 }}
+      className="flex items-center gap-0 border border-[hsl(220_8%_16%)] bg-[hsl(220_8%_10%)] rounded-xl overflow-hidden h-11"
+    >
+      {/* Left label */}
+      <div className="flex items-center gap-2 px-4 h-full border-r border-[hsl(220_8%_16%)] shrink-0 bg-[hsl(220_8%_11%)]">
+        <Sparkles className="h-3 w-3 text-[hsl(40_8%_42%)]" />
+        <span className="text-[9px] font-mono uppercase tracking-[0.22em] text-[hsl(40_8%_42%)] select-none whitespace-nowrap">
+          Upcoming Tasks
+        </span>
+      </div>
+
+      {/* Scrolling ticker */}
+      <div className="flex-1 overflow-hidden relative px-4">
+        {items.length === 0 ? (
+          <span className="text-[11px] text-[hsl(40_8%_38%)] italic">All clear — no upcoming activities</span>
+        ) : (
+          <AnimatePresence mode="wait">
+            {current && (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, x: 14 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -14 }}
+                transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
+                className="absolute inset-0 flex items-center gap-2.5"
+              >
+                <current.icon className="h-3.5 w-3.5 text-[hsl(40_20%_52%)] shrink-0" />
+                <span className="text-[12px] text-[hsl(40_20%_78%)] truncate leading-none">
+                  {current.label}
+                </span>
+                {current.badge && (
+                  <span className="text-[10px] font-mono text-[hsl(40_8%_44%)] border border-[hsl(220_8%_20%)] rounded-md px-1.5 py-0.5 shrink-0">
+                    {current.badge}
+                  </span>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
+      </div>
+
+      {/* Right counter */}
+      {items.length > 0 && (
+        <div className="flex items-center gap-1.5 px-4 h-full border-l border-[hsl(220_8%_16%)] shrink-0">
+          {/* Dot progress bar */}
+          <div className="flex gap-1">
+            {items.slice(0, Math.min(items.length, 10)).map((_, i) => (
+              <motion.div
+                key={i}
+                animate={{ opacity: i === idx % Math.min(items.length, 10) ? 1 : 0.25 }}
+                transition={{ duration: 0.3 }}
+                className="w-1 h-1 rounded-full bg-[hsl(40_20%_55%)]"
+              />
+            ))}
+            {items.length > 10 && (
+              <span className="text-[9px] font-mono text-[hsl(40_8%_38%)] ml-0.5">+{items.length - 10}</span>
+            )}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ── helpers ─────────────────────────────────────────────────── */
 function streakMessage(days: number): string {
   if (days <= 0) return 'Begin today — every expert was once a beginner.';
-  if (days < 3) return 'A spark has been lit. Keep it burning.';
-  if (days < 7) return 'Momentum is building. Stay consistent.';
+  if (days < 3)  return 'A spark has been lit. Keep it burning.';
+  if (days < 7)  return 'Momentum is building. Stay consistent.';
   if (days < 14) return 'Discipline is becoming habit. Impressive.';
   if (days < 30) return 'Two weeks strong — you are unstoppable.';
   if (days < 60) return 'A monthly master. Greatness is your routine.';
   return 'Legendary streak. You inspire by example.';
 }
-
 function formatMinutes(min: number): string {
   if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
+  const h = Math.floor(min / 60); const m = min % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   MAIN COMPONENT
+══════════════════════════════════════════════════════════════ */
 export default function ProgressDashboardView() {
   const { user } = useAuth();
   const [progress, setProgress] = useState<UserProgress>({
@@ -48,213 +178,126 @@ export default function ProgressDashboardView() {
     exams_completed: 0, flashcards_reviewed: 0, quizzes_completed: 0,
   });
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
-  const [sessions, setSessions] = useState<StudySession[]>([]);
-
-  const [loading, setLoading] = useState(true);
-  // Engagement report is monthly-only per spec
+  const [sessions, setSessions]       = useState<StudySession[]>([]);
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
     if (!user) return;
     const load = async () => {
       const { progress: p, examResults: e, sessions: s } = await fetchProgressData(user.id);
-      setProgress(p);
-      setExamResults(e);
-      setSessions(s);
-      setLoading(false);
+      setProgress(p); setExamResults(e); setSessions(s); setLoading(false);
     };
     load();
     return subscribeToProgressUpdates(user.id, load);
   }, [user]);
 
-  // ---- Tracker (weekly / monthly) summary ----
+  /* ── monthly tracker stats ── */
   const trackerStats = useMemo(() => {
     const now = new Date();
-    const start = startOfMonth(now);
-    const end = endOfMonth(now);
-
-    const inRange = (iso: string) =>
-      isWithinInterval(parseISO(iso), { start, end });
-
-    const periodSessions = sessions.filter(s => inRange(s.started_at));
-    const periodExams = examResults.filter(e => inRange(e.created_at));
-
-    const studyMinutes = periodSessions.reduce((sum, s) => sum + s.duration_minutes, 0);
-    const activitiesCompleted = periodSessions.length + periodExams.length;
-
+    const start = startOfMonth(now); const end = endOfMonth(now);
+    const inRange = (iso: string) => isWithinInterval(parseISO(iso), { start, end });
+    const ps = sessions.filter(s => inRange(s.started_at));
+    const pe = examResults.filter(e => inRange(e.created_at));
+    const studyMinutes = ps.reduce((sum, s) => sum + s.duration_minutes, 0);
     const activeDaySet = new Set<string>();
-    periodSessions.forEach(s => activeDaySet.add(format(parseISO(s.started_at), 'yyyy-MM-dd')));
-    periodExams.forEach(e => activeDaySet.add(format(parseISO(e.created_at), 'yyyy-MM-dd')));
-
-    return { studyMinutes, activitiesCompleted, activeDays: activeDaySet.size };
+    ps.forEach(s => activeDaySet.add(format(parseISO(s.started_at), 'yyyy-MM-dd')));
+    pe.forEach(e => activeDaySet.add(format(parseISO(e.created_at), 'yyyy-MM-dd')));
+    return { studyMinutes, activitiesCompleted: ps.length + pe.length, activeDays: activeDaySet.size };
   }, [sessions, examResults]);
 
-  // ---- Heatmap: from first engaged month through current month, Mon-Sun rows ----
+  /* ── heatmap (12-month) ── */
   const heatmap = useMemo(() => {
     const now = new Date();
-
-    // Index sessions/exams by day
     const dayCounts = new Map<string, number>();
-    sessions.forEach(s => {
-      const d = parseISO(s.started_at);
-      const k = format(d, 'yyyy-MM-dd');
-      dayCounts.set(k, (dayCounts.get(k) || 0) + Math.max(1, Math.round(s.duration_minutes / 15)));
-    });
-    examResults.forEach(e => {
-      const d = parseISO(e.created_at);
-      const k = format(d, 'yyyy-MM-dd');
-      dayCounts.set(k, (dayCounts.get(k) || 0) + 2);
-    });
-
-    // Always show 12 months starting from the current month forward
+    sessions.forEach(s => { const k = format(parseISO(s.started_at), 'yyyy-MM-dd'); dayCounts.set(k, (dayCounts.get(k) || 0) + Math.max(1, Math.round(s.duration_minutes / 15))); });
+    examResults.forEach(e => { const k = format(parseISO(e.created_at), 'yyyy-MM-dd'); dayCounts.set(k, (dayCounts.get(k) || 0) + 2); });
     const rangeStart = startOfMonth(now);
-    const rangeEnd = endOfMonth(addMonths(rangeStart, 11));
-    const all = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
-
-    const max = Math.max(...Array.from(dayCounts.values()), 1);
-
-    // Pad start so rows align to Mon..Sun (Mon=0)
-    const startDow = getDay(rangeStart); // 0=Sun..6=Sat
-    const pad = (startDow + 6) % 7;       // 0=Mon..6=Sun
+    const rangeEnd   = endOfMonth(addMonths(rangeStart, 11));
+    const all  = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
+    const max  = Math.max(...Array.from(dayCounts.values()), 1);
+    const pad  = (getDay(rangeStart) + 6) % 7;
     const cells = [
       ...Array.from({ length: pad }, () => null as null | { date: Date; count: number; intensity: number }),
-      ...all.map(d => {
-        const count = dayCounts.get(format(d, 'yyyy-MM-dd')) || 0;
-        const intensity = count === 0 ? 0 : Math.min(4, Math.ceil((count / max) * 4));
-        return { date: d, count, intensity };
-      }),
+      ...all.map(d => { const count = dayCounts.get(format(d, 'yyyy-MM-dd')) || 0; return { date: d, count, intensity: count === 0 ? 0 : Math.min(4, Math.ceil((count / max) * 4)) }; }),
     ];
-
-    // chunk into weeks of 7 (columns)
     const weeks: (typeof cells[number])[][] = [];
     for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-
-    // month labels: show month at first column where it changes
     const monthLabels: { col: number; label: string }[] = [];
     let lastMonth = -1;
     weeks.forEach((week, col) => {
-      const firstReal = week.find(Boolean);
-      if (!firstReal) return;
-      const m = firstReal.date.getMonth();
-      if (m !== lastMonth) {
-        monthLabels.push({ col, label: format(firstReal.date, 'MMM yyyy') });
-        lastMonth = m;
-      }
+      const first = week.find(Boolean);
+      if (!first) return;
+      const m = first.date.getMonth();
+      if (m !== lastMonth) { monthLabels.push({ col, label: format(first.date, 'MMM yyyy') }); lastMonth = m; }
     });
-
     return { weeks, monthLabels };
   }, [sessions, examResults]);
 
-  // ---- Monthly exam completion rate (resets each month) ----
+  /* ── monthly exam rate ── */
   const monthlyExamRate = useMemo(() => {
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-    const examsThisMonth = examResults.filter(e =>
-      isWithinInterval(parseISO(e.created_at), { start: monthStart, end: monthEnd })
-    ).length;
-    const pct = Math.min(100, Math.round((examsThisMonth / MONTHLY_EXAM_GOAL) * 100));
-    return { count: examsThisMonth, pct, daysLeft: differenceInCalendarDays(monthEnd, now) };
+    const now = new Date(); const ms = startOfMonth(now); const me = endOfMonth(now);
+    const count = examResults.filter(e => isWithinInterval(parseISO(e.created_at), { start: ms, end: me })).length;
+    const pct = Math.min(100, Math.round((count / MONTHLY_EXAM_GOAL) * 100));
+    return { count, pct, daysLeft: differenceInCalendarDays(me, now) };
   }, [examResults]);
 
-  // ---- Learning Score /10 (engagement composite) ----
+  /* ── learning score /10 ── */
   const learningScore = useMemo(() => {
-    // Weighted blend, normalised to 10
-    const recent14 = sessions.filter(s =>
-      differenceInCalendarDays(new Date(), parseISO(s.started_at)) <= 14
-    );
-    const minutes14 = recent14.reduce((sum, s) => sum + s.duration_minutes, 0);
-    const minutesScore = Math.min(1, minutes14 / 600);            // 10h / 2 weeks = full
-    const streakScore = Math.min(1, progress.streak_days / 14);
-    const examsScore = Math.min(1, monthlyExamRate.count / MONTHLY_EXAM_GOAL);
-    const activityScore = Math.min(1,
-      (progress.quizzes_completed + progress.flashcards_reviewed / 5) / 30
-    );
-    const composite = (minutesScore * 0.35) + (streakScore * 0.25) + (examsScore * 0.2) + (activityScore * 0.2);
-    return Math.round(composite * 100) / 10; // -> /10 with 1 decimal
+    const r14 = sessions.filter(s => differenceInCalendarDays(new Date(), parseISO(s.started_at)) <= 14);
+    const m14 = r14.reduce((sum, s) => sum + s.duration_minutes, 0);
+    const c = (Math.min(1, m14 / 600) * 0.35) + (Math.min(1, progress.streak_days / 14) * 0.25)
+            + (Math.min(1, monthlyExamRate.count / MONTHLY_EXAM_GOAL) * 0.2)
+            + (Math.min(1, (progress.quizzes_completed + progress.flashcards_reviewed / 5) / 30) * 0.2);
+    return Math.round(c * 100) / 10;
   }, [sessions, progress, monthlyExamRate]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-foreground" />
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-foreground" /></div>;
   }
 
   const overviewCards: CardDisplayItem[] = [
-    {
-      id: 'focus-time',
-      title: 'Focus Time',
-      value: formatMinutes(progress.total_study_minutes),
-      description: 'Total time spent in deep focus.',
-      icon: Clock,
-    },
-    {
-      id: 'learning-score',
-      title: 'Learning Score',
-      value: `${learningScore.toFixed(1)} / 10`,
-      description: 'Composite of focus, streak, exams & activities.',
-      icon: Sparkles,
-    },
-    {
-      id: 'streak',
-      title: 'Streak',
-      value: `${progress.streak_days}d`,
-      description: streakMessage(progress.streak_days),
-      icon: Flame,
-    },
-    {
-      id: 'exam-rate',
-      title: 'Exam Completion',
-      value: `${monthlyExamRate.pct}%`,
-      description: `${monthlyExamRate.count}/${MONTHLY_EXAM_GOAL} this month · resets in ${monthlyExamRate.daysLeft}d`,
-      icon: GraduationCap,
-    },
+    { id: 'focus-time',     title: 'Focus Time',       value: formatMinutes(progress.total_study_minutes), description: 'Total time in deep focus.',                                                                      icon: Clock },
+    { id: 'learning-score', title: 'Learning Score',   value: `${learningScore.toFixed(1)} / 10`,          description: 'Composite of focus, streak, exams & activities.',                                               icon: Sparkles },
+    { id: 'streak',         title: 'Streak',           value: `${progress.streak_days}d`,                  description: streakMessage(progress.streak_days),                                                             icon: Flame },
+    { id: 'exam-rate',      title: 'Exam Completion',  value: `${monthlyExamRate.pct}%`,                   description: `${monthlyExamRate.count}/${MONTHLY_EXAM_GOAL} this month · resets in ${monthlyExamRate.daysLeft}d`, icon: GraduationCap },
   ];
 
-  // White intensity scale for heatmap (0..4)
   const intensityClass = (lvl: number) => {
     switch (lvl) {
-      case 0: return 'bg-foreground/[0.04] border-border/40';
-      case 1: return 'bg-foreground/20 border-foreground/10';
-      case 2: return 'bg-foreground/40 border-foreground/20';
-      case 3: return 'bg-foreground/65 border-foreground/30';
+      case 0:  return 'bg-foreground/[0.04] border-border/40';
+      case 1:  return 'bg-foreground/20 border-foreground/10';
+      case 2:  return 'bg-foreground/40 border-foreground/20';
+      case 3:  return 'bg-foreground/65 border-foreground/30';
       default: return 'bg-foreground border-foreground/40';
     }
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-serif text-3xl tracking-tight text-foreground">Dashboard</h2>
-          <p className="mt-1 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
-            Realtime study metrics
-          </p>
+          <p className="mt-1 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">Realtime study metrics</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 border border-border bg-secondary/40 rounded-sm px-3 py-1.5">
-            <Flame className="h-4 w-4 text-foreground" />
-            <span className="text-xs font-mono">{progress.streak_days}d</span>
-          </div>
+        <div className="flex items-center gap-1.5 border border-border bg-secondary/40 rounded-sm px-3 py-1.5">
+          <Flame className="h-4 w-4 text-foreground" />
+          <span className="text-xs font-mono">{progress.streak_days}d</span>
         </div>
       </div>
 
-      {/* Cards */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.05 }}
-      >
+      {/* ── Overview cards ── */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <CardDisplay items={overviewCards} columns={4} />
       </motion.div>
 
-      {/* Engagement Report */}
+      {/* ── Upcoming Tasks ticker ── */}
+      <UpcomingTicker monthlyExamRate={monthlyExamRate} />
+
+      {/* ── Engagement Report ── */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
+        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
         className="relative overflow-hidden rounded-md border border-border bg-card p-6"
       >
         <span aria-hidden className="absolute left-0 top-0 h-px w-24 bg-foreground/40" />
@@ -265,9 +308,7 @@ export default function ProgressDashboardView() {
               <Activity className="h-5 w-5 text-muted-foreground" />
               Engagement Report
             </h3>
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground mt-1">
-              Monthly contributions
-            </p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground mt-1">Monthly contributions</p>
           </div>
           <div className="flex items-center gap-1.5 border border-border bg-secondary/40 rounded-sm px-3 py-1.5">
             <CalendarRange className="h-3.5 w-3.5 text-foreground" />
@@ -277,24 +318,21 @@ export default function ProgressDashboardView() {
 
         {/* Summary trio */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-          <div className="rounded-sm border border-border/70 bg-secondary/30 p-4">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Study Time</p>
-            <p className="mt-1 font-serif text-2xl">{formatMinutes(trackerStats.studyMinutes)}</p>
-          </div>
-          <div className="rounded-sm border border-border/70 bg-secondary/30 p-4">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Activities Completed</p>
-            <p className="mt-1 font-serif text-2xl">{trackerStats.activitiesCompleted}</p>
-          </div>
-          <div className="rounded-sm border border-border/70 bg-secondary/30 p-4">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Active Days</p>
-            <p className="mt-1 font-serif text-2xl">{trackerStats.activeDays}</p>
-          </div>
+          {[
+            { label: 'Study Time',           value: formatMinutes(trackerStats.studyMinutes) },
+            { label: 'Activities Completed',  value: String(trackerStats.activitiesCompleted) },
+            { label: 'Active Days',           value: String(trackerStats.activeDays) },
+          ].map(stat => (
+            <div key={stat.label} className="rounded-sm border border-border/70 bg-secondary/30 p-4">
+              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">{stat.label}</p>
+              <p className="mt-1 font-serif text-2xl">{stat.value}</p>
+            </div>
+          ))}
         </div>
 
-        {/* GitHub-style contribution graph */}
+        {/* Contribution heatmap */}
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full">
-            {/* month labels */}
             <div className="flex gap-[3px] pl-10 mb-1">
               {heatmap.weeks.map((_, col) => {
                 const lbl = heatmap.monthLabels.find(m => m.col === col);
@@ -305,27 +343,19 @@ export default function ProgressDashboardView() {
                 );
               })}
             </div>
-
             <div className="flex gap-[3px]">
-              {/* day labels Mon..Sun */}
               <div className="flex flex-col gap-[3px] pr-2 w-8">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => (
-                  <div key={i} className="h-[12px] text-[9px] font-mono leading-[12px] text-muted-foreground">
-                    {d}
-                  </div>
+                {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) => (
+                  <div key={i} className="h-[12px] text-[9px] font-mono leading-[12px] text-muted-foreground">{d}</div>
                 ))}
               </div>
-
               {heatmap.weeks.map((week, ci) => (
                 <div key={ci} className="flex flex-col gap-[3px]">
                   {Array.from({ length: 7 }).map((_, ri) => {
                     const cell = week[ri];
-                    if (!cell) {
-                      return <div key={ri} className="w-[12px] h-[12px]" />;
-                    }
+                    if (!cell) return <div key={ri} className="w-[12px] h-[12px]" />;
                     return (
-                      <div
-                        key={ri}
+                      <div key={ri}
                         title={`${format(cell.date, 'MMM d, yyyy')} · ${cell.count} contributions`}
                         className={`w-[12px] h-[12px] rounded-[2px] border transition-colors ${intensityClass(cell.intensity)} hover:border-foreground`}
                       />
@@ -334,13 +364,9 @@ export default function ProgressDashboardView() {
                 </div>
               ))}
             </div>
-
-            {/* Legend */}
             <div className="flex items-center justify-end gap-2 mt-3 pr-1">
               <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Less</span>
-              {[0, 1, 2, 3, 4].map(lvl => (
-                <div key={lvl} className={`w-[12px] h-[12px] rounded-[2px] border ${intensityClass(lvl)}`} />
-              ))}
+              {[0,1,2,3,4].map(lvl => <div key={lvl} className={`w-[12px] h-[12px] rounded-[2px] border ${intensityClass(lvl)}`} />)}
               <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">More</span>
             </div>
           </div>

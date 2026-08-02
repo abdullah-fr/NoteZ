@@ -309,14 +309,14 @@ export default function FolderView() {
           <ChevronRight className="h-3 w-3 opacity-50" />
           <button onClick={() => setView('categories')} className="hover:text-[hsl(40_20%_70%)] transition-colors" style={{ color: activeFolder.color }}>{activeFolder.name}</button>
           <ChevronRight className="h-3 w-3 opacity-50" />
-          <span style={{ color: meta.color }}>{activeCategory.name}</span>
+          <span className="text-[hsl(40_8%_52%)]">{activeCategory.name}</span>
         </div>
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: meta.color + '20', border: `1px solid ${meta.color}30` }}>
-              <meta.icon className="h-4 w-4" style={{ color: meta.color }} />
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-[hsl(220_8%_16%)] border border-[hsl(220_8%_22%)]">
+              <meta.icon className="h-4 w-4 text-[hsl(40_20%_65%)]" />
             </div>
             <div>
               <h2 className="text-[16px] font-bold leading-none">{activeCategory.name}</h2>
@@ -403,7 +403,7 @@ export default function FolderView() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: activeFolder.color + '20', border: `1px solid ${activeFolder.color}30` }}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-[hsl(220_8%_14%)] border border-[hsl(220_8%_20%)]">
               <FolderOpen className="h-4 w-4" style={{ color: activeFolder.color }} />
             </div>
             <div>
@@ -437,12 +437,11 @@ export default function FolderView() {
                     <button key={p.type} onClick={() => setCatType(p.type)}
                       className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border text-[11px] font-medium transition-all ${
                         catType === p.type
-                          ? 'border-opacity-60 text-white'
-                          : 'border-[hsl(220_8%_20%)] bg-[hsl(220_8%_13%)] text-[hsl(40_8%_50%)] hover:bg-[hsl(220_8%_16%)]'
+                          ? 'bg-[hsl(220_8%_20%)] border-[hsl(220_8%_32%)] text-[hsl(40_20%_85%)]'
+                          : 'bg-[hsl(220_8%_13%)] border-[hsl(220_8%_20%)] text-[hsl(40_8%_50%)] hover:bg-[hsl(220_8%_17%)] hover:text-[hsl(40_20%_72%)]'
                       }`}
-                      style={catType === p.type ? { background: p.color + '20', borderColor: p.color + '50', color: p.color } : {}}
                     >
-                      <p.icon className="h-4 w-4" style={{ color: catType === p.type ? p.color : undefined }} />
+                      <p.icon className={`h-4 w-4 ${catType === p.type ? 'text-[hsl(40_20%_75%)]' : 'text-[hsl(40_8%_45%)]'}`} />
                       {p.label}
                     </button>
                   ))}
@@ -486,13 +485,13 @@ export default function FolderView() {
                   className="group flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-[hsl(220_8%_16%)] bg-[hsl(220_8%_10%)] hover:border-[hsl(220_8%_26%)] hover:bg-[hsl(220_8%_12%)] cursor-pointer transition-all"
                   onClick={() => openCategory(cat)}
                 >
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: meta.color + '18', border: `1px solid ${meta.color}28` }}>
-                    <meta.icon className="h-4.5 w-4.5" style={{ color: meta.color, width: 18, height: 18 }} />
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[hsl(220_8%_16%)] border border-[hsl(220_8%_22%)]">
+                    <meta.icon className="h-4.5 w-4.5 text-[hsl(40_20%_65%)]" style={{ width: 18, height: 18 }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-semibold text-[hsl(40_20%_86%)] truncate">{cat.name}</p>
                     <p className="text-[10px] text-[hsl(40_8%_42%)]">
-                      <span style={{ color: meta.color }} className="font-medium">{meta.label}</span>
+                      <span className="font-medium text-[hsl(40_8%_52%)]">{meta.label}</span>
                       <span className="mx-1 opacity-40">·</span>
                       {cat.notes.length} note{cat.notes.length !== 1 ? 's' : ''}
                     </p>
@@ -602,9 +601,7 @@ export default function FolderView() {
               className="group relative rounded-2xl border border-[hsl(220_8%_16%)] bg-[hsl(220_8%_10%)] p-4 hover:border-[hsl(220_8%_26%)] hover:bg-[hsl(220_8%_12%)] cursor-pointer transition-all"
               onClick={() => openFolder(folder)}
             >
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 transition-transform group-hover:scale-105"
-                style={{ background: folder.color + '20', border: `1px solid ${folder.color}28` }}
-              >
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 transition-transform group-hover:scale-105 bg-[hsl(220_8%_14%)] border border-[hsl(220_8%_20%)]">
                 <Folder className="h-5.5 w-5.5" style={{ color: folder.color, width: 22, height: 22 }} />
               </div>
               <h3 className="font-semibold text-[13px] text-[hsl(40_20%_84%)] truncate mb-1">{folder.name}</h3>
@@ -620,8 +617,7 @@ export default function FolderView() {
                   {[...new Set(folder.categories.map(c => c.type))].slice(0, 3).map(type => {
                     const m = catMeta(type);
                     return (
-                      <span key={type} className="text-[9px] px-1.5 py-0.5 rounded-md font-medium"
-                        style={{ background: m.color + '18', color: m.color }}
+                      <span key={type} className="text-[9px] px-1.5 py-0.5 rounded-md font-medium bg-[hsl(220_8%_16%)] text-[hsl(40_8%_55%)]"
                       >{m.label}</span>
                     );
                   })}
