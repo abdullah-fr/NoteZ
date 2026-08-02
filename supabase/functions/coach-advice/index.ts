@@ -5,13 +5,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function callGemini(apiKey: string, prompt: string, context: unknown): Promise<string> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${prompt}\n\nContext data:\n${JSON.stringify(context)}` }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      }),
+    },
+  );
+  if (res.status === 429) throw new Error("RATE_LIMITED");
+  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const { type, context } = await req.json();
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     let systemPrompt = "";
 
@@ -24,21 +43,21 @@ Given the student's current study context, provide:
 3. A micro-learning tip if they're short on time
 
 Be concise. Use emojis sparingly. Sound like a real coach, not an AI.
-Return JSON:
+Return ONLY valid JSON — no markdown fences:
 {
   "message": "Main coaching message",
   "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
   "microTip": "Quick 5-min activity suggestion",
-  "mood": "encouraging" | "firm" | "celebratory" | "concerned"
+  "mood": "encouraging"
 }`;
     } else if (type === "progress-analysis") {
       systemPrompt = `You are COACH — analyze this student's progress data and provide insights.
 
-Return JSON:
+Return ONLY valid JSON — no markdown fences:
 {
-  "learningSpeed": "fast" | "moderate" | "slow",
-  "retentionRate": "high" | "medium" | "low",
-  "consistencyScore": number (0-100),
+  "learningSpeed": "fast",
+  "retentionRate": "high",
+  "consistencyScore": 75,
   "strongAreas": ["area1", "area2"],
   "weakAreas": ["area1", "area2"],
   "recommendations": ["rec1", "rec2", "rec3"],
@@ -48,47 +67,27 @@ Return JSON:
       systemPrompt = `You are COACH — detect patterns in the student's behavior and provide behavioral coaching.
 
 Be strict but caring. If they've been lazy, call it out firmly but supportively.
-Return JSON:
+Return ONLY valid JSON — no markdown fences:
 {
   "pattern": "Description of detected pattern",
-  "severity": "mild" | "moderate" | "serious",
+  "severity": "mild",
   "message": "Coaching message addressing the behavior",
   "actionPlan": ["step1", "step2", "step3"],
   "reminder": "A push notification style reminder"
 }`;
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: JSON.stringify(context) },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
+    let content: string;
+    try {
+      content = await callGemini(GEMINI_API_KEY, systemPrompt, context);
+    } catch (e: any) {
+      if (e.message === "RATE_LIMITED") {
         return new Response(JSON.stringify({ error: "Rate limited. Please try again." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw new Error("AI gateway error");
+      throw e;
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
 
     let parsed;
     try {

@@ -10,12 +10,30 @@ type Mode = "notes" | "flashcards" | "quiz";
 
 function buildPrompt(mode: Mode, count: number) {
   if (mode === "notes") {
-    return `You are an expert study note-taker. From the source text, produce comprehensive study notes in clean markdown. Use clear headings, bullet points, bold key terms, and short examples. Focus on what a student must remember. Return ONLY the markdown notes.`;
+    return `You are an expert study note-taker. From the source text, produce comprehensive study notes in clean markdown. Use clear headings, bullet points, bold key terms, and short examples. Focus on what a student must remember. Return ONLY the markdown notes — no extra commentary.`;
   }
   if (mode === "flashcards") {
-    return `You are a flashcard generator. Create exactly ${count} high-quality Q&A flashcards from the source. Questions should test recall of important concepts. Return ONLY valid JSON: {"cards":[{"question":"...","answer":"..."}]}`;
+    return `You are a flashcard generator. Create exactly ${count} high-quality Q&A flashcards from the source. Questions should test recall of important concepts. Return ONLY valid JSON — no markdown fences: {"cards":[{"question":"...","answer":"..."}]}`;
   }
-  return `You are a quiz generator. Create exactly ${count} multiple-choice questions from the source. Each must have 4 options and one correct index. Return ONLY valid JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":0}]}`;
+  return `You are a quiz generator. Create exactly ${count} multiple-choice questions from the source. Each must have 4 options and one correct index. Return ONLY valid JSON — no markdown fences: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":0}]}`;
+}
+
+async function callGemini(apiKey: string, prompt: string, userContent: string): Promise<string> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${prompt}\n\n${userContent}` }] }],
+        generationConfig: { temperature: 0.5, maxOutputTokens: 8192 },
+      }),
+    },
+  );
+  if (res.status === 429) throw new Error("RATE_LIMITED");
+  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
 function extractJson(s: string): any {
@@ -30,8 +48,8 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -56,22 +74,21 @@ serve(async (req) => {
     if (source.status !== "ready" || !source.extracted_text) throw new Error("Source is not processed yet");
 
     const sys = buildPrompt(mode, n);
-    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: sys },
-          { role: "user", content: `Source title: ${source.title}\n\nSource content:\n${source.extracted_text.slice(0, 30000)}` },
-        ],
-      }),
-    });
-    if (aiRes.status === 429) return new Response(JSON.stringify({ error: "Rate limited." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    if (aiRes.status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    if (!aiRes.ok) throw new Error(`AI gateway error ${aiRes.status}`);
-    const aiData = await aiRes.json();
-    const content = aiData.choices?.[0]?.message?.content || "";
+    let content: string;
+    try {
+      content = await callGemini(
+        GEMINI_API_KEY,
+        sys,
+        `Source title: ${source.title}\n\nSource content:\n${source.extracted_text.slice(0, 30000)}`,
+      );
+    } catch (e: any) {
+      if (e.message === "RATE_LIMITED") {
+        return new Response(JSON.stringify({ error: "Rate limited." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      throw e;
+    }
 
     if (mode === "notes") {
       const { data: note, error } = await admin.from("notes").insert({
@@ -80,7 +97,9 @@ serve(async (req) => {
         content,
       }).select().single();
       if (error) throw error;
-      return new Response(JSON.stringify({ ok: true, mode, note }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, mode, note }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (mode === "flashcards") {
@@ -93,7 +112,9 @@ serve(async (req) => {
       if (!cards.length) throw new Error("AI returned no flashcards");
       const { error } = await admin.from("flashcards").insert(cards);
       if (error) throw error;
-      return new Response(JSON.stringify({ ok: true, mode, count: cards.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, mode, count: cards.length }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // quiz
@@ -107,7 +128,9 @@ serve(async (req) => {
     if (!rows.length) throw new Error("AI returned no quiz questions");
     const { error } = await admin.from("quizzes").insert(rows);
     if (error) throw error;
-    return new Response(JSON.stringify({ ok: true, mode, count: rows.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, mode, count: rows.length }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     console.error("generate-from-source error:", e);
     return new Response(JSON.stringify({ error: "An unexpected error occurred." }), {

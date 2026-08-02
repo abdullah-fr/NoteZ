@@ -6,17 +6,35 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function callGemini(apiKey: string, prompt: string, userMsg: string): Promise<string> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${prompt}\n\n${userMsg}` }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
+      }),
+    },
+  );
+  if (res.status === 429) throw new Error("RATE_LIMITED");
+  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    // Require authenticated user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
     const userClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -29,28 +47,20 @@ serve(async (req) => {
       });
     }
 
-    const { subject, specialization, difficulty, questionCount } = await req.json();
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
+    const { subject, specialization, difficulty, questionCount } = await req.json();
     const safeCount = Math.min(Math.max(Number(questionCount) || 5, 1), 25);
     const safeDifficulty = ["easy", "medium", "hard"].includes(String(difficulty)) ? difficulty : "medium";
     const safeSubject = String(subject || "").slice(0, 200);
     const safeSpec = specialization ? String(specialization).slice(0, 200) : "";
 
-    const systemPrompt = `You are an expert exam generator for students. Generate exactly ${safeCount} multiple-choice questions about ${safeSubject}${safeSpec ? ` (specifically ${safeSpec})` : ''}.
+    const systemPrompt = `You are an expert exam generator for students. Generate exactly ${safeCount} multiple-choice questions about ${safeSubject}${safeSpec ? ` (specifically ${safeSpec})` : ""}.
 
 Difficulty level: ${safeDifficulty}
 
-For each question, provide:
-- A clear, well-worded question
-- 4 answer options (A, B, C, D)
-- The index of the correct answer (0-3)
-- A detailed explanation of why the correct answer is right
-- An explanation of why each wrong answer is wrong
-- A "better approach" tip for understanding the concept
-
-Return ONLY valid JSON in this exact format, no other text:
+Return ONLY valid JSON — no markdown fences, no extra text:
 {
   "questions": [
     {
@@ -59,7 +69,7 @@ Return ONLY valid JSON in this exact format, no other text:
       "correctIndex": 0,
       "explanation": "The correct answer is A because...",
       "wrongExplanations": {
-        "0": "...",
+        "0": "why A is right or why it may seem wrong",
         "1": "This is wrong because...",
         "2": "This is wrong because...",
         "3": "This is wrong because..."
@@ -69,38 +79,21 @@ Return ONLY valid JSON in this exact format, no other text:
   ]
 }`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate ${safeCount} ${safeDifficulty}-difficulty exam questions about ${safeSubject}${safeSpec ? ` focusing on ${safeSpec}` : ''}.` },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
+    let content: string;
+    try {
+      content = await callGemini(
+        GEMINI_API_KEY,
+        systemPrompt,
+        `Generate ${safeCount} ${safeDifficulty}-difficulty exam questions about ${safeSubject}${safeSpec ? ` focusing on ${safeSpec}` : ""}.`,
+      );
+    } catch (e: any) {
+      if (e.message === "RATE_LIMITED") {
         return new Response(JSON.stringify({ error: "Rate limited. Please try again in a moment." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add funds." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      console.error("AI gateway error:", response.status, await response.text());
-      throw new Error("AI gateway error");
+      throw e;
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
 
     let parsed;
     try {
@@ -108,7 +101,7 @@ Return ONLY valid JSON in this exact format, no other text:
       const jsonStr = jsonMatch ? jsonMatch[1].trim() : content.trim();
       parsed = JSON.parse(jsonStr);
     } catch {
-      console.error("Failed to parse AI response:", content);
+      console.error("Failed to parse Gemini response:", content);
       return new Response(JSON.stringify({ error: "Failed to generate exam. Please try again." }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

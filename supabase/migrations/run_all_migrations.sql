@@ -416,10 +416,17 @@ CREATE TRIGGER trg_resolve_invites
 -- MIGRATION 7: Realtime security lockdown
 -- ============================================================
 
-REVOKE EXECUTE ON FUNCTION public.is_workspace_member(uuid, uuid) FROM anon, authenticated, public;
-REVOKE EXECUTE ON FUNCTION public.can_edit_workspace(uuid, uuid) FROM anon, authenticated, public;
-REVOKE EXECUTE ON FUNCTION public.can_admin_workspace(uuid, uuid) FROM anon, authenticated, public;
-REVOKE EXECUTE ON FUNCTION public.workspace_role_of(uuid, uuid) FROM anon, authenticated, public;
+-- Grant to authenticated only (needed for RLS policies on workspace tables)
+GRANT EXECUTE ON FUNCTION public.is_workspace_member(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_edit_workspace(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_admin_workspace(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.workspace_role_of(uuid, uuid) TO authenticated;
+
+-- Revoke from anon only
+REVOKE EXECUTE ON FUNCTION public.is_workspace_member(uuid, uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.can_edit_workspace(uuid, uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.can_admin_workspace(uuid, uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.workspace_role_of(uuid, uuid) FROM anon;
 
 DROP POLICY IF EXISTS "realtime_authenticated_read" ON realtime.messages;
 DROP POLICY IF EXISTS "realtime_authenticated_write" ON realtime.messages;

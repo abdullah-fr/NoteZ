@@ -15,7 +15,7 @@ import {
   format, startOfMonth, endOfMonth, isWithinInterval, parseISO,
   eachDayOfInterval, getDay, differenceInCalendarDays, addMonths,
 } from 'date-fns';
-import CardDisplay, { type CardDisplayItem } from './CardDisplay';
+import CardDisplay, { type CardDisplayItem } from './widgets/CardDisplay';
 
 const MONTHLY_EXAM_GOAL = 10;
 
@@ -37,7 +37,7 @@ function UpcomingTicker({
 }: {
   monthlyExamRate: { pct: number; count: number; daysLeft: number };
 }) {
-  const { getUpcoming } = useCalendar();
+  const { events, getUpcoming } = useCalendar();
   const { tasks: timerTasks } = useTimer();
   const [idx, setIdx] = useState(0);
   const ivRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -70,7 +70,7 @@ function UpcomingTicker({
     SUGGESTIONS.forEach(s => result.push({ icon: s.icon, label: s.text }));
 
     return result;
-  }, [getUpcoming, timerTasks, monthlyExamRate]);
+  }, [events, getUpcoming, timerTasks, monthlyExamRate]);
 
   /* Advance the ticker every 3 s */
   useEffect(() => {
@@ -100,7 +100,7 @@ function UpcomingTicker({
       </div>
 
       {/* Scrolling ticker */}
-      <div className="flex-1 overflow-hidden relative px-4">
+      <div className="flex-1 h-full overflow-hidden relative px-4 flex items-center min-w-0">
         {items.length === 0 ? (
           <span className="text-[11px] text-[hsl(40_8%_38%)] italic">All clear — no upcoming activities</span>
         ) : (
@@ -108,18 +108,18 @@ function UpcomingTicker({
             {current && (
               <motion.div
                 key={idx}
-                initial={{ opacity: 0, x: 14 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -14 }}
-                transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
-                className="absolute inset-0 flex items-center gap-2.5"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                className="w-full flex items-center gap-2.5 truncate"
               >
-                <current.icon className="h-3.5 w-3.5 text-[hsl(40_20%_52%)] shrink-0" />
-                <span className="text-[12px] text-[hsl(40_20%_78%)] truncate leading-none">
+                <current.icon className="h-3.5 w-3.5 text-[hsl(40_20%_65%)] shrink-0" />
+                <span className="text-[12px] font-medium text-[hsl(40_20%_85%)] truncate leading-none">
                   {current.label}
                 </span>
                 {current.badge && (
-                  <span className="text-[10px] font-mono text-[hsl(40_8%_44%)] border border-[hsl(220_8%_20%)] rounded-md px-1.5 py-0.5 shrink-0">
+                  <span className="text-[10px] font-mono text-[hsl(40_20%_75%)] bg-[hsl(220_8%_15%)] border border-[hsl(220_8%_22%)] rounded-md px-1.5 py-0.5 shrink-0">
                     {current.badge}
                   </span>
                 )}

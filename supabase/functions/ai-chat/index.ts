@@ -36,8 +36,7 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -50,23 +49,21 @@ serve(async (req) => {
     const user = userData?.user;
     if (!user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     const { conversationId, message, mode = "tutor", sourceId, scope = "general" } = await req.json();
     if (!conversationId || !message) {
       return new Response(JSON.stringify({ error: "Missing conversationId or message" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
-
-    // Save the user message
+    // Save user message
     await supabase.from("chat_messages").insert({
       conversation_id: conversationId,
       user_id: user.id,
@@ -74,7 +71,7 @@ serve(async (req) => {
       content: message,
     });
 
-    // Load full history
+    // Load history
     const { data: history } = await supabase
       .from("chat_messages")
       .select("role, content")
@@ -100,41 +97,39 @@ serve(async (req) => {
     const scopeNote = scope !== "general"
       ? `\n\n[ACTIVE SCOPE: "${scope}" — Restrict your answer to material relevant to this scope. Always cite platform content in the "Material Used" section.]`
       : "";
+
     const systemPrompt = (MODE_PROMPTS[mode] || MODE_PROMPTS.tutor) + sourceContext + scopeNote;
 
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
-    ];
+    // Build conversation turns for Gemini
+    const turns = (history || []).map((m: any) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
 
-    const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+    // Gemini streaming via SSE
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            ...turns,
+            { role: "user", parts: [{ text: message }] },
+          ],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        }),
       },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages,
-        stream: true,
-      }),
-    });
+    );
 
-    if (!aiResp.ok || !aiResp.body) {
-      const errText = await aiResp.text();
-      if (aiResp.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (aiResp.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits in Settings." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw new Error(`AI gateway error: ${errText}`);
+    if (geminiRes.status === 429) {
+      return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!geminiRes.ok || !geminiRes.body) {
+      throw new Error(`Gemini error ${geminiRes.status}: ${await geminiRes.text()}`);
     }
 
     let fullText = "";
@@ -143,7 +138,7 @@ serve(async (req) => {
 
     const stream = new ReadableStream({
       async start(controller) {
-        const reader = aiResp.body!.getReader();
+        const reader = geminiRes.body!.getReader();
         let buffer = "";
         try {
           while (true) {
@@ -156,23 +151,22 @@ serve(async (req) => {
               const trimmed = line.trim();
               if (!trimmed.startsWith("data:")) continue;
               const data = trimmed.slice(5).trim();
-              if (data === "[DONE]") continue;
+              if (!data || data === "[DONE]") continue;
               try {
                 const json = JSON.parse(data);
-                const delta = json.choices?.[0]?.delta?.content;
+                const delta = json.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (delta) {
                   fullText += delta;
                   controller.enqueue(encoder.encode(delta));
                 }
-              } catch (_e) {
-                // ignore parse errors on partial lines
+              } catch {
+                // ignore partial lines
               }
             }
           }
         } catch (e) {
           console.error("Stream error", e);
         } finally {
-          // Persist the final assistant message
           if (fullText) {
             await supabase.from("chat_messages").insert({
               conversation_id: conversationId,
@@ -200,8 +194,7 @@ serve(async (req) => {
   } catch (e) {
     console.error("ai-chat error", e);
     return new Response(JSON.stringify({ error: "An unexpected error occurred." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

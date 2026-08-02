@@ -26,8 +26,8 @@ interface ExamQuestion {
 }
 
 /* ─── constants ─── */
-const FOCUS_OPTIONS  = [15, 25, 30, 45, 60, 90];
-const TASK_OPTIONS   = [1, 2, 3, 5, 8, 10, 15];
+const FOCUS_OPTIONS  = [15, 30, 60];
+const TASK_OPTIONS   = [1, 2, 5, 10];
 const EXAM_PER_Q     = [0.5, 1, 1.5, 2, 3, 5]; // minutes per question
 
 /* ─── tiny local timer hook (independent of global provider) ─── */

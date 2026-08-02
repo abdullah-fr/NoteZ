@@ -155,7 +155,37 @@ export default function FolderView() {
   const [activeNote,     setActiveNote]     = useState<Note | null>(null);
 
   /* ── data ── */
-  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [folders, setFoldersRaw] = useState<FolderItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('notez_folders');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      // Revive Date objects
+      return parsed.map((f: any) => ({
+        ...f,
+        createdAt: new Date(f.createdAt),
+        categories: f.categories.map((c: any) => ({
+          ...c,
+          notes: c.notes.map((n: any) => ({
+            ...n,
+            createdAt: new Date(n.createdAt),
+            updatedAt: new Date(n.updatedAt),
+          })),
+        })),
+      }));
+    } catch {
+      return [];
+    }
+  });
+
+  // Persist to localStorage on every change
+  function setFolders(updater: FolderItem[] | ((prev: FolderItem[]) => FolderItem[])) {
+    setFoldersRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem('notez_folders', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
 
   /* ── folder form ── */
   const [showFolderForm,  setShowFolderForm]  = useState(false);

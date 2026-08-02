@@ -23,19 +23,21 @@ import {
   Folder,
   MessageSquare,
   Search,
-  PanelLeftClose,
-  PanelLeft,
+  ChevronLeft,
+  ChevronRight,
+  Settings,
 } from "lucide-react";
 
 import CalendarView from "@/components/dashboard/CalendarView";
 import FocusTimerView from "@/components/dashboard/FocusTimerView";
-import FloatingTimer from "@/components/dashboard/FloatingTimer";
+import FloatingTimer from "@/components/dashboard/widgets/FloatingTimer";
 import ExamView from "@/components/dashboard/ExamView";
 import ProgressDashboardView from "@/components/dashboard/ProgressDashboardView";
 import FolderView from "@/components/dashboard/FolderView";
 import ChatView from "@/components/dashboard/ChatView";
+import AccountView from "@/components/dashboard/AccountView";
 
-type View = "dashboard" | "calendar" | "timer" | "exam" | "folder" | "chat";
+type View = "dashboard" | "calendar" | "timer" | "exam" | "folder" | "chat" | "account";
 type NavItem = {
   id: View;
   label: string;
@@ -111,6 +113,8 @@ export default function Dashboard() {
         return <CalendarView />;
       case "timer":
         return <FocusTimerView />;
+      case "account":
+        return <AccountView />;
     }
   };
 
@@ -211,30 +215,29 @@ export default function Dashboard() {
 
       {/* Left sidebar */}
       <aside
-        className={`hidden md:flex sticky top-0 h-screen flex-col border-r border-border bg-background/85 backdrop-blur-md transition-[width] duration-200 ${
+        className={`group relative hidden md:flex sticky top-0 h-screen flex-col border-r border-border bg-background/85 backdrop-blur-md transition-[width] duration-200 ${
           sidebarCollapsed ? "w-14" : "w-60"
         }`}
       >
         <div
-          className={`h-11 flex items-center border-b border-border ${sidebarCollapsed ? "justify-center px-0" : "justify-between px-3"}`}
+          className={`h-11 flex items-center border-b border-border ${sidebarCollapsed ? "justify-center px-0" : "px-3"}`}
         >
-          {!sidebarCollapsed && <Brand />}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setSidebarCollapsed((c) => !c)}
-            aria-label={
-              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
-            }
-          >
-            {sidebarCollapsed ? (
-              <PanelLeft className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
-          </Button>
+          {sidebarCollapsed ? (
+            <div className="w-7 h-7 rounded-sm border border-border flex items-center justify-center bg-secondary">
+              <span className="font-serif text-[15px] leading-none text-foreground">N</span>
+            </div>
+          ) : <Brand />}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          className="absolute -right-3 top-1/2 z-20 flex h-10 w-6 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-border bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
 
         <div className="p-2 border-b border-border">
           {sidebarCollapsed ? (
@@ -269,20 +272,48 @@ export default function Dashboard() {
         <div
           className={`border-t border-border p-2 ${sidebarCollapsed ? "flex justify-center" : "flex items-center gap-2"}`}
         >
-          {!sidebarCollapsed && (
-            <span className="text-[11px] text-muted-foreground font-mono truncate flex-1">
-              {user?.email}
-            </span>
+          {!sidebarCollapsed ? (
+            <button
+              onClick={() => setActiveView("account")}
+              className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-sm transition-colors min-w-0 ${
+                activeView === "account"
+                  ? "bg-secondary text-foreground"
+                  : "hover:bg-secondary/60 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <div className="w-5 h-5 rounded-sm bg-secondary border border-border flex items-center justify-center shrink-0">
+                <span className="text-[9px] font-bold font-mono text-foreground">
+                  {(user?.user_metadata?.full_name || user?.email || "?")
+                    .split(/[\s@]/).filter(Boolean).map((s: string) => s[0].toUpperCase()).slice(0, 2).join("")}
+                </span>
+              </div>
+              <span className="text-[11px] font-mono truncate flex-1 text-left">
+                {user?.user_metadata?.full_name || user?.email}
+              </span>
+              <Settings className="h-3.5 w-3.5 shrink-0 opacity-50" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveView("account")}
+              title="Account settings"
+              className={`h-8 w-8 rounded-sm flex items-center justify-center transition-colors ${
+                activeView === "account" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+              }`}
+            >
+              <Settings className="h-4 w-4" />
+            </button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={signOut}
-            aria-label="Sign out"
-            className="h-8 w-8"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
+          {!sidebarCollapsed && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={signOut}
+              aria-label="Sign out"
+              className="h-8 w-8 shrink-0"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </aside>
 
@@ -384,6 +415,14 @@ export default function Dashboard() {
           ))}
           <CommandSeparator />
           <CommandGroup heading="Account">
+            <CommandItem
+              onSelect={() => {
+                setActiveView("account");
+                setPaletteOpen(false);
+              }}
+            >
+              <Settings className="h-4 w-4 mr-2" /> Account Settings
+            </CommandItem>
             <CommandItem
               onSelect={() => {
                 signOut();

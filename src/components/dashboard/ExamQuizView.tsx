@@ -1,23 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
-import { generateExam, saveExamResult, type ExamQuestion } from '@/services';
+import { generateExam as requestGenerateExam, saveExamResult, type ExamQuestion } from '@/services';
 import { toast } from 'sonner';
 import {
   GraduationCap, Loader2, Check, X, Lightbulb, ArrowRight,
-  RotateCcw, Trophy, Zap, Target, ChevronDown, ChevronUp
+  RotateCcw, Trophy, Zap, Target, ChevronDown, ChevronUp, Brain, Sparkles,
 } from 'lucide-react';
 
 const difficulties = [
-  { id: 'easy', label: 'Easy', color: 'text-green-400', icon: '🟢' },
-  { id: 'medium', label: 'Medium', color: 'text-yellow-400', icon: '🟡' },
-  { id: 'hard', label: 'Hard', color: 'text-red-400', icon: '🔴' },
+  { id: 'easy', label: 'Easy', tag: 'Fundamental concepts' },
+  { id: 'medium', label: 'Medium', tag: 'Standard practice' },
+  { id: 'hard', label: 'Hard', tag: 'Advanced challenge' },
 ];
 
 const questionCounts = [5, 10, 15];
 
-export default function ExamView() {
+const LOADING_STEPS = [
+  'Analyzing subject and target difficulty…',
+  'Crafting contextual questions…',
+  'Generating distractor options & explanations…',
+  'Finalizing AI exam suite…',
+];
+
+export default function ExamQuizView() {
   const { user } = useAuth();
   const [subject, setSubject] = useState('');
   const [difficulty, setDifficulty] = useState('medium');
@@ -29,17 +36,28 @@ export default function ExamView() {
   const [score, setScore] = useState(0);
   const [examCompleted, setExamCompleted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [answers, setAnswers] = useState<{ selected: number; correct: boolean }[]>([]);
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<number | null>(null);
 
-  const generateExam = async () => {
+  // Multi-step loading message rotator
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingStep(0);
+    const interval = setInterval(() => {
+      setLoadingStep(prev => (prev + 1) % LOADING_STEPS.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  const handleGenerateExam = async () => {
     if (!subject.trim()) {
       toast.error('Please enter a subject');
       return;
     }
     setLoading(true);
     try {
-      const data = await generateExam({ subject, difficulty, questionCount });
+      const data = await requestGenerateExam({ subject, difficulty, questionCount });
 
       setQuestions(data.questions);
       setCurrentIndex(0);
@@ -72,7 +90,6 @@ export default function ExamView() {
       setShowFeedback(false);
     } else {
       setExamCompleted(true);
-      // Save result
       if (user) {
         saveExamResult(user.id, {
           subject,
@@ -98,174 +115,239 @@ export default function ExamView() {
 
   const getGrade = () => {
     const pct = (score / questions.length) * 100;
-    if (pct >= 90) return { grade: 'A+', color: 'text-green-400', msg: 'Outstanding! You crushed it! 🏆' };
-    if (pct >= 80) return { grade: 'A', color: 'text-green-400', msg: 'Excellent performance! 🌟' };
-    if (pct >= 70) return { grade: 'B', color: 'text-primary', msg: 'Good job, keep pushing! 💪' };
-    if (pct >= 60) return { grade: 'C', color: 'text-yellow-400', msg: 'Not bad, but you can do better! 📚' };
-    if (pct >= 50) return { grade: 'D', color: 'text-orange-400', msg: 'Needs work. Review the material. 🔄' };
-    return { grade: 'F', color: 'text-destructive', msg: 'Time to hit the books! Don\'t give up! 💡' };
+    if (pct >= 90) return { grade: 'A+', msg: 'Outstanding performance! You crushed it.' };
+    if (pct >= 80) return { grade: 'A', msg: 'Great work! Strong grasp of material.' };
+    if (pct >= 70) return { grade: 'B', msg: 'Good job, solid foundation.' };
+    if (pct >= 60) return { grade: 'C', msg: 'Decent result, but review weak spots.' };
+    if (pct >= 50) return { grade: 'D', msg: 'Needs work. Re-read course notes.' };
+    return { grade: 'F', msg: 'Time to study up! Don\'t give up.' };
   };
 
   // Setup screen
   if (questions.length === 0 && !loading) {
     return (
       <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-          <GraduationCap className="h-7 w-7 text-primary" />
-          AI Exam Mode
-        </h2>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-8">
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-3 text-muted-foreground">Subject / Topic</label>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold flex items-center gap-2.5">
+            <GraduationCap className="h-5.5 w-5.5 text-[hsl(40_20%_80%)]" />
+            AI Exam Mode
+          </h2>
+          <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-[hsl(40_8%_42%)]">
+            Predictive test generator
+          </span>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] p-6 space-y-6"
+        >
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-[hsl(40_8%_48%)] mb-2">
+              Subject / Topic
+            </label>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g., JavaScript Closures, Organic Chemistry, Linear Algebra..."
-              className="w-full h-12 text-lg px-4 rounded-xl bg-muted/30 border border-border/50 outline-none focus:border-primary transition-colors"
+              onKeyDown={(e) => e.key === 'Enter' && handleGenerateExam()}
+              placeholder="e.g., JavaScript Closures, Organic Chemistry, Linear Algebra…"
+              className="w-full h-11 px-3.5 rounded-xl bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_36%)] transition-colors"
             />
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-3 text-muted-foreground">Difficulty</label>
-            <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-[hsl(40_8%_48%)] mb-2">
+              Difficulty
+            </label>
+            <div className="grid grid-cols-3 gap-2.5">
               {difficulties.map(d => (
-                <motion.button
+                <button
                   key={d.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  type="button"
                   onClick={() => setDifficulty(d.id)}
-                  className={`p-4 rounded-xl border-2 transition-all text-center ${
+                  className={`p-3.5 rounded-xl border text-left transition-all ${
                     difficulty === d.id
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border/30 bg-muted/20 hover:border-border'
+                      ? 'border-[hsl(220_8%_36%)] bg-[hsl(220_8%_16%)] text-[hsl(40_20%_88%)]'
+                      : 'border-[hsl(220_8%_18%)] bg-[hsl(220_8%_12%)] text-[hsl(40_8%_52%)] hover:bg-[hsl(220_8%_14%)] hover:text-[hsl(40_20%_72%)]'
                   }`}
                 >
-                  <span className="text-2xl">{d.icon}</span>
-                  <p className={`font-medium mt-1 ${d.color}`}>{d.label}</p>
-                </motion.button>
+                  <p className="font-semibold text-[13px] capitalize">{d.label}</p>
+                  <p className="text-[10px] text-[hsl(40_8%_40%)] mt-0.5">{d.tag}</p>
+                </button>
               ))}
             </div>
           </div>
 
-          <div className="mb-8">
-            <label className="block text-sm font-medium mb-3 text-muted-foreground">Number of Questions</label>
-            <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-[hsl(40_8%_48%)] mb-2">
+              Number of Questions
+            </label>
+            <div className="grid grid-cols-3 gap-2.5">
               {questionCounts.map(count => (
-                <motion.button
+                <button
                   key={count}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  type="button"
                   onClick={() => setQuestionCount(count)}
-                  className={`p-4 rounded-xl border-2 transition-all ${
+                  className={`p-3 rounded-xl border text-center transition-all ${
                     questionCount === count
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border/30 bg-muted/20 hover:border-border'
+                      ? 'border-[hsl(220_8%_36%)] bg-[hsl(220_8%_16%)] text-[hsl(40_20%_88%)]'
+                      : 'border-[hsl(220_8%_18%)] bg-[hsl(220_8%_12%)] text-[hsl(40_8%_52%)] hover:bg-[hsl(220_8%_14%)] hover:text-[hsl(40_20%_72%)]'
                   }`}
                 >
-                  <span className="text-2xl font-bold">{count}</span>
-                  <p className="text-xs text-muted-foreground">Questions</p>
-                </motion.button>
+                  <span className="text-xl font-bold font-serif">{count}</span>
+                  <p className="text-[10px] text-[hsl(40_8%_42%)]">Questions</p>
+                </button>
               ))}
             </div>
           </div>
 
-          <Button onClick={generateExam} disabled={!subject.trim()} className="w-full h-14 text-lg" size="lg">
-            <Zap className="h-5 w-5 mr-2" /> Generate AI Exam
-          </Button>
+          <button
+            onClick={handleGenerateExam}
+            disabled={!subject.trim()}
+            className="w-full h-11 rounded-xl bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[13px] font-semibold flex items-center justify-center gap-2 hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Zap className="h-4 w-4" /> Generate AI Exam
+          </button>
         </motion.div>
       </div>
     );
   }
 
-  // Loading
+  // Loading screen with multi-step animation
   if (loading) {
     return (
       <div className="max-w-2xl mx-auto">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass rounded-2xl p-16 text-center">
-          <Loader2 className="h-16 w-16 animate-spin mx-auto mb-4 text-primary" />
-          <h3 className="text-xl font-semibold mb-2">Generating Your Exam...</h3>
-          <p className="text-muted-foreground">AI is crafting {questionCount} {difficulty} questions about {subject}</p>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="rounded-2xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] p-12 text-center"
+        >
+          <div className="relative w-16 h-16 mx-auto mb-6 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-2 border-[hsl(220_8%_20%)] border-t-[hsl(40_20%_75%)] animate-spin" />
+            <Brain className="h-7 w-7 text-[hsl(40_20%_75%)] animate-pulse" />
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={loadingStep}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.3 }}
+            >
+              <h3 className="text-base font-semibold text-[hsl(40_20%_85%)] mb-1">
+                {LOADING_STEPS[loadingStep]}
+              </h3>
+              <p className="text-[11px] text-[hsl(40_8%_45%)] font-mono">
+                {questionCount} {difficulty} questions · {subject}
+              </p>
+            </motion.div>
+          </AnimatePresence>
+
+          <div className="w-48 h-1 bg-[hsl(220_8%_16%)] rounded-full mx-auto mt-6 overflow-hidden">
+            <motion.div
+              className="h-full bg-[hsl(40_20%_65%)]"
+              animate={{ width: `${((loadingStep + 1) / LOADING_STEPS.length) * 100}%` }}
+              transition={{ duration: 0.5 }}
+            />
+          </div>
         </motion.div>
       </div>
     );
   }
 
-  // Results
+  // Results screen
   if (examCompleted) {
-    const { grade, color, msg } = getGrade();
+    const { grade, msg } = getGrade();
     const pct = Math.round((score / questions.length) * 100);
 
     return (
       <div className="max-w-2xl mx-auto">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass rounded-2xl p-8">
-          <div className="text-center mb-8">
-            <Trophy className="h-16 w-16 mx-auto mb-4 text-primary" />
-            <h2 className="text-3xl font-bold mb-2">Exam Complete!</h2>
-            <p className="text-muted-foreground">{subject} • {difficulty}</p>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="rounded-2xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] p-6 md:p-8"
+        >
+          <div className="text-center mb-6">
+            <Trophy className="h-12 w-12 mx-auto mb-3 text-[hsl(40_20%_70%)]" />
+            <h2 className="text-2xl font-bold font-serif text-[hsl(40_20%_88%)]">Exam Complete</h2>
+            <p className="text-[11px] font-mono text-[hsl(40_8%_46%)] capitalize mt-1">
+              {subject} · {difficulty}
+            </p>
           </div>
 
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="text-center mb-8">
-            <span className={`text-8xl font-bold ${color}`}>{grade}</span>
-            <p className="text-xl mt-2">{msg}</p>
+          <motion.div
+            initial={{ scale: 0.8 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.15, type: 'spring' }}
+            className="text-center mb-6"
+          >
+            <span className="text-7xl font-serif font-bold text-[hsl(40_20%_88%)]">{grade}</span>
+            <p className="text-[13px] text-[hsl(40_8%_60%)] mt-2">{msg}</p>
           </motion.div>
 
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-muted/30 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-green-400">{score}</p>
-              <p className="text-sm text-muted-foreground">Correct</p>
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="rounded-xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_13%)] p-3 text-center">
+              <p className="text-2xl font-bold font-mono text-[hsl(40_20%_85%)]">{score}</p>
+              <p className="text-[10px] font-mono uppercase text-[hsl(40_8%_42%)] mt-0.5">Correct</p>
             </div>
-            <div className="bg-muted/30 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-destructive">{questions.length - score}</p>
-              <p className="text-sm text-muted-foreground">Wrong</p>
+            <div className="rounded-xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_13%)] p-3 text-center">
+              <p className="text-2xl font-bold font-mono text-[hsl(40_8%_55%)]">{questions.length - score}</p>
+              <p className="text-[10px] font-mono uppercase text-[hsl(40_8%_42%)] mt-0.5">Incorrect</p>
             </div>
-            <div className="bg-muted/30 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-primary">{pct}%</p>
-              <p className="text-sm text-muted-foreground">Score</p>
+            <div className="rounded-xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_13%)] p-3 text-center">
+              <p className="text-2xl font-bold font-mono text-[hsl(40_20%_85%)]">{pct}%</p>
+              <p className="text-[10px] font-mono uppercase text-[hsl(40_8%_42%)] mt-0.5">Score</p>
             </div>
           </div>
 
-          {/* Detailed review */}
-          <div className="space-y-3 mb-6">
-            <h3 className="font-semibold text-lg">Question Review</h3>
+          {/* Detailed review accordion */}
+          <div className="space-y-2 mb-6">
+            <h3 className="text-[12px] font-mono uppercase tracking-wider text-[hsl(40_8%_48%)]">Question Breakdown</h3>
             {questions.map((q, i) => {
               const ans = answers[i];
+              const isExpanded = showDetailedFeedback === i;
               return (
-                <div key={i} className="rounded-xl border border-border/30 overflow-hidden">
+                <div key={i} className="rounded-xl border border-[hsl(220_8%_18%)] overflow-hidden bg-[hsl(220_8%_12%)]">
                   <button
-                    onClick={() => setShowDetailedFeedback(showDetailedFeedback === i ? null : i)}
-                    className={`w-full p-4 flex items-center justify-between text-left ${
-                      ans?.correct ? 'bg-green-500/10' : 'bg-destructive/10'
-                    }`}
+                    onClick={() => setShowDetailedFeedback(isExpanded ? null : i)}
+                    className="w-full p-3.5 flex items-center justify-between text-left hover:bg-[hsl(220_8%_15%)] transition-colors"
                   >
-                    <div className="flex items-center gap-3">
-                      {ans?.correct ? <Check className="h-5 w-5 text-green-400" /> : <X className="h-5 w-5 text-destructive" />}
-                      <span className="font-medium text-sm">Q{i + 1}: {q.question.substring(0, 60)}...</span>
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                      {ans?.correct ? (
+                        <Check className="h-4 w-4 text-[hsl(40_20%_75%)] shrink-0" />
+                      ) : (
+                        <X className="h-4 w-4 text-[hsl(40_8%_45%)] shrink-0" />
+                      )}
+                      <span className="text-[12px] text-[hsl(40_20%_80%)] truncate">
+                        Q{i + 1}: {q.question}
+                      </span>
                     </div>
-                    {showDetailedFeedback === i ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-[hsl(40_8%_45%)] shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-[hsl(40_8%_45%)] shrink-0" />}
                   </button>
                   <AnimatePresence>
-                    {showDetailedFeedback === i && (
+                    {isExpanded && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
+                        className="overflow-hidden border-t border-[hsl(220_8%_16%)] bg-[hsl(220_8%_10%)]"
                       >
-                        <div className="p-4 space-y-3 border-t border-border/30">
-                          <p className="text-sm"><strong>Question:</strong> {q.question}</p>
-                          <div className="flex items-start gap-2 text-sm">
-                            <Check className="h-4 w-4 text-green-400 mt-0.5 flex-shrink-0" />
-                            <p><strong>Correct:</strong> {q.explanation}</p>
+                        <div className="p-3.5 space-y-2 text-[12px] text-[hsl(40_20%_78%)]">
+                          <p><strong>Question:</strong> {q.question}</p>
+                          <div className="flex items-start gap-1.5 text-[hsl(40_20%_75%)]">
+                            <Check className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            <p><strong>Explanation:</strong> {q.explanation}</p>
                           </div>
                           {!ans?.correct && (
-                            <div className="flex items-start gap-2 text-sm">
-                              <X className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
-                              <p><strong>Why wrong:</strong> {q.wrongExplanations?.[String(ans?.selected)] || 'Review the correct answer above.'}</p>
+                            <div className="flex items-start gap-1.5 text-[hsl(40_8%_52%)]">
+                              <X className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                              <p><strong>Selected answer notes:</strong> {q.wrongExplanations?.[String(ans?.selected)] || 'Review the correct answer.'}</p>
                             </div>
                           )}
-                          <div className="flex items-start gap-2 text-sm">
-                            <Lightbulb className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                            <p><strong>Better approach:</strong> {q.betterApproach}</p>
+                          <div className="flex items-start gap-1.5 text-[hsl(40_20%_65%)] pt-1">
+                            <Lightbulb className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            <p><strong>Recommended approach:</strong> {q.betterApproach}</p>
                           </div>
                         </div>
                       </motion.div>
@@ -276,128 +358,132 @@ export default function ExamView() {
             })}
           </div>
 
-          <Button onClick={resetExam} className="w-full" size="lg">
-            <RotateCcw className="h-4 w-4 mr-2" /> Take Another Exam
-          </Button>
+          <button
+            onClick={resetExam}
+            className="w-full h-11 rounded-xl bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[13px] font-semibold flex items-center justify-center gap-2 hover:bg-white transition-colors"
+          >
+            <RotateCcw className="h-4 w-4" /> Take Another Exam
+          </button>
         </motion.div>
       </div>
     );
   }
 
-  // Active exam
+  // Active question screen
   const q = questions[currentIndex];
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold flex items-center gap-3">
-          <GraduationCap className="h-6 w-6 text-primary" />
-          {subject} Exam
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold text-[hsl(40_20%_85%)] flex items-center gap-2 truncate">
+          <GraduationCap className="h-4.5 w-4.5 text-[hsl(40_20%_70%)] shrink-0" />
+          {subject}
         </h2>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <Target className="h-4 w-4" />
-          <span>{difficulty}</span>
-          <span>•</span>
+        <div className="flex items-center gap-2 text-[11px] font-mono text-[hsl(40_8%_46%)] shrink-0">
+          <Target className="h-3.5 w-3.5" />
+          <span className="capitalize">{difficulty}</span>
+          <span>·</span>
           <span>Q{currentIndex + 1}/{questions.length}</span>
         </div>
       </div>
 
-      {/* Progress */}
-      <div className="w-full h-2 bg-muted/30 rounded-full mb-6 overflow-hidden">
+      {/* Progress bar */}
+      <div className="w-full h-1 bg-[hsl(220_8%_16%)] rounded-full mb-5 overflow-hidden">
         <motion.div
-          className="h-full bg-gradient-to-r from-primary to-purple-400"
+          className="h-full bg-[hsl(40_20%_65%)]"
           animate={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+          transition={{ duration: 0.3 }}
         />
       </div>
 
       <AnimatePresence mode="wait">
         <motion.div
           key={currentIndex}
-          initial={{ opacity: 0, x: 20 }}
+          initial={{ opacity: 0, x: 16 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          className="glass rounded-2xl p-8"
+          exit={{ opacity: 0, x: -16 }}
+          className="rounded-2xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] p-6 md:p-7"
         >
-          <p className="text-lg font-medium mb-6">{q.question}</p>
+          <p className="text-[15px] font-medium text-[hsl(40_20%_88%)] mb-6 leading-relaxed">
+            {q.question}
+          </p>
 
-          <div className="space-y-3 mb-6">
-            {q.options.map((opt, i) => (
-              <motion.button
-                key={i}
-                whileHover={!showFeedback ? { scale: 1.01 } : {}}
-                whileTap={!showFeedback ? { scale: 0.99 } : {}}
-                onClick={() => handleAnswer(i)}
-                disabled={showFeedback}
-                className={`w-full p-4 rounded-xl text-left border-2 transition-all ${
-                  showFeedback
-                    ? i === q.correctIndex
-                      ? 'bg-green-500/20 border-green-500'
-                      : i === selectedAnswer
-                        ? 'bg-destructive/20 border-destructive'
-                        : 'bg-muted/30 border-transparent'
-                    : 'bg-muted/30 border-transparent hover:bg-muted/50 hover:border-primary/50'
-                }`}
-              >
-                <span className="flex items-center gap-3">
-                  <span className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center text-sm font-medium">
-                    {String.fromCharCode(65 + i)}
+          <div className="space-y-2.5 mb-6">
+            {q.options.map((opt, i) => {
+              const isSelected = selectedAnswer === i;
+              const isCorrect = i === q.correctIndex;
+              const isWrong = isSelected && !isCorrect;
+
+              return (
+                <motion.button
+                  key={i}
+                  whileHover={!showFeedback ? { scale: 1.005 } : {}}
+                  whileTap={!showFeedback ? { scale: 0.99 } : {}}
+                  animate={showFeedback && isWrong ? { x: [0, -6, 6, -4, 4, 0] } : {}}
+                  onClick={() => handleAnswer(i)}
+                  disabled={showFeedback}
+                  className={`w-full p-3.5 rounded-xl text-left border text-[13px] transition-all flex items-center justify-between ${
+                    showFeedback
+                      ? isCorrect
+                        ? 'border-[hsl(220_8%_40%)] bg-[hsl(220_8%_18%)] text-[hsl(40_20%_90%)]'
+                        : isWrong
+                          ? 'border-red-400/30 bg-red-400/10 text-red-300'
+                          : 'border-[hsl(220_8%_15%)] bg-[hsl(220_8%_11%)] text-[hsl(40_8%_40%)]'
+                      : 'border-[hsl(220_8%_18%)] bg-[hsl(220_8%_12%)] text-[hsl(40_20%_80%)] hover:bg-[hsl(220_8%_16%)] hover:border-[hsl(220_8%_28%)]'
+                  }`}
+                >
+                  <span className="flex items-center gap-3 min-w-0 pr-2">
+                    <span className="w-6 h-6 rounded-md bg-[hsl(220_8%_16%)] border border-[hsl(220_8%_22%)] flex items-center justify-center text-[10px] font-mono text-[hsl(40_8%_55%)] shrink-0">
+                      {String.fromCharCode(65 + i)}
+                    </span>
+                    <span className="truncate">{opt}</span>
                   </span>
-                  {opt}
-                  {showFeedback && i === q.correctIndex && <Check className="h-5 w-5 text-green-400 ml-auto" />}
-                  {showFeedback && i === selectedAnswer && i !== q.correctIndex && <X className="h-5 w-5 text-destructive ml-auto" />}
-                </span>
-              </motion.button>
-            ))}
+                  {showFeedback && isCorrect && <Check className="h-4 w-4 text-[hsl(40_20%_85%)] shrink-0" />}
+                  {showFeedback && isWrong && <X className="h-4 w-4 text-red-400 shrink-0" />}
+                </motion.button>
+              );
+            })}
           </div>
 
           {/* Instant feedback */}
           {showFeedback && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
-              {selectedAnswer === q.correctIndex ? (
-                <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/30">
-                  <div className="flex items-start gap-2">
-                    <Check className="h-5 w-5 text-green-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="font-medium text-green-400 mb-1">✅ Correct!</p>
-                      <p className="text-sm text-muted-foreground">{q.explanation}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-destructive/10 rounded-xl p-4 border border-destructive/30">
-                  <div className="flex items-start gap-2">
-                    <X className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="font-medium text-destructive mb-1">❌ Incorrect</p>
-                      <p className="text-sm text-muted-foreground">{q.wrongExplanations?.[String(selectedAnswer)] || q.explanation}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-primary/10 rounded-xl p-4 border border-primary/30">
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 pt-2">
+              <div className="rounded-xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_13%)] p-4 text-[12px] text-[hsl(40_20%_80%)]">
                 <div className="flex items-start gap-2">
-                  <Lightbulb className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                  {selectedAnswer === q.correctIndex ? (
+                    <Check className="h-4 w-4 text-[hsl(40_20%_80%)] mt-0.5 shrink-0" />
+                  ) : (
+                    <X className="h-4 w-4 text-[hsl(40_8%_50%)] mt-0.5 shrink-0" />
+                  )}
                   <div>
-                    <p className="font-medium text-primary mb-1">💡 Better Approach</p>
-                    <p className="text-sm text-muted-foreground">{q.betterApproach}</p>
+                    <p className="font-semibold mb-0.5">
+                      {selectedAnswer === q.correctIndex ? 'Correct' : 'Incorrect'}
+                    </p>
+                    <p className="text-[hsl(40_8%_55%)] leading-relaxed">
+                      {selectedAnswer === q.correctIndex
+                        ? q.explanation
+                        : q.wrongExplanations?.[String(selectedAnswer)] || q.explanation}
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <Button onClick={nextQuestion} className="w-full" size="lg">
+              <button
+                onClick={nextQuestion}
+                className="w-full h-11 rounded-xl bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[13px] font-semibold flex items-center justify-center gap-2 hover:bg-white transition-colors"
+              >
                 {currentIndex < questions.length - 1 ? (
-                  <>Next Question <ArrowRight className="h-4 w-4 ml-2" /></>
+                  <>Next Question <ArrowRight className="h-4 w-4" /></>
                 ) : (
-                  'See Results'
+                  'View Results'
                 )}
-              </Button>
+              </button>
             </motion.div>
           )}
         </motion.div>
       </AnimatePresence>
 
-      <div className="mt-4 text-center text-sm text-muted-foreground">
+      <div className="mt-3 text-center text-[10px] font-mono text-[hsl(40_8%_42%)]">
         Score: {score}/{currentIndex + (showFeedback ? 1 : 0)}
       </div>
     </div>

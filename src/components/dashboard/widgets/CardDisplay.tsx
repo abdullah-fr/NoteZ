@@ -14,14 +14,12 @@ export interface CardDisplayItem {
   actionLabel?: string;
   isDisabled?: boolean;
   onActionClick?: (id: string) => void;
-  /** Optional trend indicator: positive shows up, negative shows down */
   trend?: 'up' | 'down' | 'flat';
 }
 
 export interface CardDisplayProps {
   items: CardDisplayItem[];
   className?: string;
-  /** Grid columns at lg breakpoint. Default 4. */
   columns?: 2 | 3 | 4;
 }
 
@@ -31,13 +29,6 @@ const colsClass = {
   4: 'sm:grid-cols-2 lg:grid-cols-4',
 };
 
-/**
- * Monochrome data card grid with advanced hover effects:
- *  - subtle lift + shadow on hover
- *  - moving shimmer sheen
- *  - corner accent line that grows on hover
- *  - icon scale-in micro-interaction
- */
 const CardDisplay: React.FC<CardDisplayProps> = ({ items, className, columns = 4 }) => {
   if (!items || items.length === 0) {
     return (
@@ -59,17 +50,14 @@ const CardDisplay: React.FC<CardDisplayProps> = ({ items, className, columns = 4
               'hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-[0_10px_40px_-12px_hsl(0_0%_0%/0.6)]',
             )}
           >
-            {/* Top accent line that grows on hover */}
             <span
               aria-hidden
               className="absolute left-0 top-0 h-px w-8 bg-foreground/40 transition-all duration-500 group-hover:w-full group-hover:bg-foreground/60"
             />
-            {/* Diagonal shimmer sheen */}
             <span
               aria-hidden
               className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-foreground/[0.04] to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
             />
-            {/* Soft radial backdrop on hover */}
             <span
               aria-hidden
               className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-foreground/[0.03] opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100"

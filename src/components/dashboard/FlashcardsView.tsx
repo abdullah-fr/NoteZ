@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Shuffle, ChevronLeft, ChevronRight, Layers, Plus, Trash2 } from 'lucide-react';
+import { Shuffle, ChevronLeft, ChevronRight, Layers, Plus, Trash2, RotateCw } from 'lucide-react';
 
 interface Flashcard {
   id: string;
@@ -72,14 +72,17 @@ export default function FlashcardsView() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold flex items-center gap-3">
-          <Layers className="h-7 w-7 text-primary" />
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-bold flex items-center gap-2.5">
+          <Layers className="h-5.5 w-5.5 text-[hsl(40_20%_80%)]" />
           Flashcards
         </h2>
-        <Button variant="outline" size="sm" onClick={() => setShowAddForm(!showAddForm)}>
-          <Plus className="h-4 w-4 mr-2" /> Add Card
-        </Button>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[hsl(220_8%_22%)] bg-[hsl(220_8%_13%)] text-[12px] font-medium text-[hsl(40_20%_80%)] hover:bg-[hsl(220_8%_17%)] transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Card
+        </button>
       </div>
 
       {/* Add new card form */}
@@ -89,28 +92,35 @@ export default function FlashcardsView() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mb-6 overflow-hidden"
+            className="mb-5 overflow-hidden"
           >
-            <div className="glass rounded-xl p-4 space-y-3">
-              <Input
+            <div className="rounded-2xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_10%)] p-4 space-y-3">
+              <input
                 value={newQuestion}
                 onChange={(e) => setNewQuestion(e.target.value)}
-                placeholder="Enter question..."
-                className="bg-muted/30"
+                placeholder="Enter question…"
+                className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
               />
-              <Input
+              <input
                 value={newAnswer}
                 onChange={(e) => setNewAnswer(e.target.value)}
-                placeholder="Enter answer..."
-                className="bg-muted/30"
+                placeholder="Enter answer…"
+                className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
               />
               <div className="flex gap-2">
-                <Button onClick={handleAddCard} size="sm" className="flex-1">
-                  Add Flashcard
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>
+                <button
+                  onClick={handleAddCard}
+                  disabled={!newQuestion.trim() || !newAnswer.trim()}
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[12px] font-semibold hover:bg-white transition-colors disabled:opacity-40"
+                >
+                  Save Flashcard
+                </button>
+                <button
+                  onClick={() => setShowAddForm(false)}
+                  className="px-3 py-1.5 rounded-lg border border-[hsl(220_8%_22%)] text-[12px] text-[hsl(40_8%_52%)] hover:bg-[hsl(220_8%_14%)] transition-colors"
+                >
                   Cancel
-                </Button>
+                </button>
               </div>
             </div>
           </motion.div>
@@ -118,11 +128,11 @@ export default function FlashcardsView() {
       </AnimatePresence>
 
       {/* Card counter */}
-      <div className="text-center text-sm text-muted-foreground mb-4">
+      <div className="text-center text-[11px] font-mono text-[hsl(40_8%_44%)] mb-3">
         Card {currentIndex + 1} of {flashcards.length}
       </div>
 
-      {/* Flashcard */}
+      {/* Flashcard container */}
       <div className="perspective-1000 mb-6">
         <motion.div
           onClick={() => setFlipped(!flipped)}
@@ -135,28 +145,26 @@ export default function FlashcardsView() {
               initial={{ rotateY: flipped ? -90 : 90, opacity: 0 }}
               animate={{ rotateY: 0, opacity: 1 }}
               exit={{ rotateY: flipped ? 90 : -90, opacity: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="min-h-[320px] rounded-2xl p-8 flex flex-col items-center justify-center relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, hsl(var(--background)) 0%, hsl(270 50% 15%) 50%, hsl(var(--background)) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(139, 92, 246, 0.25), inset 0 0 60px rgba(139, 92, 246, 0.1)',
-                border: '1px solid hsl(var(--primary) / 0.3)',
-              }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="min-h-[300px] rounded-2xl p-8 flex flex-col items-center justify-center relative overflow-hidden border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] shadow-2xl"
             >
-              {/* Decorative elements */}
+              {/* Subtle top accent line */}
+              <span className="absolute left-0 top-0 h-px w-16 bg-[hsl(40_20%_55%)]" />
+
+              {/* Background ambient glow */}
               <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-                <div className="absolute -top-20 -right-20 w-40 h-40 bg-primary/10 rounded-full blur-3xl" />
-                <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-notez-purple/10 rounded-full blur-3xl" />
+                <div className="absolute -top-24 -right-24 w-48 h-48 bg-foreground/[0.03] rounded-full blur-3xl" />
+                <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-foreground/[0.02] rounded-full blur-3xl" />
               </div>
               
-              <span className="text-xs uppercase tracking-wider text-muted-foreground mb-4 relative z-10">
+              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-[hsl(40_8%_44%)] mb-4 relative z-10">
                 {flipped ? 'Answer' : 'Question'}
               </span>
-              <p className="text-xl text-center font-medium relative z-10 leading-relaxed">
+              <p className="text-lg text-center font-medium leading-relaxed relative z-10 text-[hsl(40_20%_86%)] max-w-lg">
                 {flipped ? currentCard.answer : currentCard.question}
               </p>
-              <span className="text-xs text-muted-foreground mt-6 relative z-10">
-                Click to flip
+              <span className="text-[10px] font-mono text-[hsl(40_8%_38%)] mt-6 relative z-10 flex items-center gap-1">
+                <RotateCw className="h-3 w-3" /> Click to flip
               </span>
             </motion.div>
           </AnimatePresence>
@@ -164,31 +172,44 @@ export default function FlashcardsView() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-3">
-        <Button variant="outline" size="icon" onClick={handlePrev}>
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-        <Button variant="outline" onClick={handleShuffle}>
-          <Shuffle className="h-4 w-4 mr-2" /> Shuffle
-        </Button>
-        <Button onClick={handleNext}>
+      <div className="flex items-center justify-center gap-2.5">
+        <button
+          onClick={handlePrev}
+          className="h-9 w-9 rounded-xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_12%)] hover:bg-[hsl(220_8%_16%)] flex items-center justify-center text-[hsl(40_20%_80%)] transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          onClick={handleShuffle}
+          className="h-9 px-3.5 rounded-xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_12%)] hover:bg-[hsl(220_8%_16%)] flex items-center gap-1.5 text-[12px] font-mono text-[hsl(40_20%_80%)] transition-colors"
+        >
+          <Shuffle className="h-3.5 w-3.5" /> Shuffle
+        </button>
+        <button
+          onClick={handleNext}
+          className="h-9 px-4 rounded-xl bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[12px] font-semibold hover:bg-white transition-colors"
+        >
           Next Card
-        </Button>
-        <Button variant="outline" size="icon" onClick={handleDeleteCard} disabled={flashcards.length <= 1}>
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        </button>
+        <button
+          onClick={handleDeleteCard}
+          disabled={flashcards.length <= 1}
+          className="h-9 w-9 rounded-xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_12%)] hover:bg-red-400/10 hover:text-red-400 flex items-center justify-center text-[hsl(40_8%_50%)] transition-colors disabled:opacity-40 disabled:hover:bg-[hsl(220_8%_12%)] disabled:hover:text-[hsl(40_8%_50%)]"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       {/* Progress dots */}
-      <div className="flex justify-center gap-2 mt-6 flex-wrap max-w-md mx-auto">
+      <div className="flex justify-center gap-1.5 mt-5 flex-wrap max-w-md mx-auto">
         {flashcards.map((_, i) => (
           <button
             key={i}
             onClick={() => { setCurrentIndex(i); setFlipped(false); }}
-            className={`w-2 h-2 rounded-full transition-all ${
-              i === currentIndex 
-                ? 'bg-primary w-4' 
-                : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'
+            className={`h-1.5 rounded-full transition-all ${
+              i === currentIndex
+                ? 'bg-[hsl(40_20%_75%)] w-4'
+                : 'bg-[hsl(220_8%_20%)] w-1.5 hover:bg-[hsl(220_8%_30%)]'
             }`}
           />
         ))}
