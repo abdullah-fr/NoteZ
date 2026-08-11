@@ -9,6 +9,7 @@ export interface UserProgress {
   exams_completed: number;
   flashcards_reviewed: number;
   quizzes_completed: number;
+  streak_freezes_available?: number;
 }
 
 export interface ExamResult {
@@ -62,6 +63,7 @@ export async function fetchProgressData(userId: string): Promise<{
         exams_completed: progressRes.data.exams_completed,
         flashcards_reviewed: progressRes.data.flashcards_reviewed,
         quizzes_completed: progressRes.data.quizzes_completed,
+        streak_freezes_available: progressRes.data.streak_freezes_available ?? 1,
       }
     : defaultProgress;
 

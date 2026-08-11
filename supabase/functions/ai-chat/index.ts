@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkAndIncrement, limitReachedResponse } from "../_shared/usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,8 +54,20 @@ serve(async (req) => {
       });
     }
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+
+    // ── Usage metering ────────────────────────────────────────────────────────
+    const usageResult = await checkAndIncrement(
+      user.id,
+      "ai_chat_messages_count",
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    if (!usageResult.allowed) {
+      return limitReachedResponse("ai_chat_messages_count", usageResult.limit!, corsHeaders);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const { conversationId, message, mode = "tutor", sourceId, scope = "general" } = await req.json();
     if (!conversationId || !message) {
@@ -113,7 +126,7 @@ serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
+          systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [
             ...turns,
             { role: "user", parts: [{ text: message }] },
@@ -129,7 +142,9 @@ serve(async (req) => {
       });
     }
     if (!geminiRes.ok || !geminiRes.body) {
-      throw new Error(`Gemini error ${geminiRes.status}: ${await geminiRes.text()}`);
+      const detail = await geminiRes.text();
+      if (geminiRes.status === 403) throw new Error("GEMINI_ACCESS_DENIED");
+      throw new Error(`Gemini error ${geminiRes.status}: ${detail.slice(0, 300)}`);
     }
 
     let fullText = "";
@@ -193,8 +208,16 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("ai-chat error", e);
-    return new Response(JSON.stringify({ error: "An unexpected error occurred." }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const code = e instanceof Error ? e.message : String(e);
+    const providerUnavailable = code === "GEMINI_ACCESS_DENIED";
+    return new Response(JSON.stringify({
+      error: providerUnavailable
+        ? "AI provider access is unavailable. Check the Gemini API project key."
+        : "An unexpected error occurred.",
+      code: providerUnavailable ? code : undefined,
+    }), {
+      status: providerUnavailable ? 503 : 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

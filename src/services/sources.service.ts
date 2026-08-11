@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
-export type SourceKind = 'pdf' | 'docx' | 'txt' | 'url' | 'youtube' | 'text';
+export type SourceKind = 'pdf' | 'docx' | 'txt' | 'url' | 'youtube' | 'text' | 'audio' | 'video';
 export type SourceStatus = 'pending' | 'processing' | 'ready' | 'failed';
 
 export interface Source {
@@ -10,6 +10,7 @@ export interface Source {
   file_path: string | null;
   source_url: string | null;
   summary: string | null;
+  extracted_text?: string | null;
   status: SourceStatus;
   error: string | null;
   created_at: string;
@@ -25,7 +26,7 @@ export async function fetchSources(): Promise<Source[]> {
 }
 
 export async function uploadSourceFile(userId: string, file: File): Promise<Source> {
-  const path = `${userId}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g, '_')}`;
+  const path = `${userId}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`;
   const { error: upErr } = await supabase.storage
     .from('uploads')
     .upload(path, file, { upsert: false });
@@ -113,5 +114,57 @@ function detectKindFromName(name: string): SourceKind {
   const n = name.toLowerCase();
   if (n.endsWith('.pdf')) return 'pdf';
   if (n.endsWith('.docx') || n.endsWith('.doc')) return 'docx';
+  if (/\.(mp3|wav|m4a|aac|ogg|flac)$/.test(n)) return 'audio';
+  if (/\.(mp4|mov|webm|mkv)$/.test(n)) return 'video';
   return 'txt';
+}
+
+/* ── Storage quota check (Prompt 30) ── */
+
+/** Tier storage caps in bytes. Free tier disables uploads entirely. */
+const STORAGE_CAPS: Record<string, number> = {
+  free:        0,
+  pro_student: 0,
+  pro_scholar: 2 * 1024 * 1024 * 1024,  // 2 GB
+  team:        2 * 1024 * 1024 * 1024,
+};
+
+/**
+ * Returns the total bytes currently used in the user's upload folder.
+ * Uses the Storage list API — no separate counter table needed.
+ */
+export async function getUserStorageBytes(userId: string): Promise<number> {
+  let total = 0;
+  let offset = 0;
+  const limit = 100;
+  while (true) {
+    const { data, error } = await supabase.storage
+      .from('uploads')
+      .list(userId, { limit, offset });
+    if (error || !data?.length) break;
+    total += data.reduce((sum, f) => sum + (f.metadata?.size ?? 0), 0);
+    if (data.length < limit) break;
+    offset += limit;
+  }
+  return total;
+}
+
+/**
+ * Returns null if the upload is allowed, or an error string if it would
+ * exceed the user's tier quota. Call this BEFORE starting any upload.
+ */
+export async function checkStorageQuota(
+  userId: string,
+  fileSizeBytes: number,
+  tier = 'free',
+): Promise<string | null> {
+  const cap = STORAGE_CAPS[tier] ?? 0;
+  if (cap === 0) return 'Document uploads are not available on your current plan.';
+  const used = await getUserStorageBytes(userId);
+  if (used + fileSizeBytes > cap) {
+    const usedMb  = Math.round(used / 1024 / 1024);
+    const capGb   = cap / 1024 / 1024 / 1024;
+    return `Storage limit reached — you've used ${usedMb} MB of your ${capGb} GB. Delete old uploads or upgrade.`;
+  }
+  return null;
 }

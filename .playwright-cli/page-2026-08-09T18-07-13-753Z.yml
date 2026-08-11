@@ -1,0 +1,242 @@
+- generic [ref=f1e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=f1e3]:
+    - complementary [ref=f1e4]:
+      - generic [ref=f1e5]:
+        - generic [ref=f1e1363]:
+          - img "NoteZ" [ref=f1e1364]
+          - generic [ref=f1e1365]:
+            - generic [ref=f1e1366]: NoteZ
+            - generic [ref=f1e1367]: studio
+        - button "Collapse sidebar" [ref=f1e11] [cursor=pointer]
+      - button "Search" [ref=f1e16] [cursor=pointer]:
+        - generic [ref=f1e20]: Search…
+        - generic [ref=f1e21]:
+          - generic [ref=f1e22]: ⌘
+          - generic [ref=f1e23]: K
+      - navigation [ref=f1e24]:
+        - generic [ref=f1e1368]:
+          - generic [ref=f1e1369]:
+            - generic [ref=f1e1370]: Study
+            - generic [ref=f1e1371]:
+              - button "Dashboard" [ref=f1e1373] [cursor=pointer]
+              - button "Folders" [ref=f1e1381] [cursor=pointer]
+              - button "Archived" [ref=f1e1386] [cursor=pointer]
+          - generic [ref=f1e1391]:
+            - generic [ref=f1e1392]: Practice
+            - button "Exam" [ref=f1e1395] [cursor=pointer]
+          - generic [ref=f1e1400]:
+            - generic [ref=f1e1401]: Tools
+            - generic [ref=f1e1402]:
+              - button "Chat" [ref=f1e1404] [cursor=pointer]
+              - button "Calendar" [ref=f1e1409] [cursor=pointer]
+              - button "Timer" [ref=f1e1414] [cursor=pointer]
+      - generic [ref=f1e76]:
+        - button "TU Test User" [ref=f1e77] [cursor=pointer]:
+          - generic [ref=f1e78]: TU
+          - generic [ref=f1e80]: Test User
+        - button "Sign out" [ref=f1e84] [cursor=pointer]
+    - main [ref=f1e86]:
+      - generic [ref=f1e1419]:
+        - generic [ref=f1e1420]:
+          - generic [ref=f1e1421]:
+            - heading "Folders" [level=1] [ref=f1e1422]
+            - generic [ref=f1e1423]: "20"
+          - textbox "Search folders…" [ref=f1e1428]
+          - button "Newest" [ref=f1e1430] [cursor=pointer]
+          - generic [ref=f1e1438]:
+            - button "List" [ref=f1e1439] [cursor=pointer]
+            - button "Grid" [ref=f1e1441] [cursor=pointer]
+            - button "Graph" [ref=f1e1447] [cursor=pointer]
+          - button "Select" [ref=f1e1453] [cursor=pointer]
+          - button "New Folder" [ref=f1e1456] [cursor=pointer]
+        - generic [ref=f1e1458]:
+          - generic [ref=f1e1459]:
+            - generic [ref=f1e1460]: Folder
+            - generic [ref=f1e1461]: Notes
+            - generic [ref=f1e1462]: Created
+            - generic [ref=f1e1463]: Modified
+            - generic [ref=f1e1464]: Size
+          - generic [ref=f1e1465]:
+            - generic [ref=f1e1467]:
+              - paragraph [ref=f1e1471]: Folder 1
+              - generic [ref=f1e1472]: "0"
+              - generic [ref=f1e1473]: Aug 9, 2026
+              - generic [ref=f1e1474]: Aug 9, 2026
+              - generic [ref=f1e1475]: 0 B
+              - generic [ref=f1e1479]:
+                - button [ref=f1e1480] [cursor=pointer]
+                - button [ref=f1e1483] [cursor=pointer]
+            - generic [ref=f1e1490]:
+              - paragraph [ref=f1e1494]: Folder 2
+              - generic [ref=f1e1495]: "0"
+              - generic [ref=f1e1496]: Aug 8, 2026
+              - generic [ref=f1e1497]: Aug 8, 2026
+              - generic [ref=f1e1498]: 0 B
+              - generic [ref=f1e1502]:
+                - button [ref=f1e1503] [cursor=pointer]
+                - button [ref=f1e1506] [cursor=pointer]
+            - generic [ref=f1e1513]:
+              - paragraph [ref=f1e1517]: Folder 3
+              - generic [ref=f1e1518]: "0"
+              - generic [ref=f1e1519]: Aug 7, 2026
+              - generic [ref=f1e1520]: Aug 7, 2026
+              - generic [ref=f1e1521]: 0 B
+              - generic [ref=f1e1525]:
+                - button [ref=f1e1526] [cursor=pointer]
+                - button [ref=f1e1529] [cursor=pointer]
+            - generic [ref=f1e1536]:
+              - paragraph [ref=f1e1540]: Folder 4
+              - generic [ref=f1e1541]: "0"
+              - generic [ref=f1e1542]: Aug 6, 2026
+              - generic [ref=f1e1543]: Aug 6, 2026
+              - generic [ref=f1e1544]: 0 B
+              - generic [ref=f1e1548]:
+                - button [ref=f1e1549] [cursor=pointer]
+                - button [ref=f1e1552] [cursor=pointer]
+            - generic [ref=f1e1559]:
+              - paragraph [ref=f1e1563]: Folder 5
+              - generic [ref=f1e1564]: "0"
+              - generic [ref=f1e1565]: Aug 5, 2026
+              - generic [ref=f1e1566]: Aug 5, 2026
+              - generic [ref=f1e1567]: 0 B
+              - generic [ref=f1e1571]:
+                - button [ref=f1e1572] [cursor=pointer]
+                - button [ref=f1e1575] [cursor=pointer]
+            - generic [ref=f1e1582]:
+              - paragraph [ref=f1e1586]: Folder 6
+              - generic [ref=f1e1587]: "0"
+              - generic [ref=f1e1588]: Aug 4, 2026
+              - generic [ref=f1e1589]: Aug 4, 2026
+              - generic [ref=f1e1590]: 0 B
+              - generic [ref=f1e1594]:
+                - button [ref=f1e1595] [cursor=pointer]
+                - button [ref=f1e1598] [cursor=pointer]
+            - generic [ref=f1e1605]:
+              - paragraph [ref=f1e1609]: Folder 7
+              - generic [ref=f1e1610]: "0"
+              - generic [ref=f1e1611]: Aug 3, 2026
+              - generic [ref=f1e1612]: Aug 3, 2026
+              - generic [ref=f1e1613]: 0 B
+              - generic [ref=f1e1617]:
+                - button [ref=f1e1618] [cursor=pointer]
+                - button [ref=f1e1621] [cursor=pointer]
+            - generic [ref=f1e1628]:
+              - paragraph [ref=f1e1632]: Folder 8
+              - generic [ref=f1e1633]: "0"
+              - generic [ref=f1e1634]: Aug 2, 2026
+              - generic [ref=f1e1635]: Aug 2, 2026
+              - generic [ref=f1e1636]: 0 B
+              - generic [ref=f1e1640]:
+                - button [ref=f1e1641] [cursor=pointer]
+                - button [ref=f1e1644] [cursor=pointer]
+            - generic [ref=f1e1651]:
+              - paragraph [ref=f1e1655]: Folder 9
+              - generic [ref=f1e1656]: "0"
+              - generic [ref=f1e1657]: Aug 1, 2026
+              - generic [ref=f1e1658]: Aug 1, 2026
+              - generic [ref=f1e1659]: 0 B
+              - generic [ref=f1e1663]:
+                - button [ref=f1e1664] [cursor=pointer]
+                - button [ref=f1e1667] [cursor=pointer]
+            - generic [ref=f1e1674]:
+              - paragraph [ref=f1e1678]: Folder 10
+              - generic [ref=f1e1679]: "0"
+              - generic [ref=f1e1680]: Jul 31, 2026
+              - generic [ref=f1e1681]: Jul 31, 2026
+              - generic [ref=f1e1682]: 0 B
+              - generic [ref=f1e1686]:
+                - button [ref=f1e1687] [cursor=pointer]
+                - button [ref=f1e1690] [cursor=pointer]
+            - generic [ref=f1e1697]:
+              - paragraph [ref=f1e1701]: Folder 11
+              - generic [ref=f1e1702]: "0"
+              - generic [ref=f1e1703]: Jul 30, 2026
+              - generic [ref=f1e1704]: Jul 30, 2026
+              - generic [ref=f1e1705]: 0 B
+              - generic [ref=f1e1709]:
+                - button [ref=f1e1710] [cursor=pointer]
+                - button [ref=f1e1713] [cursor=pointer]
+            - generic [ref=f1e1720]:
+              - paragraph [ref=f1e1724]: Folder 12
+              - generic [ref=f1e1725]: "0"
+              - generic [ref=f1e1726]: Jul 29, 2026
+              - generic [ref=f1e1727]: Jul 29, 2026
+              - generic [ref=f1e1728]: 0 B
+              - generic [ref=f1e1732]:
+                - button [ref=f1e1733] [cursor=pointer]
+                - button [ref=f1e1736] [cursor=pointer]
+            - generic [ref=f1e1743]:
+              - paragraph [ref=f1e1747]: Folder 13
+              - generic [ref=f1e1748]: "0"
+              - generic [ref=f1e1749]: Jul 28, 2026
+              - generic [ref=f1e1750]: Jul 28, 2026
+              - generic [ref=f1e1751]: 0 B
+              - generic [ref=f1e1755]:
+                - button [ref=f1e1756] [cursor=pointer]
+                - button [ref=f1e1759] [cursor=pointer]
+            - generic [ref=f1e1766]:
+              - paragraph [ref=f1e1770]: Folder 14
+              - generic [ref=f1e1771]: "0"
+              - generic [ref=f1e1772]: Jul 27, 2026
+              - generic [ref=f1e1773]: Jul 27, 2026
+              - generic [ref=f1e1774]: 0 B
+              - generic [ref=f1e1778]:
+                - button [ref=f1e1779] [cursor=pointer]
+                - button [ref=f1e1782] [cursor=pointer]
+            - generic [ref=f1e1789]:
+              - paragraph [ref=f1e1793]: Folder 15
+              - generic [ref=f1e1794]: "0"
+              - generic [ref=f1e1795]: Jul 26, 2026
+              - generic [ref=f1e1796]: Jul 26, 2026
+              - generic [ref=f1e1797]: 0 B
+              - generic [ref=f1e1801]:
+                - button [ref=f1e1802] [cursor=pointer]
+                - button [ref=f1e1805] [cursor=pointer]
+            - generic [ref=f1e1812]:
+              - paragraph [ref=f1e1816]: Folder 16
+              - generic [ref=f1e1817]: "0"
+              - generic [ref=f1e1818]: Jul 25, 2026
+              - generic [ref=f1e1819]: Jul 25, 2026
+              - generic [ref=f1e1820]: 0 B
+              - generic [ref=f1e1824]:
+                - button [ref=f1e1825] [cursor=pointer]
+                - button [ref=f1e1828] [cursor=pointer]
+            - generic [ref=f1e1835]:
+              - paragraph [ref=f1e1839]: Folder 17
+              - generic [ref=f1e1840]: "0"
+              - generic [ref=f1e1841]: Jul 24, 2026
+              - generic [ref=f1e1842]: Jul 24, 2026
+              - generic [ref=f1e1843]: 0 B
+              - generic [ref=f1e1847]:
+                - button [ref=f1e1848] [cursor=pointer]
+                - button [ref=f1e1851] [cursor=pointer]
+            - generic [ref=f1e1858]:
+              - paragraph [ref=f1e1862]: Folder 18
+              - generic [ref=f1e1863]: "0"
+              - generic [ref=f1e1864]: Jul 23, 2026
+              - generic [ref=f1e1865]: Jul 23, 2026
+              - generic [ref=f1e1866]: 0 B
+              - generic [ref=f1e1870]:
+                - button [ref=f1e1871] [cursor=pointer]
+                - button [ref=f1e1874] [cursor=pointer]
+            - generic [ref=f1e1881]:
+              - paragraph [ref=f1e1885]: Folder 19
+              - generic [ref=f1e1886]: "0"
+              - generic [ref=f1e1887]: Jul 22, 2026
+              - generic [ref=f1e1888]: Jul 22, 2026
+              - generic [ref=f1e1889]: 0 B
+              - generic [ref=f1e1893]:
+                - button [ref=f1e1894] [cursor=pointer]
+                - button [ref=f1e1897] [cursor=pointer]
+            - generic [ref=f1e1904]:
+              - paragraph [ref=f1e1908]: Folder 20
+              - generic [ref=f1e1909]: "0"
+              - generic [ref=f1e1910]: Jul 21, 2026
+              - generic [ref=f1e1911]: Jul 21, 2026
+              - generic [ref=f1e1912]: 0 B
+              - generic [ref=f1e1916]:
+                - button [ref=f1e1917] [cursor=pointer]
+                - button [ref=f1e1920] [cursor=pointer]

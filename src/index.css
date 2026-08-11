@@ -5,70 +5,119 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /* Charcoal base, warm cream foreground, muted sage accent. No purple. */
-    --background: 220 8% 7%;
-    --foreground: 40 20% 94%;
-
-    --card: 220 8% 9%;
-    --card-foreground: 40 20% 94%;
-
-    --popover: 220 8% 10%;
-    --popover-foreground: 40 20% 94%;
-
-    --primary: 40 30% 88%;            /* cream — used as foreground accent */
-    --primary-foreground: 220 10% 8%;
-
-    --secondary: 220 8% 12%;
-    --secondary-foreground: 40 20% 94%;
-
-    --muted: 220 8% 13%;
-    --muted-foreground: 40 8% 62%;
-
-    --accent: 145 18% 38%;            /* muted sage */
-    --accent-foreground: 40 20% 96%;
-
-    --destructive: 8 62% 52%;
-    --destructive-foreground: 40 20% 96%;
-
-    --border: 220 8% 16%;
-    --input: 220 8% 16%;
-    --ring: 145 18% 45%;
+  :root,
+  [data-theme="warm-paper"] {
+    /* Warm Paper is the zero-configuration default. */
+    --background: 38 30% 94%;
+    --foreground: 25 30% 18%;
+    --card: 38 25% 98%;
+    --card-foreground: 25 30% 18%;
+    --popover: 38 25% 98%;
+    --popover-foreground: 25 30% 18%;
+    --primary: 25 30% 22%;
+    --primary-foreground: 38 30% 97%;
+    --secondary: 38 20% 88%;
+    --secondary-foreground: 25 30% 18%;
+    --muted: 38 18% 86%;
+    --muted-foreground: 25 15% 46%;
+    --accent: 32 55% 42%;
+    --accent-foreground: 38 30% 97%;
+    --destructive: 8 62% 48%;
+    --destructive-foreground: 38 30% 97%;
+    --border: 38 18% 78%;
+    --input: 38 18% 74%;
+    --ring: 32 50% 50%;
 
     --radius: 0.375rem;
 
     /* Brand tones — kept as notez-* so existing components don't break */
-    --notez-purple: 145 18% 42%;       /* sage replaces purple */
-    --notez-purple-glow: 145 22% 52%;
-    --notez-purple-dark: 145 14% 24%;
-    --notez-violet: 30 28% 70%;        /* warm sand */
-    --notez-indigo: 200 18% 48%;       /* slate blue */
-    --notez-surface: 220 8% 10%;
-    --notez-surface-hover: 220 8% 14%;
+    --notez-purple: 32 55% 42%;
+    --notez-purple-glow: 32 58% 52%;
+    --notez-purple-dark: 28 38% 30%;
+    --notez-violet: 30 42% 65%;
+    --notez-indigo: 200 18% 48%;
+    --notez-surface: 38 25% 98%;
+    --notez-surface-hover: 38 25% 91%;
     --notez-success: 145 35% 45%;
     --notez-warning: 32 70% 55%;
 
     /* Gradients (subtle, no glow) */
-    --gradient-purple: linear-gradient(135deg, hsl(145 18% 38%), hsl(200 18% 42%));
-    --gradient-dark: linear-gradient(180deg, hsl(220 8% 9%), hsl(220 8% 7%));
-    --gradient-glow: radial-gradient(ellipse at center, hsl(40 20% 94% / 0.04), transparent 70%);
-    --gradient-card: linear-gradient(145deg, hsl(220 8% 10%), hsl(220 8% 8%));
+    --gradient-purple: linear-gradient(135deg, hsl(32 55% 42%), hsl(30 42% 65%));
+    --gradient-dark: linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
+    --gradient-glow: radial-gradient(ellipse at center, hsl(32 55% 42% / 0.08), transparent 70%);
+    --gradient-card: linear-gradient(145deg, hsl(38 25% 98%), hsl(38 25% 92%));
 
     /* Shadows — flat, refined */
-    --shadow-glow: 0 1px 0 hsl(40 20% 94% / 0.04) inset, 0 8px 24px hsl(0 0% 0% / 0.35);
-    --shadow-card: 0 1px 0 hsl(40 20% 94% / 0.03) inset, 0 1px 2px hsl(0 0% 0% / 0.4);
-    --shadow-card-hover: 0 1px 0 hsl(40 20% 94% / 0.05) inset, 0 6px 20px hsl(0 0% 0% / 0.45);
+    --shadow-glow: 0 1px 0 hsl(0 0% 100% / 0.65) inset, 0 8px 24px hsl(25 30% 18% / 0.12);
+    --shadow-card: 0 1px 0 hsl(0 0% 100% / 0.7) inset, 0 1px 3px hsl(25 30% 18% / 0.1);
+    --shadow-card-hover: 0 1px 0 hsl(0 0% 100% / 0.75) inset, 0 8px 24px hsl(25 30% 18% / 0.14);
 
     /* Sidebar (unused now but kept for shadcn sidebar component) */
-    --sidebar-background: 220 8% 8%;
-    --sidebar-foreground: 40 20% 94%;
-    --sidebar-primary: 145 18% 45%;
-    --sidebar-primary-foreground: 40 20% 96%;
-    --sidebar-accent: 220 8% 12%;
-    --sidebar-accent-foreground: 40 20% 94%;
-    --sidebar-border: 220 8% 16%;
-    --sidebar-ring: 145 18% 45%;
+    --sidebar-background: 38 28% 91%;
+    --sidebar-foreground: 25 30% 18%;
+    --sidebar-primary: 32 50% 45%;
+    --sidebar-primary-foreground: 38 30% 97%;
+    --sidebar-accent: 38 20% 86%;
+    --sidebar-accent-foreground: 25 30% 18%;
+    --sidebar-border: 38 18% 78%;
+    --sidebar-ring: 32 50% 50%;
+    --timer-purple: 270 50% 55%;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   THEME VARIANTS  (Prompt 26)
+   Applied via data-theme attribute on <html>.
+   Warm Paper = default (:root).
+   All themes maintain accessible contrast ratios.
+══════════════════════════════════════════════════════════════ */
+
+/* Midnight — opt-in charcoal theme */
+[data-theme="midnight"] {
+  --background: 220 8% 7%;
+  --foreground: 40 20% 94%;
+  --card: 220 8% 9%;
+  --card-foreground: 40 20% 94%;
+  --popover: 220 8% 10%;
+  --popover-foreground: 40 20% 94%;
+  --primary: 40 30% 88%;
+  --primary-foreground: 220 10% 8%;
+  --secondary: 220 8% 12%;
+  --secondary-foreground: 40 20% 94%;
+  --muted: 220 8% 13%;
+  --muted-foreground: 40 8% 62%;
+  --accent: 145 18% 38%;
+  --accent-foreground: 40 20% 96%;
+  --destructive: 8 62% 52%;
+  --destructive-foreground: 40 20% 96%;
+  --border: 220 8% 16%;
+  --input: 220 8% 16%;
+  --ring: 145 18% 45%;
+  --notez-purple: 145 18% 42%;
+  --notez-purple-glow: 145 22% 52%;
+  --notez-purple-dark: 145 14% 24%;
+  --notez-violet: 30 28% 70%;
+  --notez-indigo: 200 18% 48%;
+  --notez-surface: 220 8% 10%;
+  --notez-surface-hover: 220 8% 14%;
+  --notez-success: 145 35% 45%;
+  --notez-warning: 32 70% 55%;
+  --gradient-purple: linear-gradient(135deg, hsl(145 18% 38%), hsl(200 18% 42%));
+  --gradient-dark: linear-gradient(180deg, hsl(220 8% 9%), hsl(220 8% 7%));
+  --gradient-glow: radial-gradient(ellipse at center, hsl(40 20% 94% / 0.04), transparent 70%);
+  --gradient-card: linear-gradient(145deg, hsl(220 8% 10%), hsl(220 8% 8%));
+  --shadow-glow: 0 1px 0 hsl(40 20% 94% / 0.04) inset, 0 8px 24px hsl(0 0% 0% / 0.35);
+  --shadow-card: 0 1px 0 hsl(40 20% 94% / 0.03) inset, 0 1px 2px hsl(0 0% 0% / 0.4);
+  --shadow-card-hover: 0 1px 0 hsl(40 20% 94% / 0.05) inset, 0 6px 20px hsl(0 0% 0% / 0.45);
+  --sidebar-background: 220 8% 8%;
+  --sidebar-foreground: 40 20% 94%;
+  --sidebar-primary: 145 18% 45%;
+  --sidebar-primary-foreground: 40 20% 96%;
+  --sidebar-accent: 220 8% 12%;
+  --sidebar-accent-foreground: 40 20% 94%;
+  --sidebar-border: 220 8% 16%;
+  --sidebar-ring: 145 18% 45%;
+  --timer-purple: 270 50% 55%;
 }
 
 @layer base {
@@ -76,11 +125,17 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
     font-feature-settings: 'ss01', 'ss02', 'cv11';
     font-size: 14px;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, .font-display {
@@ -91,10 +146,6 @@
 
   .font-mono, code, kbd, pre {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-  }
-
-  html {
-    scroll-behavior: smooth;
   }
 }
 
@@ -216,5 +267,18 @@
   }
   .kbd {
     @apply font-mono text-[11px] px-1.5 py-0.5 rounded border border-border bg-secondary text-muted-foreground;
+  }
+
+  /* ── Dot-grid paper texture ── */
+  /* Applied to the main content area background. Opacity is intentionally at
+     the edge of visibility so the effect reads as "quality paper" rather than
+     a visible pattern. Purely a CSS background — no image assets. */
+  .paper-texture {
+    background-image: radial-gradient(
+      circle,
+      hsl(var(--foreground) / 0.028) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
   }
 }

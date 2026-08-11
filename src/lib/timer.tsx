@@ -7,6 +7,8 @@ import {
   useCallback,
   ReactNode,
 } from "react";
+import { logCompletedSession } from "@/services/timer.service";
+import { supabase } from "@/integrations/supabase/client";
 
 export const TIMER_OPTIONS = [15, 25, 30, 45, 60];
 
@@ -121,12 +123,25 @@ function useCountdown(initialSeconds: number) {
 }
 
 export function TimerProvider({ children }: { children: ReactNode }) {
+  /* ── current user (for session logging) ── */
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setUserId(s?.user?.id ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   /* ── Focus timer ── */
   const [selectedMinutes, setSelectedMinutes] = useState(25);
   const focus = useCountdown(25 * 60);
+  const focusStartedAt = useRef<Date | null>(null);
+  const focusPrevRunning = useRef(false);
 
   const focusStart = useCallback(() => {
     const secs = focus.completed ? selectedMinutes * 60 : focus.timeLeft;
+    focusStartedAt.current = new Date();
     focus.start(secs);
   }, [focus, selectedMinutes]);
 
@@ -137,6 +152,16 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     setSelectedMinutes(m); focus.reset(m * 60);
   }, [focus]);
 
+  // Log focus session on natural completion
+  useEffect(() => {
+    if (focus.running) { focusPrevRunning.current = true; return; }
+    if (focus.completed && focusPrevRunning.current && userId && focusStartedAt.current) {
+      logCompletedSession(userId, selectedMinutes, 'focus', focusStartedAt.current);
+      focusStartedAt.current = null;
+    }
+    focusPrevRunning.current = false;
+  }, [focus.completed, focus.running, userId, selectedMinutes]);
+
   const focusTotalSeconds = selectedMinutes * 60;
   const focusHasSession   = focus.running || focus.completed || focus.timeLeft < focusTotalSeconds;
 
@@ -144,6 +169,8 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks]           = useState<FloatingTask[]>([]);
   const [activeTaskIdx, setActiveTaskIdx] = useState<number | null>(null);
   const task = useCountdown(300);
+  const taskStartedAt   = useRef<Date | null>(null);
+  const taskPrevRunning = useRef(false);
 
   const prevTaskIdx = useRef<number | null>(null);
   useEffect(() => {
@@ -159,6 +186,17 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       setTasks(prev => prev.map((t, i) => i === activeTaskIdx ? { ...t, done: true } : t));
     }
   }, [task.completed, activeTaskIdx]);
+
+  // Track task timer start time
+  useEffect(() => {
+    if (task.running) { taskStartedAt.current = taskStartedAt.current ?? new Date(); taskPrevRunning.current = true; return; }
+    if (task.completed && taskPrevRunning.current && userId && taskStartedAt.current && activeTaskIdx !== null) {
+      const mins = tasks[activeTaskIdx]?.minutes ?? Math.round(task.total / 60);
+      logCompletedSession(userId, mins, 'task', taskStartedAt.current);
+      taskStartedAt.current = null;
+    }
+    taskPrevRunning.current = false;
+  }, [task.completed, task.running, userId, activeTaskIdx]);
 
   const addTask = useCallback((label: string, minutes: number) => {
     setTasks(prev => [...prev, { id: crypto.randomUUID(), label, minutes, done: false }]);
@@ -190,15 +228,30 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   /* ── Exam timer ── */
   const [examMinutes, setExamMinutesState] = useState(60);
   const exam = useCountdown(60 * 60);
+  const examStartedAt   = useRef<Date | null>(null);
+  const examPrevRunning = useRef(false);
 
   const setExamMinutes = useCallback((m: number) => {
     setExamMinutesState(m); if (!exam.running) exam.reset(m * 60);
   }, [exam]);
 
-  const startExam  = useCallback(() => { exam.start(exam.completed ? examMinutes * 60 : exam.timeLeft); }, [exam, examMinutes]);
+  const startExam  = useCallback(() => {
+    examStartedAt.current = new Date();
+    exam.start(exam.completed ? examMinutes * 60 : exam.timeLeft);
+  }, [exam, examMinutes]);
   const pauseExam  = useCallback(() => exam.pause(), [exam]);
   const resetExam  = useCallback(() => exam.reset(examMinutes * 60), [exam, examMinutes]);
   const examHasSession = exam.running || exam.completed || exam.timeLeft < examMinutes * 60;
+
+  // Log exam timer on natural completion
+  useEffect(() => {
+    if (exam.running) { examPrevRunning.current = true; return; }
+    if (exam.completed && examPrevRunning.current && userId && examStartedAt.current) {
+      logCompletedSession(userId, examMinutes, 'exam', examStartedAt.current);
+      examStartedAt.current = null;
+    }
+    examPrevRunning.current = false;
+  }, [exam.completed, exam.running, userId, examMinutes]);
 
   /* ── Context value ── */
   const value: TimerContextType = {

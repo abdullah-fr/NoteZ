@@ -47,7 +47,7 @@ const CardDisplay: React.FC<CardDisplayProps> = ({ items, className, columns = 4
               'group relative overflow-hidden',
               'border-border/80 bg-card',
               'transition-all duration-300 ease-out',
-              'hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-[0_10px_40px_-12px_hsl(0_0%_0%/0.6)]',
+              'hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-[0_10px_40px_-12px_hsl(var(--foreground)/0.6)]',
             )}
           >
             <span

@@ -13,6 +13,7 @@ export interface GenerateExamPayload {
   subject: string;
   difficulty: string;
   questionCount: number;
+  sourceText?: string; // Prompt 15: optional folder note content
 }
 
 export interface GenerateExamResult {
@@ -26,7 +27,9 @@ export async function generateExam(
     body: payload,
   });
   if (error) throw error;
-  if (data?.error) throw new Error(data.error);
+  // Surface structured errors (including USAGE_LIMIT_REACHED) as-is so
+  // callers can inspect error.error, error.field, error.limit.
+  if (data?.error) throw data;
   if (!data?.questions?.length) throw new Error('No questions generated');
   return data as GenerateExamResult;
 }

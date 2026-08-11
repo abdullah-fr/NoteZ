@@ -57,26 +57,26 @@ export default function FloatingTimer({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      className="fixed bottom-5 right-5 z-50 rounded-2xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_10%)]/95 backdrop-blur-md shadow-2xl p-3 flex items-center gap-3"
+      className="fixed bottom-4 right-4 z-50 rounded-2xl border border-border bg-secondary/95 backdrop-blur-md shadow-2xl p-2 sm:p-3 flex items-center gap-2 sm:gap-3 max-w-[calc(100vw-2rem)]"
     >
       <div className="flex items-center gap-2 pl-1">
-        <div className="w-2 h-2 rounded-full bg-[hsl(40_20%_75%)] animate-pulse" />
-        <Clock className="h-4 w-4 text-[hsl(40_20%_65%)] shrink-0" />
+        <div className="w-2 h-2 rounded-full bg-[hsl(var(--foreground))] animate-pulse" />
+        <Clock className="h-4 w-4 text-foreground shrink-0" />
       </div>
 
       <div className="min-w-0 pr-2">
-        <p className="text-[10px] font-mono uppercase tracking-wider text-[hsl(40_8%_46%)] truncate max-w-[140px]">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground truncate max-w-[80px] sm:max-w-[140px]">
           {modeLabel}
         </p>
-        <p className="text-sm font-mono font-bold text-[hsl(40_20%_88%)] leading-none mt-0.5">
+        <p className="text-sm font-mono font-bold text-foreground leading-none mt-0.5">
           {fmt(timeLeft)}
         </p>
       </div>
 
-      <div className="flex items-center gap-1 border-l border-[hsl(220_8%_18%)] pl-2">
+      <div className="flex items-center gap-1 border-l border-border pl-2">
         <button
           onClick={running ? onPause : onStart}
-          className="h-7 w-7 rounded-lg bg-[hsl(220_8%_16%)] hover:bg-[hsl(220_8%_22%)] border border-[hsl(220_8%_22%)] flex items-center justify-center text-[hsl(40_20%_80%)] transition-colors"
+          className="h-7 w-7 rounded-lg bg-secondary hover:bg-secondary border border-border flex items-center justify-center text-foreground transition-colors"
           aria-label={running ? 'Pause' : 'Start'}
         >
           {running ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 ml-0.5" />}
@@ -84,7 +84,7 @@ export default function FloatingTimer({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onReset}
-          className="h-7 w-7 rounded-lg bg-[hsl(220_8%_14%)] hover:bg-[hsl(220_8%_18%)] border border-[hsl(220_8%_20%)] flex items-center justify-center text-[hsl(40_8%_50%)] hover:text-[hsl(40_20%_75%)] transition-colors"
+          className="h-7 w-7 rounded-lg bg-secondary hover:bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Reset"
         >
           <RotateCcw className="h-3.5 w-3.5" />
@@ -92,7 +92,7 @@ export default function FloatingTimer({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onClose}
-          className="h-7 w-7 rounded-lg hover:bg-[hsl(220_8%_18%)] flex items-center justify-center text-[hsl(40_8%_44%)] hover:text-red-400 transition-colors ml-1"
+          className="h-7 w-7 rounded-lg hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors ml-1"
           aria-label="Close float widget"
         >
           <X className="h-3.5 w-3.5" />

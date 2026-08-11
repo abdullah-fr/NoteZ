@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkAndIncrement, limitReachedResponse } from "../_shared/usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,6 +70,60 @@ async function callGemini(apiKey: string, sysPrompt: string, userContent: string
   return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 }
 
+async function extractDocumentWithGemini(apiKey: string, file: Blob, mimeType: string): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const uploadRes = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "raw",
+        "X-Goog-Upload-Command": "start, upload, finalize",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+        "Content-Type": mimeType,
+      },
+      body: bytes,
+    },
+  );
+  if (!uploadRes.ok) throw new Error(`Gemini document upload failed: ${uploadRes.status}`);
+  const uploadData = await uploadRes.json();
+  const fileUri = uploadData?.file?.uri;
+  if (!fileUri) throw new Error("Gemini did not return a document URI");
+  const fileName = uploadData?.file?.name;
+  if (fileName) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const infoResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
+      if (infoResponse.ok) {
+        const info = await infoResponse.json();
+        if (info.state === "ACTIVE" || !info.state) break;
+        if (info.state === "FAILED") throw new Error("Gemini could not process this document");
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: "Extract the document text for editing. Preserve headings, paragraphs, list items, and meaningful line breaks. Return only the extracted text, with no summary or commentary." },
+            { file_data: { mime_type: mimeType, file_uri: fileUri } },
+          ],
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 12000 },
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`Gemini document extraction failed: ${response.status}`);
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -90,6 +145,18 @@ serve(async (req) => {
     }
     const userId = userData.user.id;
 
+    // ── Usage metering (source uploads, monthly cap) ──────────────────────────
+    const usageResult = await checkAndIncrement(
+      userId,
+      "source_uploads_count",
+      SUPABASE_URL,
+      SERVICE_KEY,
+    );
+    if (!usageResult.allowed) {
+      return limitReachedResponse("source_uploads_count", usageResult.limit!, corsHeaders);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const { sourceId } = await req.json();
     if (!sourceId) throw new Error("sourceId required");
 
@@ -110,7 +177,70 @@ serve(async (req) => {
       } else if (!text && source.file_path) {
         const { data: file, error: dErr } = await admin.storage.from("uploads").download(source.file_path);
         if (dErr || !file) throw new Error("Could not read uploaded file");
-        if (source.kind === "txt") {
+
+        const lowerName = (source.title ?? "").toLowerCase();
+        const isAudio   = /\.(mp3|wav|m4a|aac|ogg|flac)$/.test(lowerName);
+        const isVideo   = /\.(mp4|mov|webm|mkv)$/.test(lowerName);
+        const isPdf     = /\.pdf$/.test(lowerName);
+        const isWord    = /\.(doc|docx)$/.test(lowerName);
+
+        if (isAudio || isVideo) {
+          // Gemini Files API — upload then transcribe
+          const buf       = await file.arrayBuffer();
+          const mimeType  = isAudio ? "audio/mpeg" : "video/mp4";
+          const MAX_BYTES = 120 * 1024 * 1024; // 120 MB hard cap
+          if (buf.byteLength > MAX_BYTES) throw new Error("File too large — max 120 MB for audio/video");
+
+          // 1. Upload to Gemini Files API
+          const uploadRes = await fetch(
+            `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: {
+                "X-Goog-Upload-Protocol": "raw",
+                "X-Goog-Upload-Command": "start, upload, finalize",
+                "X-Goog-Upload-Header-Content-Length": String(buf.byteLength),
+                "X-Goog-Upload-Header-Content-Type": mimeType,
+                "Content-Type": mimeType,
+              },
+              body: buf,
+            },
+          );
+          if (!uploadRes.ok) throw new Error(`Gemini file upload failed: ${uploadRes.status}`);
+          const uploadData = await uploadRes.json();
+          const fileUri    = uploadData?.file?.uri;
+          if (!fileUri) throw new Error("Gemini did not return a file URI");
+
+          // 2. Transcribe via generate-content with the file part
+          const transcribeRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: "Please transcribe this audio/video in full, preserving all spoken words as accurately as possible. Return only the transcript with no commentary." },
+                    { file_data: { mime_type: mimeType, file_uri: fileUri } },
+                  ],
+                }],
+                generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+              }),
+            },
+          );
+          if (!transcribeRes.ok) throw new Error(`Gemini transcription failed: ${transcribeRes.status}`);
+          const transcribeData = await transcribeRes.json();
+          text = transcribeData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+          if (!text) throw new Error("Transcription returned empty — try a shorter clip");
+
+        } else if (isPdf || isWord) {
+          const mimeType = isPdf
+            ? "application/pdf"
+            : lowerName.endsWith(".doc")
+              ? "application/msword"
+              : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          text = await extractDocumentWithGemini(GEMINI_API_KEY, file, mimeType);
+        } else if (source.kind === "txt") {
           text = await file.text();
         } else {
           const buf = new Uint8Array(await file.arrayBuffer());

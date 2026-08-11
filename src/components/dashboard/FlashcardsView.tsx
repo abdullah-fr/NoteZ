@@ -1,219 +1,308 @@
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Shuffle, ChevronLeft, ChevronRight, Layers, Plus, Trash2, RotateCw } from 'lucide-react';
+import { Rating } from 'ts-fsrs';
+import { useAuth } from '@/lib/auth';
+import {
+  fetchFlashcards, fetchDueCards, addFlashcard, deleteFlashcard,
+  reviewCard, seedDefaultCardsIfEmpty, type Flashcard,
+} from '@/services/flashcard.service';
+import { Shuffle, ChevronLeft, ChevronRight, Layers, Plus, Trash2, RotateCw, Loader2, Clock } from 'lucide-react';
+import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
 
-interface Flashcard {
-  id: string;
-  question: string;
-  answer: string;
-}
-
-const defaultFlashcards: Flashcard[] = [
-  { id: '1', question: 'What is photosynthesis?', answer: 'The process by which plants convert sunlight, water, and CO2 into glucose and oxygen.' },
-  { id: '2', question: 'What is the speed of light?', answer: 'Approximately 299,792 kilometers per second (186,282 miles per second).' },
-  { id: '3', question: 'What is Newton\'s First Law?', answer: 'An object at rest stays at rest, and an object in motion stays in motion unless acted upon by an external force.' },
-  { id: '4', question: 'What is the Pythagorean theorem?', answer: 'In a right triangle, a² + b² = c², where c is the hypotenuse.' },
-  { id: '5', question: 'What is DNA?', answer: 'Deoxyribonucleic acid - a molecule that carries genetic instructions for development and functioning of living organisms.' },
+/* ── rating labels ── */
+const RATINGS: { rating: Rating; label: string; key: string; desc: string }[] = [
+  { rating: Rating.Again, label: 'Again', key: '1', desc: 'Completely forgot' },
+  { rating: Rating.Hard,  label: 'Hard',  key: '2', desc: 'Recalled with effort' },
+  { rating: Rating.Good,  label: 'Good',  key: '3', desc: 'Recalled correctly' },
+  { rating: Rating.Easy,  label: 'Easy',  key: '4', desc: 'Recalled instantly' },
 ];
 
 export default function FlashcardsView() {
-  const [flashcards, setFlashcards] = useState<Flashcard[]>(defaultFlashcards);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [flipped, setFlipped] = useState(false);
+  const { user } = useAuth();
+  const [allCards, setAllCards]       = useState<Flashcard[]>([]);
+  const [queue, setQueue]             = useState<Flashcard[]>([]);
+  const [currentIdx, setCurrentIdx]   = useState(0);
+  const [flipped, setFlipped]         = useState(false);
+  const [loading, setLoading]         = useState(true);
+  const [reviewing, setReviewing]     = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newQuestion, setNewQuestion] = useState('');
-  const [newAnswer, setNewAnswer] = useState('');
+  const [newQ, setNewQ]               = useState('');
+  const [newA, setNewA]               = useState('');
+  const [sessionDone, setSessionDone] = useState(0); // reviewed this session
 
-  const currentCard = flashcards[currentIndex];
+  /* ── load ── */
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      await seedDefaultCardsIfEmpty(user.id);
+      const [due, all] = await Promise.all([
+        fetchDueCards(user.id),
+        fetchFlashcards(user.id),
+      ]);
+      setAllCards(all);
+      // Queue: due cards first, then unseen/new cards
+      const dueIds = new Set(due.map(c => c.id));
+      const newCards = all.filter(c => !dueIds.has(c.id) && c.review_count === 0);
+      setQueue([...due, ...newCards]);
+      setCurrentIdx(0);
+      setFlipped(false);
+    } catch (e: any) {
+      toast.error('Failed to load flashcards');
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
-  const handleShuffle = () => {
-    const shuffled = [...flashcards].sort(() => Math.random() - 0.5);
-    setFlashcards(shuffled);
-    setCurrentIndex(0);
-    setFlipped(false);
-  };
+  useEffect(() => { load(); }, [load]);
 
-  const handlePrev = () => {
-    setFlipped(false);
-    setTimeout(() => {
-      setCurrentIndex(prev => (prev - 1 + flashcards.length) % flashcards.length);
-    }, 150);
-  };
-
-  const handleNext = () => {
-    setFlipped(false);
-    setTimeout(() => {
-      setCurrentIndex(prev => (prev + 1) % flashcards.length);
-    }, 150);
-  };
-
-  const handleAddCard = () => {
-    if (!newQuestion.trim() || !newAnswer.trim()) return;
-    const newCard: Flashcard = {
-      id: Date.now().toString(),
-      question: newQuestion,
-      answer: newAnswer,
+  /* ── keyboard shortcuts for ratings ── */
+  useEffect(() => {
+    if (!flipped) return;
+    const handler = (e: KeyboardEvent) => {
+      const r = RATINGS.find(r => r.key === e.key);
+      if (r) handleRate(r.rating);
     };
-    setFlashcards(prev => [...prev, newCard]);
-    setNewQuestion('');
-    setNewAnswer('');
-    setShowAddForm(false);
-  };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [flipped, currentIdx, queue]);
 
-  const handleDeleteCard = () => {
-    if (flashcards.length <= 1) return;
-    const newCards = flashcards.filter((_, i) => i !== currentIndex);
-    setFlashcards(newCards);
-    setCurrentIndex(prev => Math.min(prev, newCards.length - 1));
+  const currentCard = queue[currentIdx];
+  const dueCount    = queue.filter(c => new Date(c.due_at) <= new Date()).length;
+
+  /* ── review ── */
+  async function handleRate(rating: Rating) {
+    if (!currentCard || reviewing) return;
+    setReviewing(true);
+    try {
+      const updated = await reviewCard(currentCard, rating);
+      setAllCards(prev => prev.map(c => c.id === updated.id ? updated : c));
+      setSessionDone(n => n + 1);
+      // Advance
+      setFlipped(false);
+      setTimeout(() => {
+        if (currentIdx + 1 < queue.length) {
+          setCurrentIdx(i => i + 1);
+        } else {
+          // Session complete — reload to pick up any Again cards now due
+          load();
+          setSessionDone(0);
+        }
+      }, 120);
+    } catch {
+      toast.error('Failed to save review');
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  /* ── add ── */
+  async function handleAdd() {
+    if (!user || !newQ.trim() || !newA.trim()) return;
+    try {
+      const card = await addFlashcard(user.id, newQ.trim(), newA.trim());
+      setAllCards(prev => [...prev, card]);
+      setQueue(prev => [...prev, card]);
+      setNewQ(''); setNewA('');
+      setShowAddForm(false);
+      toast.success('Flashcard added');
+    } catch { toast.error('Failed to add card'); }
+  }
+
+  /* ── delete ── */
+  async function handleDelete() {
+    if (!currentCard) return;
+    try {
+      await deleteFlashcard(currentCard.id);
+      const newQueue = queue.filter(c => c.id !== currentCard.id);
+      setQueue(newQueue);
+      setAllCards(prev => prev.filter(c => c.id !== currentCard.id));
+      setCurrentIdx(i => Math.min(i, newQueue.length - 1));
+      setFlipped(false);
+    } catch { toast.error('Failed to delete card'); }
+  }
+
+  /* ── shuffle ── */
+  function handleShuffle() {
+    setQueue(prev => [...prev].sort(() => Math.random() - 0.5));
+    setCurrentIdx(0);
     setFlipped(false);
-  };
+  }
+
+  /* ── render ── */
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-xl font-bold flex items-center gap-2.5">
-          <Layers className="h-5.5 w-5.5 text-[hsl(40_20%_80%)]" />
+      {/* Header */}
+      <div className="flex items-start sm:items-center justify-between mb-5 gap-2 flex-wrap">
+        <h2 className="font-serif text-2xl tracking-tight flex items-center gap-2.5 shrink-0">
+          <Layers className="h-5 w-5 text-foreground" />
           Flashcards
         </h2>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[hsl(220_8%_22%)] bg-[hsl(220_8%_13%)] text-[12px] font-medium text-[hsl(40_20%_80%)] hover:bg-[hsl(220_8%_17%)] transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add Card
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Due badge */}
+          {dueCount > 0 && (
+            <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-destructive/15 border border-destructive/25 text-destructive text-[11px] font-mono">
+              <Clock className="h-3 w-3" /> {dueCount} due
+            </span>
+          )}
+          <button
+            onClick={() => setShowAddForm(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add Card
+          </button>
+        </div>
       </div>
 
-      {/* Add new card form */}
+      {/* Add form */}
       <AnimatePresence>
         {showAddForm && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-5 overflow-hidden"
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }} className="mb-5 overflow-hidden"
           >
-            <div className="rounded-2xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_10%)] p-4 space-y-3">
-              <input
-                value={newQuestion}
-                onChange={(e) => setNewQuestion(e.target.value)}
-                placeholder="Enter question…"
-                className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+            <div className="rounded-2xl border border-border bg-secondary p-4 space-y-3">
+              <input value={newQ} onChange={e => setNewQ(e.target.value)}
+                placeholder="Question…"
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
               />
-              <input
-                value={newAnswer}
-                onChange={(e) => setNewAnswer(e.target.value)}
-                placeholder="Enter answer…"
-                className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+              <input value={newA} onChange={e => setNewA(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                placeholder="Answer…"
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
               />
               <div className="flex gap-2">
-                <button
-                  onClick={handleAddCard}
-                  disabled={!newQuestion.trim() || !newAnswer.trim()}
-                  className="flex-1 px-3 py-1.5 rounded-lg bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[12px] font-semibold hover:bg-white transition-colors disabled:opacity-40"
-                >
-                  Save Flashcard
-                </button>
-                <button
-                  onClick={() => setShowAddForm(false)}
-                  className="px-3 py-1.5 rounded-lg border border-[hsl(220_8%_22%)] text-[12px] text-[hsl(40_8%_52%)] hover:bg-[hsl(220_8%_14%)] transition-colors"
-                >
-                  Cancel
-                </button>
+                <button onClick={handleAdd} disabled={!newQ.trim() || !newA.trim()}
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[12px] font-semibold hover:bg-accent transition-colors disabled:opacity-40"
+                >Save</button>
+                <button onClick={() => setShowAddForm(false)}
+                  className="px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
+                >Cancel</button>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Card counter */}
-      <div className="text-center text-[11px] font-mono text-[hsl(40_8%_44%)] mb-3">
-        Card {currentIndex + 1} of {flashcards.length}
-      </div>
+      {queue.length === 0 ? (
+        <div className="rounded-2xl border border-border bg-secondary p-12 text-center">
+          <Layers className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+          <p className="text-[14px] font-medium text-foreground mb-1">All caught up</p>
+          <p className="text-[12px] text-muted-foreground">No cards due. Add new ones or come back tomorrow.</p>
+        </div>
+      ) : (
+        <>
+          {/* Counter + session progress */}
+          <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground mb-3">
+            <span>Card {currentIdx + 1} / {queue.length}</span>
+            <span className="flex items-center gap-1.5">
+              {sessionDone > 0 && <span className="text-foreground">{sessionDone} reviewed this session</span>}
+              {currentCard && (
+                <span className={currentCard.review_count === 0 ? 'text-notez-indigo/70' : 'text-muted-foreground'}>
+                  {currentCard.review_count === 0 ? 'New' : `Reviewed ${currentCard.review_count}×`}
+                </span>
+              )}
+            </span>
+          </div>
 
-      {/* Flashcard container */}
-      <div className="perspective-1000 mb-6">
-        <motion.div
-          onClick={() => setFlipped(!flipped)}
-          className="relative cursor-pointer"
-          style={{ transformStyle: 'preserve-3d' }}
-        >
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={flipped ? 'answer' : 'question'}
-              initial={{ rotateY: flipped ? -90 : 90, opacity: 0 }}
-              animate={{ rotateY: 0, opacity: 1 }}
-              exit={{ rotateY: flipped ? 90 : -90, opacity: 0 }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-              className="min-h-[300px] rounded-2xl p-8 flex flex-col items-center justify-center relative overflow-hidden border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] shadow-2xl"
-            >
-              {/* Subtle top accent line */}
-              <span className="absolute left-0 top-0 h-px w-16 bg-[hsl(40_20%_55%)]" />
+          {/* Card */}
+          <div className="perspective-1000 mb-5">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${currentCard?.id}-${flipped ? 'a' : 'q'}`}
+                initial={{ rotateY: flipped ? -90 : 90, opacity: 0 }}
+                animate={{ rotateY: 0, opacity: 1 }}
+                exit={{ rotateY: flipped ? 90 : -90, opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                onClick={() => !flipped && setFlipped(true)}
+                className="min-h-[260px] rounded-2xl p-8 flex flex-col items-center justify-center relative overflow-hidden border border-border bg-secondary shadow-2xl cursor-pointer"
+              >
+                <span className="absolute left-0 top-0 h-px w-16 bg-[hsl(var(--foreground))]" />
+                <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-4">
+                  {flipped ? 'Answer' : 'Question — click to reveal'}
+                </span>
+                <p className="text-lg text-center font-medium leading-relaxed text-foreground max-w-lg">
+                  {flipped ? currentCard?.answer : currentCard?.question}
+                </p>
+                {!flipped && (
+                  <span className="text-[10px] font-mono text-muted-foreground mt-5 flex items-center gap-1">
+                    <RotateCw className="h-3 w-3" /> Click to flip
+                  </span>
+                )}
+                {flipped && currentCard?.due_at && (
+                  <span className="text-[10px] font-mono text-muted-foreground mt-4">
+                    Next due: {formatDistanceToNow(new Date(currentCard.due_at), { addSuffix: true })}
+                  </span>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
-              {/* Background ambient glow */}
-              <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-                <div className="absolute -top-24 -right-24 w-48 h-48 bg-foreground/[0.03] rounded-full blur-3xl" />
-                <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-foreground/[0.02] rounded-full blur-3xl" />
-              </div>
-              
-              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-[hsl(40_8%_44%)] mb-4 relative z-10">
-                {flipped ? 'Answer' : 'Question'}
-              </span>
-              <p className="text-lg text-center font-medium leading-relaxed relative z-10 text-[hsl(40_20%_86%)] max-w-lg">
-                {flipped ? currentCard.answer : currentCard.question}
-              </p>
-              <span className="text-[10px] font-mono text-[hsl(40_8%_38%)] mt-6 relative z-10 flex items-center gap-1">
-                <RotateCw className="h-3 w-3" /> Click to flip
-              </span>
-            </motion.div>
+          {/* Rating buttons — only visible after flip */}
+          <AnimatePresence>
+            {flipped && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.18 }}
+                className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5"
+              >
+                {RATINGS.map(r => (
+                  <button key={r.rating} onClick={() => handleRate(r.rating)} disabled={reviewing}
+                    className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-border bg-secondary hover:bg-secondary hover:border-border transition-all disabled:opacity-40"
+                  >
+                    <span className="text-[13px] font-semibold text-foreground">{r.label}</span>
+                    <span className="text-[9px] font-mono text-muted-foreground">{r.desc}</span>
+                    <span className="text-[9px] font-mono text-muted-foreground">Press {r.key}</span>
+                  </button>
+                ))}
+              </motion.div>
+            )}
           </AnimatePresence>
-        </motion.div>
-      </div>
 
-      {/* Controls */}
-      <div className="flex items-center justify-center gap-2.5">
-        <button
-          onClick={handlePrev}
-          className="h-9 w-9 rounded-xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_12%)] hover:bg-[hsl(220_8%_16%)] flex items-center justify-center text-[hsl(40_20%_80%)] transition-colors"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleShuffle}
-          className="h-9 px-3.5 rounded-xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_12%)] hover:bg-[hsl(220_8%_16%)] flex items-center gap-1.5 text-[12px] font-mono text-[hsl(40_20%_80%)] transition-colors"
-        >
-          <Shuffle className="h-3.5 w-3.5" /> Shuffle
-        </button>
-        <button
-          onClick={handleNext}
-          className="h-9 px-4 rounded-xl bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[12px] font-semibold hover:bg-white transition-colors"
-        >
-          Next Card
-        </button>
-        <button
-          onClick={handleDeleteCard}
-          disabled={flashcards.length <= 1}
-          className="h-9 w-9 rounded-xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_12%)] hover:bg-red-400/10 hover:text-red-400 flex items-center justify-center text-[hsl(40_8%_50%)] transition-colors disabled:opacity-40 disabled:hover:bg-[hsl(220_8%_12%)] disabled:hover:text-[hsl(40_8%_50%)]"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
+          {/* Nav controls */}
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <button onClick={() => { setCurrentIdx(i => Math.max(0, i - 1)); setFlipped(false); }}
+              disabled={currentIdx === 0}
+              className="h-9 w-9 rounded-xl border border-border bg-secondary hover:bg-secondary flex items-center justify-center text-foreground transition-colors disabled:opacity-30"
+            ><ChevronLeft className="h-4 w-4" /></button>
+            <button onClick={handleShuffle}
+              className="h-9 px-3.5 rounded-xl border border-border bg-secondary hover:bg-secondary flex items-center gap-1.5 text-[12px] font-mono text-foreground transition-colors"
+            ><Shuffle className="h-3.5 w-3.5" /> Shuffle</button>
+            <button onClick={() => { setCurrentIdx(i => Math.min(queue.length - 1, i + 1)); setFlipped(false); }}
+              disabled={currentIdx >= queue.length - 1}
+              className="h-9 px-4 rounded-xl bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[12px] font-semibold hover:bg-accent transition-colors disabled:opacity-30"
+            >Next</button>
+            <button onClick={handleDelete} disabled={queue.length <= 1}
+              className="h-9 w-9 rounded-xl border border-border bg-secondary hover:bg-destructive/10 hover:text-destructive flex items-center justify-center text-muted-foreground transition-colors disabled:opacity-30"
+            ><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
 
-      {/* Progress dots */}
-      <div className="flex justify-center gap-1.5 mt-5 flex-wrap max-w-md mx-auto">
-        {flashcards.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => { setCurrentIndex(i); setFlipped(false); }}
-            className={`h-1.5 rounded-full transition-all ${
-              i === currentIndex
-                ? 'bg-[hsl(40_20%_75%)] w-4'
-                : 'bg-[hsl(220_8%_20%)] w-1.5 hover:bg-[hsl(220_8%_30%)]'
-            }`}
-          />
-        ))}
-      </div>
+          {/* Progress dots */}
+          <div className="flex justify-center gap-1.5 mt-5 flex-wrap max-w-md mx-auto">
+            {queue.slice(0, 30).map((c, i) => (
+              <button key={c.id} onClick={() => { setCurrentIdx(i); setFlipped(false); }}
+                className={`h-1.5 rounded-full transition-all ${
+                  i === currentIdx ? 'bg-[hsl(var(--foreground))] w-4'
+                  : c.review_count === 0 ? 'bg-notez-indigo/40 w-1.5'
+                  : 'bg-secondary w-1.5 hover:bg-secondary'
+                }`}
+              />
+            ))}
+            {queue.length > 30 && (
+              <span className="text-[9px] font-mono text-muted-foreground">+{queue.length - 30}</span>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

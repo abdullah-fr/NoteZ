@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Save to NoteZ",
+  "version": "1.0.0",
+  "description": "Clip the current page or selected text into your NoteZ folder in two clicks.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icon16.png", "48": "icon48.png" }
+  }
+}

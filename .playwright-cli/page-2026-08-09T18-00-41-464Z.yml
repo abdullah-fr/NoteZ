@@ -1,0 +1,26 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - link "NoteZ" [ref=e7] [cursor=pointer]:
+        - /url: /
+      - heading "Welcome Back" [level=1] [ref=e12]
+      - paragraph [ref=e13]: Sign in to continue learning
+    - button "Continue with Google" [ref=e14] [cursor=pointer]
+    - generic [ref=e15]: or
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - text: Email
+        - textbox "Email" [ref=e26]:
+          - /placeholder: you@example.com
+      - generic [ref=e27]:
+        - text: Password
+        - textbox "Password" [ref=e32]:
+          - /placeholder: ••••••••
+      - button "Sign In" [ref=e33] [cursor=pointer]
+    - paragraph [ref=e34]:
+      - text: Don't have an account?
+      - link "Sign up" [ref=e35] [cursor=pointer]:
+        - /url: /signup

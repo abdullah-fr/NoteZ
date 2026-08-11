@@ -54,14 +54,14 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center animated-bg px-4">
+    <div className="min-h-screen flex items-center justify-center animated-bg px-4 overflow-x-hidden">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="w-full max-w-md"
       >
-        <div className="glass rounded-3xl p-8 shadow-card">
+        <div className="glass rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-card overflow-hidden">
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center gap-2 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-purple flex items-center justify-center">

@@ -1,0 +1,284 @@
+- generic [ref=f1e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=f1e3]:
+    - complementary [ref=f1e4]:
+      - generic [ref=f1e5]:
+        - generic [ref=f1e2001]:
+          - img "NoteZ" [ref=f1e2002]
+          - generic [ref=f1e2003]:
+            - generic [ref=f1e2004]: NoteZ
+            - generic [ref=f1e2005]: studio
+        - button "Collapse sidebar" [ref=f1e11] [cursor=pointer]
+      - button "Search" [ref=f1e16] [cursor=pointer]:
+        - generic [ref=f1e20]: Search…
+        - generic [ref=f1e21]:
+          - generic [ref=f1e22]: ⌘
+          - generic [ref=f1e23]: K
+      - navigation [ref=f1e24]:
+        - generic [ref=f1e2006]:
+          - generic [ref=f1e2007]:
+            - generic [ref=f1e2008]: Study
+            - generic [ref=f1e2009]:
+              - button "Dashboard" [ref=f1e2011] [cursor=pointer]
+              - button "Folders" [ref=f1e2019] [cursor=pointer]
+              - button "Archived" [ref=f1e2024] [cursor=pointer]
+          - generic [ref=f1e2029]:
+            - generic [ref=f1e2030]: Practice
+            - button "Exam" [ref=f1e2033] [cursor=pointer]
+          - generic [ref=f1e2038]:
+            - generic [ref=f1e2039]: Tools
+            - generic [ref=f1e2040]:
+              - button "Chat" [ref=f1e2042] [cursor=pointer]
+              - button "Calendar" [ref=f1e2047] [cursor=pointer]
+              - button "Timer" [ref=f1e2052] [cursor=pointer]
+      - generic [ref=f1e76]:
+        - button "TU Test User" [ref=f1e77] [cursor=pointer]:
+          - generic [ref=f1e78]: TU
+          - generic [ref=f1e80]: Test User
+        - button "Sign out" [ref=f1e84] [cursor=pointer]
+    - main [ref=f1e86]:
+      - generic [ref=f1e1419]:
+        - generic [ref=f1e1420]:
+          - generic [ref=f1e1421]:
+            - heading "Folders" [level=1] [ref=f1e1422]
+            - generic [ref=f1e1423]: "20"
+          - textbox "Search folders…" [ref=f1e1428]
+          - button "Newest" [ref=f1e1430] [cursor=pointer]
+          - generic [ref=f1e1438]:
+            - button "List" [ref=f1e1439] [cursor=pointer]
+            - button "Grid" [ref=f1e1441] [cursor=pointer]
+            - button "Graph" [ref=f1e1447] [cursor=pointer]
+          - button "Select all" [ref=f1e2502] [cursor=pointer]
+          - button "Archive" [disabled] [ref=f1e2505]
+          - button "Delete" [disabled] [ref=f1e2509]
+          - button "Cancel" [ref=f1e2513] [cursor=pointer]
+        - generic [ref=f1e1458]:
+          - generic [ref=f1e1459]:
+            - generic [ref=f1e1460]: Folder
+            - generic [ref=f1e1461]: Notes
+            - generic [ref=f1e1462]: Created
+            - generic [ref=f1e1463]: Modified
+            - generic [ref=f1e1464]: Size
+          - generic [ref=f1e1465]:
+            - generic [ref=f1e2062]:
+              - generic [ref=f1e2063]:
+                - checkbox "Select Folder 1" [ref=f1e2517] [cursor=pointer]
+                - paragraph [ref=f1e2066]: Folder 1
+              - generic [ref=f1e2067]: "0"
+              - generic [ref=f1e2068]: Aug 9, 2026
+              - generic [ref=f1e2069]: Aug 9, 2026
+              - generic [ref=f1e2070]: 0 B
+              - generic [ref=f1e2074]:
+                - button [ref=f1e2075] [cursor=pointer]
+                - button [ref=f1e2078] [cursor=pointer]
+            - generic [ref=f1e2084]:
+              - generic [ref=f1e2085]:
+                - checkbox "Select Folder 2" [ref=f1e2520] [cursor=pointer]
+                - paragraph [ref=f1e2088]: Folder 2
+              - generic [ref=f1e2089]: "0"
+              - generic [ref=f1e2090]: Aug 8, 2026
+              - generic [ref=f1e2091]: Aug 8, 2026
+              - generic [ref=f1e2092]: 0 B
+              - generic [ref=f1e2096]:
+                - button [ref=f1e2097] [cursor=pointer]
+                - button [ref=f1e2100] [cursor=pointer]
+            - generic [ref=f1e2106]:
+              - generic [ref=f1e2107]:
+                - checkbox "Select Folder 3" [ref=f1e2523] [cursor=pointer]
+                - paragraph [ref=f1e2110]: Folder 3
+              - generic [ref=f1e2111]: "0"
+              - generic [ref=f1e2112]: Aug 7, 2026
+              - generic [ref=f1e2113]: Aug 7, 2026
+              - generic [ref=f1e2114]: 0 B
+              - generic [ref=f1e2118]:
+                - button [ref=f1e2119] [cursor=pointer]
+                - button [ref=f1e2122] [cursor=pointer]
+            - generic [ref=f1e2128]:
+              - generic [ref=f1e2129]:
+                - checkbox "Select Folder 4" [ref=f1e2526] [cursor=pointer]
+                - paragraph [ref=f1e2132]: Folder 4
+              - generic [ref=f1e2133]: "0"
+              - generic [ref=f1e2134]: Aug 6, 2026
+              - generic [ref=f1e2135]: Aug 6, 2026
+              - generic [ref=f1e2136]: 0 B
+              - generic [ref=f1e2140]:
+                - button [ref=f1e2141] [cursor=pointer]
+                - button [ref=f1e2144] [cursor=pointer]
+            - generic [ref=f1e2150]:
+              - generic [ref=f1e2151]:
+                - checkbox "Select Folder 5" [ref=f1e2529] [cursor=pointer]
+                - paragraph [ref=f1e2154]: Folder 5
+              - generic [ref=f1e2155]: "0"
+              - generic [ref=f1e2156]: Aug 5, 2026
+              - generic [ref=f1e2157]: Aug 5, 2026
+              - generic [ref=f1e2158]: 0 B
+              - generic [ref=f1e2162]:
+                - button [ref=f1e2163] [cursor=pointer]
+                - button [ref=f1e2166] [cursor=pointer]
+            - generic [ref=f1e2172]:
+              - generic [ref=f1e2173]:
+                - checkbox "Select Folder 6" [ref=f1e2532] [cursor=pointer]
+                - paragraph [ref=f1e2176]: Folder 6
+              - generic [ref=f1e2177]: "0"
+              - generic [ref=f1e2178]: Aug 4, 2026
+              - generic [ref=f1e2179]: Aug 4, 2026
+              - generic [ref=f1e2180]: 0 B
+              - generic [ref=f1e2184]:
+                - button [ref=f1e2185] [cursor=pointer]
+                - button [ref=f1e2188] [cursor=pointer]
+            - generic [ref=f1e2194]:
+              - generic [ref=f1e2195]:
+                - checkbox "Select Folder 7" [ref=f1e2535] [cursor=pointer]
+                - paragraph [ref=f1e2198]: Folder 7
+              - generic [ref=f1e2199]: "0"
+              - generic [ref=f1e2200]: Aug 3, 2026
+              - generic [ref=f1e2201]: Aug 3, 2026
+              - generic [ref=f1e2202]: 0 B
+              - generic [ref=f1e2206]:
+                - button [ref=f1e2207] [cursor=pointer]
+                - button [ref=f1e2210] [cursor=pointer]
+            - generic [ref=f1e2216]:
+              - generic [ref=f1e2217]:
+                - checkbox "Select Folder 8" [ref=f1e2538] [cursor=pointer]
+                - paragraph [ref=f1e2220]: Folder 8
+              - generic [ref=f1e2221]: "0"
+              - generic [ref=f1e2222]: Aug 2, 2026
+              - generic [ref=f1e2223]: Aug 2, 2026
+              - generic [ref=f1e2224]: 0 B
+              - generic [ref=f1e2228]:
+                - button [ref=f1e2229] [cursor=pointer]
+                - button [ref=f1e2232] [cursor=pointer]
+            - generic [ref=f1e2238]:
+              - generic [ref=f1e2239]:
+                - checkbox "Select Folder 9" [ref=f1e2541] [cursor=pointer]
+                - paragraph [ref=f1e2242]: Folder 9
+              - generic [ref=f1e2243]: "0"
+              - generic [ref=f1e2244]: Aug 1, 2026
+              - generic [ref=f1e2245]: Aug 1, 2026
+              - generic [ref=f1e2246]: 0 B
+              - generic [ref=f1e2250]:
+                - button [ref=f1e2251] [cursor=pointer]
+                - button [ref=f1e2254] [cursor=pointer]
+            - generic [ref=f1e2260]:
+              - generic [ref=f1e2261]:
+                - checkbox "Select Folder 10" [ref=f1e2544] [cursor=pointer]
+                - paragraph [ref=f1e2264]: Folder 10
+              - generic [ref=f1e2265]: "0"
+              - generic [ref=f1e2266]: Jul 31, 2026
+              - generic [ref=f1e2267]: Jul 31, 2026
+              - generic [ref=f1e2268]: 0 B
+              - generic [ref=f1e2272]:
+                - button [ref=f1e2273] [cursor=pointer]
+                - button [ref=f1e2276] [cursor=pointer]
+            - generic [ref=f1e2282]:
+              - generic [ref=f1e2283]:
+                - checkbox "Select Folder 11" [ref=f1e2547] [cursor=pointer]
+                - paragraph [ref=f1e2286]: Folder 11
+              - generic [ref=f1e2287]: "0"
+              - generic [ref=f1e2288]: Jul 30, 2026
+              - generic [ref=f1e2289]: Jul 30, 2026
+              - generic [ref=f1e2290]: 0 B
+              - generic [ref=f1e2294]:
+                - button [ref=f1e2295] [cursor=pointer]
+                - button [ref=f1e2298] [cursor=pointer]
+            - generic [ref=f1e2304]:
+              - generic [ref=f1e2305]:
+                - checkbox "Select Folder 12" [ref=f1e2550] [cursor=pointer]
+                - paragraph [ref=f1e2308]: Folder 12
+              - generic [ref=f1e2309]: "0"
+              - generic [ref=f1e2310]: Jul 29, 2026
+              - generic [ref=f1e2311]: Jul 29, 2026
+              - generic [ref=f1e2312]: 0 B
+              - generic [ref=f1e2316]:
+                - button [ref=f1e2317] [cursor=pointer]
+                - button [ref=f1e2320] [cursor=pointer]
+            - generic [ref=f1e2326]:
+              - generic [ref=f1e2327]:
+                - checkbox "Select Folder 13" [ref=f1e2553] [cursor=pointer]
+                - paragraph [ref=f1e2330]: Folder 13
+              - generic [ref=f1e2331]: "0"
+              - generic [ref=f1e2332]: Jul 28, 2026
+              - generic [ref=f1e2333]: Jul 28, 2026
+              - generic [ref=f1e2334]: 0 B
+              - generic [ref=f1e2338]:
+                - button [ref=f1e2339] [cursor=pointer]
+                - button [ref=f1e2342] [cursor=pointer]
+            - generic [ref=f1e2348]:
+              - generic [ref=f1e2349]:
+                - checkbox "Select Folder 14" [ref=f1e2556] [cursor=pointer]
+                - paragraph [ref=f1e2352]: Folder 14
+              - generic [ref=f1e2353]: "0"
+              - generic [ref=f1e2354]: Jul 27, 2026
+              - generic [ref=f1e2355]: Jul 27, 2026
+              - generic [ref=f1e2356]: 0 B
+              - generic [ref=f1e2360]:
+                - button [ref=f1e2361] [cursor=pointer]
+                - button [ref=f1e2364] [cursor=pointer]
+            - generic [ref=f1e2370]:
+              - generic [ref=f1e2371]:
+                - checkbox "Select Folder 15" [ref=f1e2559] [cursor=pointer]
+                - paragraph [ref=f1e2374]: Folder 15
+              - generic [ref=f1e2375]: "0"
+              - generic [ref=f1e2376]: Jul 26, 2026
+              - generic [ref=f1e2377]: Jul 26, 2026
+              - generic [ref=f1e2378]: 0 B
+              - generic [ref=f1e2382]:
+                - button [ref=f1e2383] [cursor=pointer]
+                - button [ref=f1e2386] [cursor=pointer]
+            - generic [ref=f1e2392]:
+              - generic [ref=f1e2393]:
+                - checkbox "Select Folder 16" [ref=f1e2562] [cursor=pointer]
+                - paragraph [ref=f1e2396]: Folder 16
+              - generic [ref=f1e2397]: "0"
+              - generic [ref=f1e2398]: Jul 25, 2026
+              - generic [ref=f1e2399]: Jul 25, 2026
+              - generic [ref=f1e2400]: 0 B
+              - generic [ref=f1e2404]:
+                - button [ref=f1e2405] [cursor=pointer]
+                - button [ref=f1e2408] [cursor=pointer]
+            - generic [ref=f1e2414]:
+              - generic [ref=f1e2415]:
+                - checkbox "Select Folder 17" [ref=f1e2565] [cursor=pointer]
+                - paragraph [ref=f1e2418]: Folder 17
+              - generic [ref=f1e2419]: "0"
+              - generic [ref=f1e2420]: Jul 24, 2026
+              - generic [ref=f1e2421]: Jul 24, 2026
+              - generic [ref=f1e2422]: 0 B
+              - generic [ref=f1e2426]:
+                - button [ref=f1e2427] [cursor=pointer]
+                - button [ref=f1e2430] [cursor=pointer]
+            - generic [ref=f1e2436]:
+              - generic [ref=f1e2437]:
+                - checkbox "Select Folder 18" [ref=f1e2568] [cursor=pointer]
+                - paragraph [ref=f1e2440]: Folder 18
+              - generic [ref=f1e2441]: "0"
+              - generic [ref=f1e2442]: Jul 23, 2026
+              - generic [ref=f1e2443]: Jul 23, 2026
+              - generic [ref=f1e2444]: 0 B
+              - generic [ref=f1e2448]:
+                - button [ref=f1e2449] [cursor=pointer]
+                - button [ref=f1e2452] [cursor=pointer]
+            - generic [ref=f1e2458]:
+              - generic [ref=f1e2459]:
+                - checkbox "Select Folder 19" [ref=f1e2571] [cursor=pointer]
+                - paragraph [ref=f1e2462]: Folder 19
+              - generic [ref=f1e2463]: "0"
+              - generic [ref=f1e2464]: Jul 22, 2026
+              - generic [ref=f1e2465]: Jul 22, 2026
+              - generic [ref=f1e2466]: 0 B
+              - generic [ref=f1e2470]:
+                - button [ref=f1e2471] [cursor=pointer]
+                - button [ref=f1e2474] [cursor=pointer]
+            - generic [ref=f1e2480]:
+              - generic [ref=f1e2481]:
+                - checkbox "Select Folder 20" [ref=f1e2574] [cursor=pointer]
+                - paragraph [ref=f1e2484]: Folder 20
+              - generic [ref=f1e2485]: "0"
+              - generic [ref=f1e2486]: Jul 21, 2026
+              - generic [ref=f1e2487]: Jul 21, 2026
+              - generic [ref=f1e2488]: 0 B
+              - generic [ref=f1e2492]:
+                - button [ref=f1e2493] [cursor=pointer]
+                - button [ref=f1e2496] [cursor=pointer]

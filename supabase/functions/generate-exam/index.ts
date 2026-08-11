@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkAndIncrement, limitReachedResponse } from "../_shared/usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,13 +51,30 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
-    const { subject, specialization, difficulty, questionCount } = await req.json();
+    // ── Usage metering ────────────────────────────────────────────────────────
+    const usageResult = await checkAndIncrement(
+      userData.user.id,
+      "exam_generations_count",
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    if (!usageResult.allowed) {
+      return limitReachedResponse("exam_generations_count", usageResult.limit!, corsHeaders);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const { subject, specialization, difficulty, questionCount, sourceText } = await req.json();
     const safeCount = Math.min(Math.max(Number(questionCount) || 5, 1), 25);
     const safeDifficulty = ["easy", "medium", "hard"].includes(String(difficulty)) ? difficulty : "medium";
     const safeSubject = String(subject || "").slice(0, 200);
     const safeSpec = specialization ? String(specialization).slice(0, 200) : "";
+    const safeSource = sourceText ? String(sourceText).slice(0, 10000) : "";
 
-    const systemPrompt = `You are an expert exam generator for students. Generate exactly ${safeCount} multiple-choice questions about ${safeSubject}${safeSpec ? ` (specifically ${safeSpec})` : ""}.
+    const sourceBlock = safeSource
+      ? `\n\nGenerate questions specifically based on the following student notes:\n${safeSource}`
+      : "";
+
+    const systemPrompt = `You are an expert exam generator for students. Generate exactly ${safeCount} multiple-choice questions about ${safeSubject}${safeSpec ? ` (specifically ${safeSpec})` : ""}${sourceBlock ? " — use the provided notes as your primary source" : ""}.
 
 Difficulty level: ${safeDifficulty}
 
@@ -77,7 +95,7 @@ Return ONLY valid JSON — no markdown fences, no extra text:
       "betterApproach": "A tip for understanding this concept better..."
     }
   ]
-}`;
+}${sourceBlock}`;
 
     let content: string;
     try {

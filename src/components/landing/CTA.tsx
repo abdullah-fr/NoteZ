@@ -5,14 +5,14 @@ import { Link } from 'react-router-dom';
 
 export function CTA() {
   return (
-    <section className="py-20 md:py-28 relative overflow-hidden">
+    <section className="relative overflow-hidden py-20 md:py-28">
       <div className="container mx-auto px-4 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="relative max-w-5xl mx-auto rounded-3xl border border-primary/20 bg-card/40 backdrop-blur-xl overflow-hidden p-10 md:p-16"
+          className="relative max-w-5xl mx-auto rounded-3xl border border-primary/20 bg-card/40 backdrop-blur-xl overflow-hidden p-8 md:p-16"
         >
           {/* Glow accents */}
           <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-primary/20 blur-3xl pointer-events-none" />

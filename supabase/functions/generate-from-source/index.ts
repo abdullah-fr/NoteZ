@@ -6,15 +6,37 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type Mode = "notes" | "flashcards" | "quiz";
+type Mode = "notes" | "flashcards" | "quiz" | "activities";
 
-function buildPrompt(mode: Mode, count: number) {
+function buildPrompt(mode: Mode, count: number): string {
   if (mode === "notes") {
-    return `You are an expert study note-taker. From the source text, produce comprehensive study notes in clean markdown. Use clear headings, bullet points, bold key terms, and short examples. Focus on what a student must remember. Return ONLY the markdown notes — no extra commentary.`;
+    return `You are an expert study note-taker. From the source text produce comprehensive study notes in clean markdown. Use clear headings, bullet points, bold key terms, and short examples. Focus on what a student must remember. Return ONLY the markdown — no extra commentary.`;
   }
   if (mode === "flashcards") {
-    return `You are a flashcard generator. Create exactly ${count} high-quality Q&A flashcards from the source. Questions should test recall of important concepts. Return ONLY valid JSON — no markdown fences: {"cards":[{"question":"...","answer":"..."}]}`;
+    return `You are a flashcard generator. Create exactly ${count} high-quality Q&A flashcards from the source. Return ONLY valid JSON — no markdown fences: {"cards":[{"question":"...","answer":"..."}]}`;
   }
+  if (mode === "activities") {
+    return `You are a study work-breakdown generator. Analyse this academic source (syllabus, course outline, assignment brief, or study material) and extract a structured semester/project work breakdown.
+
+Return ONLY valid JSON — no markdown fences:
+{
+  "activities": [
+    {
+      "title": "Unit 3 — Algorithms & Complexity",
+      "subject": "Computer Science",
+      "description": "Optional 1-sentence context",
+      "tasks": ["Read Chapter 5", "Complete practice problems", "Review lecture slides", "Take self-quiz"]
+    }
+  ]
+}
+
+Rules:
+- One activity per detected unit, module, week, or assignment (max 12).
+- Each activity must have 3–8 specific, actionable tasks.
+- Infer subject from the document title or content.
+- Return ONLY the JSON object — nothing else.`;
+  }
+  // quiz
   return `You are a quiz generator. Create exactly ${count} multiple-choice questions from the source. Each must have 4 options and one correct index. Return ONLY valid JSON — no markdown fences: {"questions":[{"question":"...","options":["A","B","C","D"],"correct":0}]}`;
 }
 
@@ -46,8 +68,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const SUPABASE_URL  = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
@@ -73,12 +95,11 @@ serve(async (req) => {
     if (!source) throw new Error("Source not found");
     if (source.status !== "ready" || !source.extracted_text) throw new Error("Source is not processed yet");
 
-    const sys = buildPrompt(mode, n);
     let content: string;
     try {
       content = await callGemini(
         GEMINI_API_KEY,
-        sys,
+        buildPrompt(mode, n),
         `Source title: ${source.title}\n\nSource content:\n${source.extracted_text.slice(0, 30000)}`,
       );
     } catch (e: any) {
@@ -90,11 +111,10 @@ serve(async (req) => {
       throw e;
     }
 
+    // ── notes ──────────────────────────────────────────────────────────────
     if (mode === "notes") {
       const { data: note, error } = await admin.from("notes").insert({
-        user_id: userId,
-        title: `Notes — ${source.title}`,
-        content,
+        user_id: userId, title: `Notes — ${source.title}`, content,
       }).select().single();
       if (error) throw error;
       return new Response(JSON.stringify({ ok: true, mode, note }), {
@@ -102,12 +122,13 @@ serve(async (req) => {
       });
     }
 
+    // ── flashcards ─────────────────────────────────────────────────────────
     if (mode === "flashcards") {
       const parsed = extractJson(content);
       const cards = (parsed.cards || []).slice(0, n).map((c: any) => ({
         user_id: userId,
         question: String(c.question || "").slice(0, 1000),
-        answer: String(c.answer || "").slice(0, 2000),
+        answer:   String(c.answer   || "").slice(0, 2000),
       })).filter((c: any) => c.question && c.answer);
       if (!cards.length) throw new Error("AI returned no flashcards");
       const { error } = await admin.from("flashcards").insert(cards);
@@ -117,12 +138,29 @@ serve(async (req) => {
       });
     }
 
-    // quiz
+    // ── activities (syllabus import) ───────────────────────────────────────
+    // Returns the parsed breakdown to the frontend for user review — does NOT
+    // persist automatically. The frontend saves after the user confirms.
+    if (mode === "activities") {
+      const parsed = extractJson(content);
+      const activities = (parsed.activities || []).slice(0, 12).map((a: any) => ({
+        title:       String(a.title       || "").slice(0, 200),
+        subject:     String(a.subject     || "").slice(0, 100),
+        description: String(a.description || "").slice(0, 500),
+        tasks:       (Array.isArray(a.tasks) ? a.tasks : []).slice(0, 8).map((t: any) => String(t).slice(0, 300)),
+      })).filter((a: any) => a.title && a.tasks.length > 0);
+      if (!activities.length) throw new Error("AI returned no activities");
+      return new Response(JSON.stringify({ ok: true, mode, activities }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── quiz ───────────────────────────────────────────────────────────────
     const parsed = extractJson(content);
     const rows = (parsed.questions || []).slice(0, n).map((q: any) => ({
-      user_id: userId,
-      question: String(q.question || "").slice(0, 1000),
-      options: Array.isArray(q.options) ? q.options.slice(0, 4) : [],
+      user_id:        userId,
+      question:       String(q.question || "").slice(0, 1000),
+      options:        Array.isArray(q.options) ? q.options.slice(0, 4) : [],
       correct_answer: Number.isInteger(q.correct) ? q.correct : 0,
     })).filter((q: any) => q.question && q.options.length === 4);
     if (!rows.length) throw new Error("AI returned no quiz questions");
@@ -131,6 +169,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ ok: true, mode, count: rows.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (e) {
     console.error("generate-from-source error:", e);
     return new Response(JSON.stringify({ error: "An unexpected error occurred." }), {

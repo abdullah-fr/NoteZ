@@ -1,21 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
+import { getSubjectColor } from '@/lib/subjectColors';
+import { supabase } from '@/integrations/supabase/client';
 import {
-  fetchActivities,
-  fetchChecklistItems,
-  createActivity,
-  updateActivityProgress,
-  deleteActivity,
-  addChecklistItems,
-  addChecklistItem,
-  toggleChecklistItem,
-  deleteChecklistItem,
-  type Activity,
-  type ChecklistItem,
+  fetchActivities, fetchChecklistItems, createActivity,
+  updateActivityProgress, deleteActivity, addChecklistItems,
+  addChecklistItem, toggleChecklistItem, deleteChecklistItem,
+  type Activity, type ChecklistItem,
 } from '@/services';
+import { uploadSourceFile, triggerProcessSource, subscribeToSourceChanges } from '@/services/sources.service';
 import { toast } from 'sonner';
-import { Plus, Trash2, ListChecks, Check, X, ChevronDown, ChevronUp, Layers, BookOpen } from 'lucide-react';
+import { Plus, Trash2, ListChecks, Check, X, ChevronDown, ChevronUp, Layers, BookOpen, Upload, Loader2, Edit3, Save } from 'lucide-react';
 
 export default function ActivitiesView() {
   const { user } = useAuth();
@@ -30,6 +26,82 @@ export default function ActivitiesView() {
   const [draftTasks, setDraftTasks] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [newTaskByActivity, setNewTaskByActivity] = useState<Record<string, string>>({});
+
+  /* ── syllabus import (Prompt 17) ── */
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  type ImportStep = 'idle' | 'uploading' | 'processing' | 'reviewing' | 'saving';
+  interface DraftActivity { title: string; subject: string; description: string; tasks: string[] }
+  const [importStep, setImportStep] = useState<ImportStep>('idle');
+  const [importDraft, setImportDraft] = useState<DraftActivity[]>([]);
+  const [importSourceId, setImportSourceId] = useState<string | null>(null);
+
+  async function handleSyllabusFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    setImportStep('uploading');
+    try {
+      const source = await uploadSourceFile(user.id, file);
+      setImportSourceId(source.id);
+      setImportStep('processing');
+      await triggerProcessSource(source.id);
+
+      // Poll for ready status (max 60 s)
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        const { data } = await supabase.from('sources').select('status, error').eq('id', source.id).single();
+        if (data?.status === 'ready') {
+          clearInterval(poll);
+          // Now generate activities
+          const { data: result, error } = await supabase.functions.invoke('generate-from-source', {
+            body: { sourceId: source.id, mode: 'activities' },
+          });
+          if (error || result?.error) {
+            toast.error('Could not generate work breakdown — try again');
+            setImportStep('idle');
+            return;
+          }
+          setImportDraft(result.activities || []);
+          setImportStep('reviewing');
+        } else if (data?.status === 'failed' || attempts > 24) {
+          clearInterval(poll);
+          toast.error(data?.error || 'Document processing failed');
+          setImportStep('idle');
+        }
+      }, 2500);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+      setImportStep('idle');
+    }
+  }
+
+  async function saveImportedActivities() {
+    if (!user || !importDraft.length) return;
+    setImportStep('saving');
+    try {
+      for (const draft of importDraft) {
+        const act = await createActivity(user.id, {
+          title: draft.title,
+          subject: draft.subject || null,
+          description: draft.description || null,
+        });
+        if (draft.tasks.length) {
+          await addChecklistItems(draft.tasks.map((label, idx) => ({
+            activity_id: act.id, user_id: user.id, label, position: idx,
+          })));
+        }
+      }
+      toast.success(`${importDraft.length} activities imported`);
+      setImportStep('idle');
+      setImportDraft([]);
+      load();
+    } catch {
+      toast.error('Failed to save activities');
+      setImportStep('idle');
+    }
+  }
 
   const load = async () => {
     if (!user) return;
@@ -143,42 +215,126 @@ export default function ActivitiesView() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold flex items-center gap-2.5">
-          <ListChecks className="h-5.5 w-5.5 text-[hsl(40_20%_80%)]" />
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleSyllabusFile} />
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-serif text-xl sm:text-2xl tracking-tight flex items-center gap-2.5">
+          <ListChecks className="h-5 w-5 text-foreground shrink-0" />
           Activities & Work Breakdown
         </h2>
-        <button
-          onClick={() => setShowForm(s => !s)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[hsl(220_8%_22%)] bg-[hsl(220_8%_13%)] text-[12px] font-medium text-[hsl(40_20%_80%)] hover:bg-[hsl(220_8%_17%)] transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" /> New Activity
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importStep !== 'idle'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[11px] font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+          >
+            {importStep === 'uploading' || importStep === 'processing' ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Upload className="h-3 w-3" />
+            )}
+            {importStep === 'uploading' ? 'Uploading…'
+              : importStep === 'processing' ? 'Processing…'
+              : 'Import syllabus'}
+          </button>
+          <button
+            onClick={() => setShowForm(s => !s)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> New Activity
+          </button>
+        </div>
       </div>
 
+      {/* Syllabus import review panel */}
+      <AnimatePresence>
+        {importStep === 'reviewing' && importDraft.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="rounded-2xl border border-border bg-secondary p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-[13px] font-semibold text-foreground">Review imported work breakdown</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{importDraft.length} activities detected — edit before saving</p>
+              </div>
+              <button onClick={() => { setImportStep('idle'); setImportDraft([]); }}
+                className="h-6 w-6 flex items-center justify-center text-muted-foreground hover:text-foreground"
+              ><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {importDraft.map((act, i) => (
+                <div key={i} className="rounded-xl border border-border bg-secondary p-3">
+                  <div className="flex items-start gap-2 mb-1">
+                    <input value={act.title}
+                      onChange={e => setImportDraft(prev => prev.map((a, j) => j === i ? { ...a, title: e.target.value } : a))}
+                      className="flex-1 bg-transparent text-[13px] font-semibold text-foreground outline-none border-b border-transparent focus:border-border transition-colors"
+                    />
+                    <button onClick={() => setImportDraft(prev => prev.filter((_, j) => j !== i))}
+                      className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                    ><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                  {act.subject && (
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1">{act.subject}</p>
+                  )}
+                  <ul className="space-y-0.5">
+                    {act.tasks.map((t, ti) => (
+                      <li key={ti} className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                        <span className="w-1 h-1 rounded-full bg-[hsl(var(--muted-foreground))] shrink-0" />{t}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={saveImportedActivities} disabled={importStep === 'saving'}
+                className="flex-1 py-2 rounded-xl bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[12px] font-semibold hover:bg-accent transition-colors disabled:opacity-40"
+              >{importStep === 'saving' ? 'Saving…' : `Save ${importDraft.length} activities`}</button>
+              <button onClick={() => { setImportStep('idle'); setImportDraft([]); }}
+                className="px-4 py-2 rounded-xl border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
+              >Discard</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Overall progress banner */}
-      <div className="rounded-2xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] p-5">
+      <div className="rounded-2xl border border-border bg-secondary p-5">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-[hsl(40_8%_44%)]">Overall Subject Progress</span>
-          <span className="text-[12px] font-mono text-[hsl(40_20%_80%)]">{overall}%</span>
+          <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Overall Subject Progress</span>
+          <span className="text-[12px] font-mono text-foreground">{overall}%</span>
         </div>
-        <div className="w-full h-1.5 bg-[hsl(220_8%_16%)] rounded-full overflow-hidden">
-          <div className="h-full bg-[hsl(40_20%_65%)] transition-all duration-300" style={{ width: `${overall}%` }} />
+        <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+          <div className="h-full bg-[hsl(var(--foreground))] transition-all duration-300" style={{ width: `${overall}%` }} />
         </div>
 
         {bySubject.length > 0 && (
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {bySubject.map(s => (
-              <div key={s.subject} className="rounded-xl border border-[hsl(220_8%_16%)] bg-[hsl(220_8%_13%)] p-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-[hsl(40_8%_46%)]">{s.subject}</span>
-                  <span className="text-[11px] font-mono text-[hsl(40_20%_78%)]">{s.progress}%</span>
+            {bySubject.map(s => {
+              const subjectColor = getSubjectColor(s.subject);
+              return (
+                <div key={s.subject} className="rounded-xl border border-border bg-secondary p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: subjectColor }}
+                      />
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{s.subject}</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-foreground">{s.progress}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full transition-all duration-300"
+                      style={{ width: `${s.progress}%`, backgroundColor: subjectColor, opacity: 0.75 }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full h-1 bg-[hsl(220_8%_18%)] rounded-full overflow-hidden">
-                  <div className="h-full bg-[hsl(40_20%_60%)] transition-all duration-300" style={{ width: `${s.progress}%` }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -190,28 +346,28 @@ export default function ActivitiesView() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="rounded-2xl border border-[hsl(220_8%_20%)] bg-[hsl(220_8%_10%)] p-4 space-y-3 overflow-hidden"
+            className="rounded-2xl border border-border bg-secondary p-4 space-y-3 overflow-hidden"
           >
-            <h3 className="text-[12px] font-semibold text-[hsl(40_20%_82%)] flex items-center gap-2">
-              <Layers className="h-3.5 w-3.5 text-[hsl(40_20%_65%)]" /> New Activity Package
+            <h3 className="text-[12px] font-semibold text-foreground flex items-center gap-2">
+              <Layers className="h-3.5 w-3.5 text-foreground" /> New Activity Package
             </h3>
             <input
               placeholder="Activity title (e.g. Unit 3 Review & Practice)"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+              className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
             />
             <input
               placeholder="Subject (e.g. Computer Science)"
               value={subject}
               onChange={e => setSubject(e.target.value)}
-              className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+              className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
             />
             <input
               placeholder="Description (optional)"
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="w-full bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+              className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
             />
             <div className="space-y-2 pt-1">
               <div className="flex gap-2">
@@ -220,12 +376,12 @@ export default function ActivitiesView() {
                   value={taskInput}
                   onChange={e => setTaskInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDraftTask(); } }}
-                  className="flex-1 bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-2 text-[13px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+                  className="flex-1 bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
                 />
                 <button
                   type="button"
                   onClick={addDraftTask}
-                  className="px-3 py-1.5 rounded-xl border border-[hsl(220_8%_22%)] text-[12px] text-[hsl(40_20%_80%)] hover:bg-[hsl(220_8%_16%)] transition-colors"
+                  className="px-3 py-1.5 rounded-xl border border-border text-[12px] text-foreground hover:bg-secondary transition-colors"
                 >
                   Add Task
                 </button>
@@ -233,10 +389,10 @@ export default function ActivitiesView() {
               {draftTasks.length > 0 && (
                 <ul className="space-y-1">
                   {draftTasks.map((t, i) => (
-                    <li key={i} className="text-[12px] text-[hsl(40_20%_80%)] flex items-center justify-between rounded-lg border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_12%)] px-3 py-1.5">
+                    <li key={i} className="text-[12px] text-foreground flex items-center justify-between rounded-lg border border-border bg-secondary px-3 py-1.5">
                       <span>{t}</span>
                       <button onClick={() => setDraftTasks(prev => prev.filter((_, j) => j !== i))}>
-                        <X className="h-3.5 w-3.5 text-[hsl(40_8%_44%)] hover:text-red-400" />
+                        <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
                       </button>
                     </li>
                   ))}
@@ -247,13 +403,13 @@ export default function ActivitiesView() {
               <button
                 onClick={createActivityHandler}
                 disabled={!title.trim()}
-                className="flex-1 px-3 py-1.5 rounded-lg bg-[hsl(220_8%_80%)] text-[hsl(220_10%_8%)] text-[12px] font-semibold hover:bg-white transition-colors disabled:opacity-40"
+                className="flex-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[12px] font-semibold hover:bg-accent transition-colors disabled:opacity-40"
               >
                 Create Activity
               </button>
               <button
                 onClick={() => setShowForm(false)}
-                className="px-3 py-1.5 rounded-lg border border-[hsl(220_8%_22%)] text-[12px] text-[hsl(40_8%_52%)] hover:bg-[hsl(220_8%_14%)] transition-colors"
+                className="px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
               >
                 Cancel
               </button>
@@ -265,11 +421,20 @@ export default function ActivitiesView() {
       {/* Activities list */}
       <div className="space-y-3">
         {loading ? (
-          <p className="text-[12px] text-[hsl(40_8%_44%)] font-mono">Loading activities…</p>
+          <p className="text-[12px] text-muted-foreground font-mono">Loading activities…</p>
         ) : activities.length === 0 ? (
-          <div className="rounded-2xl border border-[hsl(220_8%_16%)] bg-[hsl(220_8%_9%)] p-12 text-center">
-            <ListChecks className="h-10 w-10 mx-auto mb-3 text-[hsl(40_8%_30%)]" />
-            <p className="text-[13px] text-[hsl(40_8%_40%)]">No activities yet. Create your first work breakdown package.</p>
+          <div className="rounded-2xl border border-border bg-secondary p-10 text-center">
+            <ListChecks className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+            <p className="text-[14px] font-medium text-foreground mb-1">Track your study work here</p>
+            <p className="text-[12px] text-muted-foreground mb-4 max-w-xs mx-auto">
+              Break assignments and units into tasks. Every expert was once a beginner — log your first activity.
+            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" /> Create your first activity
+            </button>
           </div>
         ) : (
           activities.map(a => {
@@ -277,41 +442,54 @@ export default function ActivitiesView() {
             const pct = computeProgress(a.id);
             const open = expanded === a.id;
             return (
-              <div key={a.id} className="rounded-2xl border border-[hsl(220_8%_18%)] bg-[hsl(220_8%_10%)] overflow-hidden">
+              <div key={a.id} className="rounded-2xl border border-border bg-secondary overflow-hidden">
                 <button
                   onClick={() => setExpanded(open ? null : a.id)}
-                  className="w-full p-4 text-left hover:bg-[hsl(220_8%_12%)] transition-colors"
+                  className="w-full p-4 text-left hover:bg-secondary transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div>
-                      <div className="font-semibold text-[14px] text-[hsl(40_20%_86%)]">{a.title}</div>
+                      <div className="font-semibold text-[14px] text-foreground">{a.title}</div>
                       {a.subject && (
-                        <div className="text-[9px] font-mono uppercase tracking-widest text-[hsl(40_8%_46%)] mt-0.5">
-                          {a.subject}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: getSubjectColor(a.subject) }}
+                          />
+                          <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">
+                            {a.subject}
+                          </div>
                         </div>
                       )}
                       {a.description && (
-                        <div className="text-[12px] text-[hsl(40_8%_52%)] mt-1">
+                        <div className="text-[12px] text-muted-foreground mt-1">
                           {a.description}
                         </div>
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] font-mono text-[hsl(40_8%_44%)]">
+                      <span className="text-[11px] font-mono text-muted-foreground">
                         {list.filter(i => i.done).length}/{list.length}
                       </span>
                       {open ? (
-                        <ChevronUp className="h-4 w-4 text-[hsl(40_8%_44%)]" />
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-[hsl(40_8%_44%)]" />
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 h-1 bg-[hsl(220_8%_16%)] rounded-full overflow-hidden">
-                      <div className="h-full bg-[hsl(40_20%_65%)] transition-all duration-300" style={{ width: `${pct}%` }} />
+                    <div className="flex-1 h-1 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: a.subject ? getSubjectColor(a.subject) : 'hsl(var(--foreground))',
+                          opacity: 0.7,
+                        }}
+                      />
                     </div>
-                    <span className="text-[10px] font-mono w-8 text-right text-[hsl(40_8%_46%)]">{pct}%</span>
+                    <span className="text-[10px] font-mono w-8 text-right text-muted-foreground">{pct}%</span>
                   </div>
                 </button>
                 <AnimatePresence>
@@ -320,23 +498,23 @@ export default function ActivitiesView() {
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-[hsl(220_8%_16%)] overflow-hidden bg-[hsl(220_8%_11%)]"
+                      className="border-t border-border overflow-hidden bg-secondary"
                     >
                       <div className="p-4 space-y-2">
                         {list.map(item => (
-                          <div key={item.id} className="flex items-center gap-2.5 rounded-lg border border-[hsl(220_8%_16%)] bg-[hsl(220_8%_13%)] px-3 py-2">
+                          <div key={item.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-secondary px-3 py-2">
                             <button
                               onClick={() => toggleItem(item)}
                               className={`h-4.5 w-4.5 rounded flex items-center justify-center border transition-colors ${
-                                item.done ? 'bg-[hsl(40_20%_75%)] border-[hsl(40_20%_75%)]' : 'border-[hsl(220_8%_28%)]'
+                                item.done ? 'bg-[hsl(var(--foreground))] border-[hsl(var(--foreground))]' : 'border-border'
                               }`}
                             >
-                              {item.done && <Check className="h-3 w-3 text-[hsl(220_10%_8%)]" />}
+                              {item.done && <Check className="h-3 w-3 text-[hsl(var(--accent-foreground))]" />}
                             </button>
-                            <span className={`flex-1 text-[12px] ${item.done ? 'line-through text-[hsl(40_8%_40%)]' : 'text-[hsl(40_20%_82%)]'}`}>
+                            <span className={`flex-1 text-[12px] ${item.done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                               {item.label}
                             </span>
-                            <button onClick={() => deleteItem(item)} className="text-[hsl(40_8%_40%)] hover:text-red-400 transition-colors">
+                            <button onClick={() => deleteItem(item)} className="text-muted-foreground hover:text-destructive transition-colors">
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -347,11 +525,11 @@ export default function ActivitiesView() {
                             value={newTaskByActivity[a.id] || ''}
                             onChange={e => setNewTaskByActivity(p => ({ ...p, [a.id]: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItemToActivity(a.id); } }}
-                            className="flex-1 bg-[hsl(220_8%_13%)] border border-[hsl(220_8%_22%)] rounded-xl px-3 py-1.5 text-[12px] text-[hsl(40_20%_84%)] placeholder:text-[hsl(40_8%_36%)] outline-none focus:border-[hsl(220_8%_32%)] transition-colors"
+                            className="flex-1 bg-secondary border border-border rounded-xl px-3 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
                           />
                           <button
                             onClick={() => addItemToActivity(a.id)}
-                            className="px-3 py-1.5 rounded-xl border border-[hsl(220_8%_22%)] text-[12px] text-[hsl(40_20%_80%)] hover:bg-[hsl(220_8%_16%)] transition-colors"
+                            className="px-3 py-1.5 rounded-xl border border-border text-[12px] text-foreground hover:bg-secondary transition-colors"
                           >
                             Add
                           </button>
@@ -359,7 +537,7 @@ export default function ActivitiesView() {
                         <div className="pt-2 flex justify-end">
                           <button
                             onClick={() => deleteActivityHandler(a.id)}
-                            className="text-[11px] font-mono text-red-400/60 hover:text-red-400 flex items-center gap-1 transition-colors"
+                            className="text-[11px] font-mono text-destructive/60 hover:text-destructive flex items-center gap-1 transition-colors"
                           >
                             <Trash2 className="h-3 w-3" /> Delete activity
                           </button>

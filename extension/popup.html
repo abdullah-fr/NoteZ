@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Save to NoteZ</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px; min-height: 180px; padding: 16px;
+      background: hsl(220 8% 7%); color: hsl(40 20% 94%);
+      font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px;
+    }
+    .header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .logo { font-family: Georgia, serif; font-size: 16px; font-weight: 600; }
+    .sub { font-family: monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .18em; color: hsl(40 8% 50%); }
+    label { display: block; font-family: monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .18em; color: hsl(40 8% 48%); margin-bottom: 5px; }
+    select, input {
+      width: 100%; background: hsl(220 8% 13%); border: 1px solid hsl(220 8% 22%);
+      border-radius: 10px; padding: 8px 10px; color: hsl(40 20% 84%); font-size: 12px; outline: none;
+    }
+    select:focus, input:focus { border-color: hsl(220 8% 32%); }
+    .field { margin-bottom: 10px; }
+    button {
+      width: 100%; padding: 9px; border-radius: 10px; border: none; cursor: pointer;
+      background: hsl(220 8% 80%); color: hsl(220 10% 8%); font-size: 12px; font-weight: 600; margin-top: 4px;
+    }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    .msg { margin-top: 8px; font-size: 11px; text-align: center; color: hsl(40 8% 50%); }
+    .msg.ok  { color: hsl(145 35% 55%); }
+    .msg.err { color: hsl(8 62% 55%); }
+    #auth-notice { font-size: 11px; color: hsl(40 8% 48%); text-align: center; margin-top: 20px; line-height: 1.5; }
+    a { color: hsl(40 20% 70%); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="logo">NoteZ</div>
+      <div class="sub">Page Clipper</div>
+    </div>
+  </div>
+
+  <div id="main" style="display:none">
+    <div class="field">
+      <label>Save to folder</label>
+      <select id="folder-select"><option value="">— Select a folder —</option></select>
+    </div>
+    <div class="field">
+      <label>Title (optional)</label>
+      <input id="title-input" type="text" placeholder="Page title…" />
+    </div>
+    <button id="clip-btn">Clip this page</button>
+    <div class="msg" id="status"></div>
+  </div>
+
+  <div id="auth-notice" style="display:none">
+    <p>Sign in to NoteZ first, then open this popup.</p>
+    <p><a href="https://notez.app/login" target="_blank">Open NoteZ →</a></p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
