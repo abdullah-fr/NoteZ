@@ -6,10 +6,9 @@ Welcome to the NoteZ codebase! This guide covers essential Git commands for pull
 
 ## 📥 1. How to Get the Latest Code (Git Pull)
 
-Before starting work or before pushing new changes, always update your local workspace:
+Before starting work or before pushing new changes, pull the latest changes from the main branch:
 
 ```bash
-# Pull the latest changes from the main branch
 git pull origin main
 ```
 
@@ -22,22 +21,26 @@ git pull origin main
 Follow these 3 steps whenever you finish writing or fixing code:
 
 ### Step 1: Check your modified files
+
 ```bash
 git status
 ```
 
-### Step 2: Stage and commit your changes
-```bash
-# Stage all modified files
-git add .
+### Step 2: Stage all modified files
 
-# Save your changes with a clear commit message
+```bash
+git add .
+```
+
+### Step 3: Save your changes with a clear commit message
+
+```bash
 git commit -m "feat: describe your change here"
 ```
 
-### Step 3: Push your commit to GitHub
+### Step 4: Push your commit to GitHub
+
 ```bash
-# Push your local commits to GitHub
 git push origin main
 ```
 
@@ -66,13 +69,20 @@ git push origin main
 
 ## 🛠 Local Setup & Development
 
+Install dependencies:
+
 ```bash
-# Install dependencies
 npm install
+```
 
-# Start local dev server
+Start local development server:
+
+```bash
 npm run dev
+```
 
-# Build for production verification
+Build for production verification:
+
+```bash
 npm run build
 ```
