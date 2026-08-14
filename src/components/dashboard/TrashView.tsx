@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, RotateCcw, FileText, AlertTriangle } from 'lucide-react';
+import { Trash2, RotateCcw, FileText, Folder, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-interface TrashItem {
+export interface TrashItem {
   id: string;
-  noteId: string;
-  title: string;
-  content: string;
-  folderName: string;
-  folderId: string;
+  type?: 'folder' | 'note';
+  noteId?: string;
+  title?: string;
+  content?: string;
+  folderName?: string;
+  folderId?: string;
+  item?: any;
   deletedAt: string; // ISO string
 }
 
@@ -32,7 +34,7 @@ function daysRemaining(deletedAt: string): number {
   return Math.max(0, Math.ceil((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000)));
 }
 
-export default function TrashView() {
+export default function TrashView({ onBack }: { onBack?: () => void }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<TrashItem[]>([]);
 
@@ -47,35 +49,71 @@ export default function TrashView() {
     setItems(valid);
   }, []);
 
-  function restoreNote(item: TrashItem) {
-    // Put note back into the folder in localStorage
+  function restoreItem(trashEntry: TrashItem) {
     try {
       const foldersRaw = localStorage.getItem('notez_folders');
-      if (foldersRaw) {
-        const folders = JSON.parse(foldersRaw);
-        const folder = folders.find((f: any) => f.id === item.folderId);
-        if (folder) {
-          // Add note back to the first category (or create one)
-          if (!folder.categories || folder.categories.length === 0) {
-            folder.categories = [{ id: `${folder.id}-notes`, name: 'Notes', type: 'custom', notes: [] }];
-          }
-          folder.categories[0].notes.unshift({
-            id: item.noteId,
-            title: item.title,
-            content: item.content,
+      let folders = foldersRaw ? JSON.parse(foldersRaw) : [];
+
+      const folderData = trashEntry.item || trashEntry.folderData;
+      if (trashEntry.type === 'folder' && folderData) {
+        // Restore folder
+        const existingIdx = folders.findIndex((f: any) => f.id === folderData.id);
+        if (existingIdx !== -1) {
+          folders[existingIdx] = folderData;
+        } else {
+          folders.unshift(folderData);
+        }
+        localStorage.setItem('notez_folders', JSON.stringify(folders));
+        window.dispatchEvent(new Event('notez:folders-updated'));
+      } else {
+        // Restore note
+        const targetFolderId = trashEntry.folderId;
+        let folder = folders.find((f: any) => f.id === targetFolderId);
+
+        if (!folder && folders.length > 0) {
+          folder = folders[0];
+        } else if (!folder) {
+          folder = {
+            id: targetFolderId || crypto.randomUUID(),
+            name: trashEntry.folderName || 'Restored Notes',
+            color: '#3b82f6',
+            categories: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-          });
-          localStorage.setItem('notez_folders', JSON.stringify(folders));
-          window.dispatchEvent(new Event('notez:folders-updated'));
+          };
+          folders.unshift(folder);
         }
+
+        if (!folder.categories || folder.categories.length === 0) {
+          folder.categories = [{ id: `${folder.id}-notes`, name: 'Notes', type: 'custom', notes: [] }];
+        }
+        const targetCat = folder.categories[0];
+        if (!targetCat.notes) targetCat.notes = [];
+
+        const existingNoteIdx = targetCat.notes.findIndex((n: any) => n.id === (trashEntry.noteId || trashEntry.id));
+        const noteToRestore = {
+          id: trashEntry.noteId || trashEntry.id,
+          title: trashEntry.title || 'Untitled Note',
+          content: trashEntry.content || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        if (existingNoteIdx !== -1) {
+          targetCat.notes[existingNoteIdx] = noteToRestore;
+        } else {
+          targetCat.notes.unshift(noteToRestore);
+        }
+
+        localStorage.setItem('notez_folders', JSON.stringify(folders));
+        window.dispatchEvent(new Event('notez:folders-updated'));
       }
-    } catch {
-      // Silent fail
+    } catch (err) {
+      console.error('Failed to restore trash item:', err);
     }
 
     // Remove from trash
-    const updated = items.filter(i => i.id !== item.id);
+    const updated = items.filter(i => i.id !== trashEntry.id);
     setItems(updated);
     setTrashItems(updated);
   }
@@ -93,16 +131,24 @@ export default function TrashView() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Header */}
+    <div className="max-w-3xl mx-auto">
+      {/* Header matching Image 2 */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-destructive/10 border border-destructive/20">
-            <Trash2 className="h-5 w-5 text-destructive" />
-          </div>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="h-8 w-8 rounded-lg border border-border bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              title="Back to Folders"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
           <div>
-            <h2 className="font-serif text-2xl tracking-tight leading-none">{t('tools.trash.title')}</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t('tools.trash.desc')}</p>
+            <h2 className="font-serif text-2xl tracking-tight leading-none text-foreground">{t('tools.trash.title')}</h2>
+            <p className="text-[11px] text-muted-foreground mt-1 font-medium">
+              Deleted notes are automatically removed after 30 days
+            </p>
           </div>
         </div>
         {items.length > 0 && (
@@ -131,6 +177,9 @@ export default function TrashView() {
             <AnimatePresence>
               {items.map((item, i) => {
                 const days = daysRemaining(item.deletedAt);
+                const isFolder = item.type === 'folder' || Boolean(item.folderData) || Boolean(item.color) || (Boolean(item.item) && !item.noteId && !item.content);
+                const displayName = isFolder ? (item.item?.name || item.folderData?.name || item.folderName || 'Folder') : (item.title || 'Untitled Note');
+
                 return (
                   <motion.div
                     key={item.id}
@@ -140,17 +189,21 @@ export default function TrashView() {
                     transition={{ delay: i * 0.03 }}
                     className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 group"
                   >
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {isFolder ? (
+                      <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold text-foreground truncate">{item.title || 'Untitled Note'}</p>
+                      <p className="text-[13px] font-semibold text-foreground truncate">{displayName}</p>
                       <p className="text-[10px] text-muted-foreground">
-                        {t('tools.trash.fromFolder', { folder: item.folderName })} · {t('tools.trash.daysLeft', { days })}
+                        {isFolder ? 'Folder' : t('tools.trash.fromFolder', { folder: item.folderName || 'Folder' })} · {t('tools.trash.daysLeft', { days })}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        onClick={() => restoreNote(item)}
+                        onClick={() => restoreItem(item)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border bg-card text-[11px] font-medium text-foreground hover:bg-secondary transition-colors"
                       >
                         <RotateCcw className="h-3 w-3 text-emerald-500" />

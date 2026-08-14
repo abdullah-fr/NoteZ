@@ -14,6 +14,7 @@ import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import FolderGraphView from './FolderGraphView';
 import NoteEditor from './NoteEditor';
+import TrashView from './TrashView';
 import { htmlToPlainText } from './note-utils';
 import { useAuth } from '@/lib/auth';
 import { createConversation, getStreamingToken } from '@/services/chat.service';
@@ -80,6 +81,31 @@ function textToHtml(value: string): string {
   return value.split(/\n{2,}/).map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`).join('');
 }
 
+function formatFolderDate(dateInput: Date | number | string): string {
+  const date = new Date(dateInput);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+
+  if (diffMs >= 0 && diffMs < 60 * 1000) {
+    return 'Just now';
+  }
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+  if (isToday) return 'Today';
+
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+  if (isYesterday) return 'Yesterday';
+
+  return format(date, 'MMM d, yyyy');
+}
+
 function FolderCheckbox({ checked, label, onToggle, className = '' }: {
   checked: boolean;
   label: string;
@@ -101,9 +127,12 @@ function FolderCheckbox({ checked, label, onToggle, className = '' }: {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   NOTE FORM — Clean Single Sticky Header Bar
+   NOTE FORM — Clean Single Sticky Header Bar matching Image 2 & 4
 ══════════════════════════════════════════════════════════════ */
-function NoteForm({ editingId, title, setTitle, content, setContent, onSave, onCancel, onHelpWrite, onDelete, onUploadDocument }: {
+function NoteForm({
+  editingId, title, setTitle, content, setContent, onSave, onCancel, onHelpWrite, onDelete, onUploadDocument,
+  notesSidebarOpen, onToggleNotesSidebar
+}: {
   editingId: string | null;
   title: string; setTitle: (v: string) => void;
   content: string; setContent: (v: string) => void;
@@ -111,6 +140,8 @@ function NoteForm({ editingId, title, setTitle, content, setContent, onSave, onC
   onHelpWrite?: (action: string, text: string) => Promise<string>;
   onDelete?: () => void;
   onUploadDocument?: (file: File) => Promise<string>;
+  notesSidebarOpen?: boolean;
+  onToggleNotesSidebar?: () => void;
 }) {
   const [actionError, setActionError] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
@@ -132,69 +163,35 @@ function NoteForm({ editingId, title, setTitle, content, setContent, onSave, onC
   };
 
   async function handleUpload(file: File) {
+    const isAllowed = /\.(txt|doc|docx)$/i.test(file.name);
+    if (!isAllowed) {
+      setActionError('Only TXT and DOC files are allowed.');
+      return;
+    }
     setUploading(true);
     setActionError('');
     try {
       let importedHtml = '';
-      if (/\.docx$/i.test(file.name)) {
-        // Parse .docx cleanly via mammoth
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        importedHtml = result.value || textToHtml(result.messages.map(m => m.message).join('\n'));
-      } else if (/\.pdf$/i.test(file.name)) {
-        // Parse PDF cleanly via pdfjs-dist
+      if (/\.(docx|doc)$/i.test(file.name)) {
         try {
           const arrayBuffer = await file.arrayBuffer();
-          const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true, disableFontFace: true });
-          const pdf = await loadingTask.promise;
-          let fullHtml = '';
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const pageItems = textContent.items
-              .map((item: any) => item.str)
-              .filter((str: string) => str && str.trim().length > 0);
-            if (pageItems.length > 0) {
-              fullHtml += `<p>${escapeHtml(pageItems.join(' '))}</p>`;
-            }
-          }
-          if (fullHtml.trim()) {
-            importedHtml = fullHtml;
-          } else {
-            importedHtml = '<p>No text found in PDF document.</p>';
-          }
-        } catch (err) {
-          console.error('PDF parsing error:', err);
-          const text = await file.text();
-          const cleanLines = text
-            .split(/[\r\n]+/)
-            .filter(line => !/(\b(obj|endobj|stream|endstream|xref|trailer|Filter|Type|Length|Font|CIDSystemInfo|Widths)\b|[\/\\<>{}\[\]])/i.test(line))
-            .map(line => line.replace(/[^\x20-\x7E\s]/g, ' ').replace(/\s+/g, ' ').trim())
-            .filter(line => line.length > 6 && /[a-zA-Z]{2,}/.test(line));
-          importedHtml = cleanLines.map(l => `<p>${escapeHtml(l)}</p>`).join('');
-        }
-      } else if (/\.(txt|md|html?|csv|json|js|ts|py|c|cpp|java|sql)$/i.test(file.name)) {
-        const text = await file.text();
-        importedHtml = /\.html?$/i.test(file.name) ? text : textToHtml(text);
-      } else if (onUploadDocument) {
-        try {
-          const text = await onUploadDocument(file);
-          importedHtml = textToHtml(text);
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          importedHtml = result.value || textToHtml(result.messages.map(m => m.message).join('\n'));
         } catch {
           const text = await file.text();
-          importedHtml = textToHtml(text.replace(/[^\x20-\x7E\n\r\t]/g, ''));
+          importedHtml = textToHtml(text);
         }
       } else {
         const text = await file.text();
-        importedHtml = textToHtml(text.replace(/[^\x20-\x7E\n\r\t]/g, ''));
+        importedHtml = textToHtml(text);
       }
 
       if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ''));
       setContent(importedHtml);
       setEditorRevision(value => value + 1);
     } catch (error) {
-      console.error('File import error:', error);
-      setActionError('Document imported as plain text.');
+      console.error('File upload error:', error);
+      setActionError('Error uploading document.');
     } finally {
       setUploading(false);
     }
@@ -231,14 +228,25 @@ function NoteForm({ editingId, title, setTitle, content, setContent, onSave, onC
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full flex flex-col min-h-0 bg-background">
-      {/* Single Sticky Header Bar */}
+      {/* Single Sticky Header Bar matching Image 2 & 4: [ Editor Sidebar Toggle ]   Note Title */}
       <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/60 backdrop-blur-md px-4 py-2 shrink-0">
-        <div className="flex-1 min-w-[180px] max-w-md">
+        <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-lg">
+          {!notesSidebarOpen && onToggleNotesSidebar && (
+            <button
+              type="button"
+              onClick={onToggleNotesSidebar}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground transition-colors shrink-0"
+              title="Open notes sidebar"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          )}
+
           <input
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Note title…"
-            className="w-full bg-secondary/60 border border-border/80 rounded-lg px-3 py-1.5 text-[13px] font-semibold text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/60 transition-colors"
+            className="flex-1 bg-secondary/60 border border-border/80 rounded-lg px-3 py-1.5 text-[13px] font-semibold text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/60 transition-colors min-w-[140px]"
           />
         </div>
 
@@ -258,31 +266,40 @@ function NoteForm({ editingId, title, setTitle, content, setContent, onSave, onC
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary/60 text-[11px] text-foreground hover:bg-secondary disabled:opacity-50 transition-colors"
-            title="Import Document (.pdf, .docx, .txt, .md)"
+            title="Upload Document (.txt, .doc, .docx)"
           >
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-            <span className="hidden md:inline">Import</span>
+            <span className="hidden md:inline">Upload</span>
           </button>
-          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.md,.html,.csv,.json,.js,.ts,.py" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void handleUpload(file); e.currentTarget.value = ''; }} />
+          <input ref={fileInputRef} type="file" accept=".txt,.doc,.docx,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void handleUpload(file); e.currentTarget.value = ''; }} />
 
-          <button
-            type="button"
-            onClick={downloadWordDocument}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary/60 text-[11px] text-foreground hover:bg-secondary transition-colors"
-            title="Download Word Document"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Download</span>
-          </button>
+          {(() => {
+            const hasContent = htmlToPlainText(content).trim().length > 0;
+            return (
+              <>
+                <button
+                  type="button"
+                  onClick={downloadWordDocument}
+                  disabled={!hasContent}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary/60 text-[11px] text-foreground hover:bg-secondary disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                  title="Download Word Document"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">Download</span>
+                </button>
 
-          <button
-            type="button"
-            onClick={() => void copyNote()}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary/60 text-[11px] text-foreground hover:bg-secondary transition-colors"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            <span>{copyMessage || 'Copy'}</span>
-          </button>
+                <button
+                  type="button"
+                  onClick={() => void copyNote()}
+                  disabled={!hasContent}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary/60 text-[11px] text-foreground hover:bg-secondary disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>{copyMessage || 'Copy'}</span>
+                </button>
+              </>
+            );
+          })()}
 
           {editingId && onDelete && (
             <button
@@ -350,7 +367,7 @@ export default function FolderView({
   onToggleSidebar?: () => void;
 }) {
   const { user, signOut } = useAuth();
-  const [view, setView] = useState<'folders' | 'notes'>('folders');
+  const [view, setView] = useState<'folders' | 'notes' | 'trash'>('folders');
   const [folderScope, setFolderScope] = useState<'active' | 'archived'>(initialScope);
   const [activeFolder,   setActiveFolder]   = useState<FolderItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
@@ -378,6 +395,26 @@ export default function FolderView({
       }));
     } catch { return []; }
   });
+
+  useEffect(() => {
+    const reloadFromStorage = () => {
+      try {
+        const raw = localStorage.getItem('notez_folders');
+        if (!raw) return;
+        const stored = JSON.parse(raw) as StoredFolder[];
+        setFoldersRaw(stored.map(f => ({
+          ...f, createdAt: new Date(f.createdAt), updatedAt: f.updatedAt ? new Date(f.updatedAt) : new Date(f.createdAt),
+          categories: (f.categories ?? []).map(c => ({
+            ...c, notes: (c.notes ?? []).map(n => ({
+              ...n, createdAt: new Date(n.createdAt), updatedAt: new Date(n.updatedAt),
+            })),
+          })),
+        })));
+      } catch { /* silent */ }
+    };
+    window.addEventListener('notez:folders-updated', reloadFromStorage);
+    return () => window.removeEventListener('notez:folders-updated', reloadFromStorage);
+  }, []);
 
   useEffect(() => {
     if (!initialFolderId) return;
@@ -503,6 +540,23 @@ export default function FolderView({
     setShowFolderForm(false);
   }
   function deleteFolder(id: string) {
+    const targetFolder = folders.find(f => f.id === id);
+    if (targetFolder) {
+      try {
+        const trashItems = JSON.parse(localStorage.getItem('notez_trash') || '[]');
+        trashItems.push({
+          id: crypto.randomUUID(),
+          type: 'folder',
+          folderId: targetFolder.id,
+          folderName: targetFolder.name,
+          color: targetFolder.color,
+          item: targetFolder,
+          folderData: targetFolder,
+          deletedAt: new Date().toISOString(),
+        });
+        localStorage.setItem('notez_trash', JSON.stringify(trashItems));
+      } catch { /* silent */ }
+    }
     setFolders(prev => prev.filter(f => f.id !== id));
     if (activeFolder?.id === id) { setActiveFolder(null); setView('folders'); }
   }
@@ -555,7 +609,26 @@ export default function FolderView({
   function deleteSelected() {
     if (selectedFolderIds.size === 0) return;
     const count = selectedFolderIds.size;
-    if (!window.confirm(`Delete ${count} selected folder${count === 1 ? '' : 's'} permanently?`)) return;
+    if (!window.confirm(`Delete ${count} selected folder${count === 1 ? '' : 's'}?`)) return;
+    const targets = folders.filter(f => selectedFolderIds.has(f.id));
+    if (targets.length > 0) {
+      try {
+        const trashItems = JSON.parse(localStorage.getItem('notez_trash') || '[]');
+        targets.forEach(t => {
+          trashItems.push({
+            id: crypto.randomUUID(),
+            type: 'folder',
+            folderId: t.id,
+            folderName: t.name,
+            color: t.color,
+            item: t,
+            folderData: t,
+            deletedAt: new Date().toISOString(),
+          });
+        });
+        localStorage.setItem('notez_trash', JSON.stringify(trashItems));
+      } catch { /* silent */ }
+    }
     setFolders(previous => previous.filter(folder => !selectedFolderIds.has(folder.id)));
     setSelectedFolderIds(new Set());
     setSelectMode(false);
@@ -566,14 +639,42 @@ export default function FolderView({
     if (!activeFolder || !activeCategory) return;
     const saveTitle = noteTitle.trim() || 'Untitled Note';
     const now = new Date();
-    const updatedNotes = editingNoteId
-      ? activeCategory.notes.map(n => n.id === editingNoteId ? { ...n, title: saveTitle, content: noteContent, updatedAt: now } : n)
-      : [{ id: uid(), title: saveTitle, content: noteContent, createdAt: now, updatedAt: now }, ...activeCategory.notes];
-    if (editingNoteId && activeNote?.id === editingNoteId)
-      setActiveNote({ ...activeNote, title: saveTitle, content: noteContent, updatedAt: now });
+    const targetNoteId = editingNoteId || activeNote?.id || uid();
+    const noteExists = activeCategory.notes.some(n => n.id === targetNoteId);
+
+    let updatedNotes: Note[];
+    if (noteExists) {
+      updatedNotes = activeCategory.notes.map(n =>
+        n.id === targetNoteId ? { ...n, title: saveTitle, content: noteContent, updatedAt: now } : n
+      );
+    } else {
+      updatedNotes = [
+        { id: targetNoteId, title: saveTitle, content: noteContent, createdAt: now, updatedAt: now },
+        ...activeCategory.notes,
+      ];
+    }
+
+    setEditingNoteId(targetNoteId);
+    const updatedNoteObj = {
+      id: targetNoteId,
+      title: saveTitle,
+      content: noteContent,
+      createdAt: activeNote?.createdAt || now,
+      updatedAt: now,
+    };
+    setActiveNote(updatedNoteObj);
     syncCategory({ ...activeCategory, notes: updatedNotes });
   }
-  function editNote(n: Note) { setNoteTitle(n.title); setNoteContent(n.content); setEditingNoteId(n.id); setActiveNote(n); setView('notes'); setShowNoteForm(true); }
+
+  function editNote(n: Note) {
+    setNoteTitle(n.title);
+    setNoteContent(n.content);
+    setEditingNoteId(n.id);
+    setActiveNote(n);
+    setView('notes');
+    setShowNoteForm(true);
+    onFolderOpen?.();
+  }
   function deleteNote(id: string) {
     if (!activeCategory) return;
     // Move to trash instead of permanent deletion
@@ -596,13 +697,34 @@ export default function FolderView({
     syncCategory({ ...activeCategory, notes: activeCategory.notes.filter(n => n.id !== id) });
     if (activeNote?.id === id) { setActiveNote(null); setView('notes'); }
   }
-  function cancelNoteForm() { setShowNoteForm(false); setNoteTitle(''); setNoteContent(''); setEditingNoteId(null); }
   function startNewNote() {
+    if (showNoteForm && (noteTitle.trim() || noteContent.trim())) {
+      saveNote();
+    }
+    let targetFolder = activeFolder || folders[0];
+    if (!targetFolder) {
+      targetFolder = {
+        id: crypto.randomUUID(),
+        name: 'General Notes',
+        color: FOLDER_COLORS[0],
+        categories: [{ id: uid(), name: 'Notes', type: 'custom', notes: [] }],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      setFolders(prev => [targetFolder!, ...prev]);
+    }
+    const targetCategory = notesCategory(targetFolder);
+    setActiveFolder(targetFolder);
+    setActiveCategory(targetCategory);
     setActiveNote(null);
-    cancelNoteForm();
+    setNoteTitle('');
+    setNoteContent('');
+    setEditingNoteId(null);
     setShowNoteForm(true);
     setView('notes');
+    onFolderOpen?.();
   }
+  function cancelNoteForm() { setShowNoteForm(false); setNoteTitle(''); setNoteContent(''); setEditingNoteId(null); }
 
   async function uploadDocument(file: File): Promise<string> {
     if (!user) throw new Error('Please sign in to upload a document.');
@@ -769,140 +891,157 @@ export default function FolderView({
   }
 
   /* ─────────────────── NOTES WORKSPACE VIEW ────────────────── */
-  if (view === 'notes' && activeFolder && activeCategory) {
-    return (
-      <div className="flex h-full w-full overflow-hidden">
-        {/* Collapsible Notes Sidebar */}
-        {notesSidebarOpen && (
-          <aside className="hidden md:flex w-44 shrink-0 flex-col border-r border-border bg-card/70 backdrop-blur-md h-full transition-all">
-            <div className="space-y-2 border-b border-border p-2.5 shrink-0">
-              <div className="flex items-center justify-between">
-                {/* Single Clean Back Button (No Double Arrow) */}
-                <button onClick={returnToFolderList} title="Back to Folders" className="flex min-w-0 items-center gap-1 text-[11px] text-foreground hover:text-primary transition-colors font-semibold truncate">
-                  <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="truncate">Folders</span>
-                </button>
-                <button
-                  onClick={() => setNotesSidebarOpen(false)}
-                  title="Collapse Notes Panel"
-                  className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground"
-                >
-                  <PanelLeftClose className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <button onClick={startNewNote} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity shadow-sm">
-                <Plus className="h-3.5 w-3.5" /> New Note
-              </button>
-            </div>
-            <div className="border-b border-border p-2 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input value={noteSearch} onChange={event => setNoteSearch(event.target.value)} placeholder="Search notes…" className="w-full rounded-lg border border-border bg-secondary/60 py-1.5 pl-7 pr-2 text-[11px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50" />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-1.5">
-              <div className="flex items-center justify-between px-1.5 pb-1">
-                <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Notes ({visibleNotes.length})</p>
-                <div ref={noteSortMenuRef} className="relative">
-                  <button type="button" onClick={() => setNoteSortOpen(open => !open)} aria-label="Sort notes" aria-haspopup="menu" aria-expanded={noteSortOpen} className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"><ArrowDownAZ className="h-3.5 w-3.5" /></button>
-                  {noteSortOpen && <div role="menu" className="absolute right-0 top-full z-30 mt-1 min-w-[140px] rounded-xl border border-border bg-card p-1.5 shadow-lg">
-                    {([['updated', 'Recently updated'], ['created', 'Recently created'], ['title', 'Title A–Z']] as [NoteSort, string][]).map(([value, label]) => <button key={value} type="button" role="menuitemradio" aria-checked={noteSort === value} onClick={() => { setNoteSort(value); setNoteSortOpen(false); }} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-secondary">{label}{noteSort === value && <Check className="h-3.5 w-3.5 text-primary" />}</button>)}
-                  </div>}
-                </div>
-              </div>
-              {visibleNotes.length === 0 ? (
-                <p className="px-2 py-3 text-[11px] text-muted-foreground text-center">No matching notes.</p>
-              ) : visibleNotes.map(note => (
-                <div key={note.id} className={`group mb-1 flex items-center gap-1 rounded-lg transition-colors ${activeNote?.id === note.id ? 'bg-primary/10 border border-primary/40 text-foreground font-semibold' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
-                  <button onClick={() => editNote(note)} title={note.title} className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12px]">{note.title || 'Untitled note'}</button>
-                  <button onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} className="mr-1 hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:flex"><Trash2 className="h-3 w-3" /></button>
-                </div>
-              ))}
-            </div>
+  if (view === 'notes') {
+    const currentFolder = activeFolder || folders[0];
+    const currentCategory = activeCategory || (currentFolder ? notesCategory(currentFolder) : null);
 
-            {/* Bottom Account Footer on Notes Sidebar with Settings Button */}
-            <div className="border-t border-border p-2 flex items-center gap-1.5 shrink-0">
-              <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                <div className="w-5 h-5 rounded-sm bg-secondary border border-border flex items-center justify-center shrink-0">
-                  <span className="text-[9px] font-bold font-mono text-foreground">
-                    {(user?.user_metadata?.full_name || user?.email || "?")
-                      .split(/[\s@]/).filter(Boolean).map((s: string) => s[0].toUpperCase()).slice(0, 2).join("")}
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono truncate text-foreground">
-                  {user?.user_metadata?.full_name || user?.email}
-                </span>
-              </div>
-              <button
-                onClick={() => window.dispatchEvent(new CustomEvent("notez:open-settings"))}
-                title="Account Settings"
-                className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-              {signOut && (
-                <button onClick={signOut} title="Sign out" className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground">
-                  <LogOut className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </aside>
-        )}
-
-        {/* Right Editor Area */}
-        <section className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col bg-background">
-          {!notesSidebarOpen && (
-            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 bg-card/60 backdrop-blur-md shrink-0">
-              <button
-                onClick={() => setNotesSidebarOpen(true)}
-                title="Open Notes Panel"
-                className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-secondary hover:bg-secondary text-foreground shrink-0"
-              >
-                <PanelLeftOpen className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={returnToFolderList} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors font-medium">
-                <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate max-w-[120px]">Folders</span>
-              </button>
-              <span className="text-[11px] text-foreground truncate flex-1 font-semibold">
-                {activeFolder.name} / {activeNote?.title || 'Notes'}
-              </span>
-              <button onClick={startNewNote} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-medium shrink-0">
-                <Plus className="h-3 w-3" /> New
-              </button>
-            </div>
-          )}
-
-          <AnimatePresence mode="wait">
-            {showNoteForm ? (
-              <NoteForm
-                editingId={editingNoteId}
-                title={noteTitle}
-                setTitle={setNoteTitle}
-                content={noteContent}
-                setContent={setNoteContent}
-                onSave={saveNote}
-                onCancel={cancelNoteForm}
-                onHelpWrite={helpWrite}
-                onUploadDocument={uploadDocument}
-                onDelete={editingNoteId ? () => { deleteNote(editingNoteId); cancelNoteForm(); } : undefined}
+    if (currentFolder && currentCategory) {
+      return (
+        <div className="flex h-full w-full overflow-hidden">
+          {/* Collapsible Notes Sidebar */}
+          {notesSidebarOpen && (
+            <>
+              {/* Dark Backdrop for Mobile */}
+              <div
+                onClick={() => setNotesSidebarOpen(false)}
+                className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs transition-opacity"
               />
-            ) : (
-              <div className="flex-1 flex items-center justify-center bg-background p-8 text-center">
-                <div>
-                  <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
-                  <p className="mb-1 text-sm font-semibold text-foreground">Select a note to start writing</p>
-                  <p className="mb-4 text-xs text-muted-foreground">Or create a new note inside {activeFolder.name}.</p>
-                  <button onClick={startNewNote} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 shadow-sm transition-opacity">
-                    <Plus className="h-3.5 w-3.5" /> Create New Note
+              <aside className="fixed inset-y-0 left-0 z-50 md:relative md:z-0 flex w-64 md:w-44 shrink-0 flex-col border-r border-border bg-card text-card-foreground h-full transition-all shadow-2xl md:shadow-none">
+              <div className="space-y-2 border-b border-border p-2.5 shrink-0">
+                <div className="flex items-center justify-between">
+                  {/* Single Clean Back Button (No Double Arrow) */}
+                  <button onClick={returnToFolderList} title="Back to Folders" className="flex min-w-0 items-center gap-1 text-[11px] text-foreground hover:text-primary transition-colors font-semibold truncate">
+                    <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="truncate">Folders</span>
+                  </button>
+                  <button
+                    onClick={() => setNotesSidebarOpen(false)}
+                    title="Collapse Notes Panel"
+                    className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    <PanelLeftClose className="h-3.5 w-3.5" />
                   </button>
                 </div>
+                <button onClick={startNewNote} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity shadow-sm">
+                  <Plus className="h-3.5 w-3.5" /> New Note
+                </button>
+              </div>
+              <div className="border-b border-border p-2 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input value={noteSearch} onChange={event => setNoteSearch(event.target.value)} placeholder="Search notes…" className="w-full rounded-lg border border-border bg-secondary/60 py-1.5 pl-7 pr-2 text-[11px] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50" />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-1.5">
+                <div className="flex items-center justify-between px-1.5 pb-1">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Notes ({visibleNotes.length})</p>
+                  <div ref={noteSortMenuRef} className="relative">
+                    <button type="button" onClick={() => setNoteSortOpen(open => !open)} aria-label="Sort notes" aria-haspopup="menu" aria-expanded={noteSortOpen} className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"><ArrowDownAZ className="h-3.5 w-3.5" /></button>
+                    {noteSortOpen && <div role="menu" className="absolute right-0 top-full z-30 mt-1 min-w-[140px] rounded-xl border border-border bg-card p-1.5 shadow-lg">
+                      {([['updated', 'Recently updated'], ['created', 'Recently created'], ['title', 'Title A–Z']] as [NoteSort, string][]).map(([value, label]) => <button key={value} type="button" role="menuitemradio" aria-checked={noteSort === value} onClick={() => { setNoteSort(value); setNoteSortOpen(false); }} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-secondary">{label}{noteSort === value && <Check className="h-3.5 w-3.5 text-primary" />}</button>)}
+                    </div>}
+                  </div>
+                </div>
+                {visibleNotes.length === 0 ? (
+                  <p className="px-2 py-3 text-[11px] text-muted-foreground text-center">No matching notes.</p>
+                ) : visibleNotes.map(note => (
+                  <div key={note.id} className={`group mb-1 flex items-center gap-1 rounded-lg transition-colors ${activeNote?.id === note.id ? 'bg-primary/10 border border-primary/40 text-foreground font-semibold' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
+                    <button onClick={() => editNote(note)} title={note.title} className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12px]">{note.title || 'Untitled note'}</button>
+                    <button onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} className="mr-1 hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:flex"><Trash2 className="h-3 w-3" /></button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bottom Account Footer on Notes Sidebar with Settings Button */}
+              <div className="border-t border-border p-2 flex items-center gap-1.5 shrink-0">
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                  <div className="w-5 h-5 rounded-sm bg-secondary border border-border flex items-center justify-center shrink-0">
+                    <span className="text-[9px] font-bold font-mono text-foreground">
+                      {(user?.user_metadata?.full_name || user?.email || "?")
+                        .split(/[\s@]/).filter(Boolean).map((s: string) => s[0].toUpperCase()).slice(0, 2).join("")}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono truncate text-foreground">
+                    {user?.user_metadata?.full_name || user?.email}
+                  </span>
+                </div>
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("notez:open-settings"))}
+                  title="Account Settings"
+                  className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
+                {signOut && (
+                  <button onClick={signOut} title="Sign out" className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground">
+                    <LogOut className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </aside>
+          </>
+          )}
+
+          {/* Right Editor Area */}
+          <section className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col bg-background">
+            {!notesSidebarOpen && !showNoteForm && (
+              <div className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/60 backdrop-blur-md px-4 py-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotesSidebarOpen(true)}
+                    className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground transition-colors shrink-0"
+                    title="Open notes sidebar"
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </button>
+                  <button onClick={returnToFolderList} title="Back to Folders" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors font-medium">
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>Folders</span>
+                  </button>
+                </div>
+                <button
+                  onClick={startNewNote}
+                  className="flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-colors shadow-sm"
+                >
+                  <Plus className="h-3.5 w-3.5" /> New Note
+                </button>
               </div>
             )}
-          </AnimatePresence>
-        </section>
-      </div>
-    );
+
+            <AnimatePresence mode="wait">
+              {showNoteForm ? (
+                <NoteForm
+                  editingId={editingNoteId}
+                  title={noteTitle}
+                  setTitle={setNoteTitle}
+                  content={noteContent}
+                  setContent={setNoteContent}
+                  onSave={saveNote}
+                  onCancel={cancelNoteForm}
+                  onHelpWrite={helpWrite}
+                  onUploadDocument={uploadDocument}
+                  onDelete={editingNoteId ? () => { deleteNote(editingNoteId); cancelNoteForm(); } : undefined}
+                  notesSidebarOpen={notesSidebarOpen}
+                  onToggleNotesSidebar={() => setNotesSidebarOpen(open => !open)}
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center bg-background p-8 text-center">
+                  <div>
+                    <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
+                    <p className="mb-1 text-sm font-semibold text-foreground">Select a note to start writing</p>
+                    <p className="mb-4 text-xs text-muted-foreground">Or create a new note inside {currentFolder.name}.</p>
+                    <button onClick={startNewNote} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 shadow-sm transition-opacity">
+                      <Plus className="h-3.5 w-3.5" /> Create New Note
+                    </button>
+                  </div>
+                </div>
+              )}
+            </AnimatePresence>
+          </section>
+        </div>
+      );
+    }
   }
 
   /* ─────────────────── FOLDERS LIBRARY VIEW (Default) ─────────── */
@@ -911,6 +1050,16 @@ export default function FolderView({
       {/* Sticky Header with Left Search Bar & Inline Toggle */}
       <div className="sticky top-0 z-20 border-b border-border bg-card/60 backdrop-blur-md px-4 md:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
+          {folderScope === 'archived' && (
+            <button
+              onClick={() => setFolderScope('active')}
+              className="h-8 w-8 rounded-lg border border-border bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              title="Back to Folders"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+
           {!sidebarOpen && onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
@@ -922,7 +1071,9 @@ export default function FolderView({
           )}
 
           <div className="flex items-baseline gap-2">
-            <h1 className="font-serif text-lg leading-none tracking-tight">Folders</h1>
+            <h1 className="font-serif text-lg leading-none tracking-tight">
+              {folderScope === 'archived' ? 'Archived Folders' : 'Folders'}
+            </h1>
             <span className="text-[11px] font-mono text-muted-foreground">{filteredFolders.length}</span>
           </div>
 
@@ -932,7 +1083,7 @@ export default function FolderView({
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search folders…"
+              placeholder={folderScope === 'archived' ? 'Search archived…' : 'Search folders…'}
               className="w-full bg-secondary border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
             />
           </div>
@@ -973,7 +1124,9 @@ export default function FolderView({
 
           {/* View Mode Toggle */}
           <div className="flex items-center gap-0.5 p-0.5 rounded-lg border border-border bg-secondary">
-            {([['list', List], ['grid', LayoutGrid], ['graph', Network]] as [FolderListMode, LucideIcon][]).map(([mode, Icon]) => (
+            {([['list', List], ['grid', LayoutGrid], ['graph', Network]] as [FolderListMode, LucideIcon][])
+              .filter(([mode]) => !(selectMode && mode === 'graph'))
+              .map(([mode, Icon]) => (
               <button
                 key={mode}
                 onClick={() => setListMode(mode)}
@@ -1001,24 +1154,64 @@ export default function FolderView({
               </button>
             </>
           ) : (
-            <button onClick={() => { setSelectMode(true); setSelectedFolderIds(new Set()); }} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80">
+            <button
+              onClick={() => {
+                setSelectMode(true);
+                if (listMode === 'graph') setListMode('grid');
+                setSelectedFolderIds(new Set());
+              }}
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80"
+            >
               <Square className="h-3.5 w-3.5" /> Select
             </button>
           )}
 
           {!selectMode && (
-            <button
-              onClick={() => { cancelFolderForm(); setShowFolderForm(true); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
-            >
-              <Plus className="h-3.5 w-3.5" /> New Folder
-            </button>
+            <>
+              <button
+                onClick={() => setFolderScope(s => s === 'archived' ? 'active' : 'archived')}
+                title="Archived Folders"
+                className={`h-8 px-2.5 flex items-center gap-1.5 rounded-lg border border-border text-xs font-medium transition-colors ${
+                  folderScope === 'archived'
+                    ? 'bg-secondary text-foreground border-border font-semibold'
+                    : 'bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+              >
+                <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="hidden sm:inline">Archive</span>
+              </button>
+
+              <button
+                onClick={() => setView(v => v === 'trash' ? 'folders' : 'trash')}
+                title="Trash"
+                className={`h-8 px-2.5 flex items-center gap-1.5 rounded-lg border border-border text-xs font-medium transition-colors ${
+                  view === 'trash'
+                    ? 'bg-secondary text-foreground border-border font-semibold'
+                    : 'bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="hidden sm:inline">Trash</span>
+              </button>
+
+              <button
+                onClick={() => { cancelFolderForm(); setShowFolderForm(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5" /> New Folder
+              </button>
+            </>
           )}
         </div>
       </div>
 
       {/* Main Content View */}
-      <div className="p-4 md:p-6 max-w-6xl mx-auto w-full flex-1">
+      {view === 'trash' ? (
+        <div className="p-4 md:p-6 max-w-6xl mx-auto w-full flex-1">
+          <TrashView onBack={() => setView('folders')} />
+        </div>
+      ) : (
+        <div className="p-4 md:p-6 max-w-6xl mx-auto w-full flex-1">
         
         {/* Inline Folder Form */}
         <AnimatePresence initial={false}>
@@ -1124,8 +1317,8 @@ export default function FolderView({
                       <p className="truncate text-xs font-semibold text-foreground" title={folder.name}>{folder.name}</p>
                     </div>
                     <span className="text-[11px] font-mono text-muted-foreground">{totalNotes(folder)} notes</span>
-                    <span className="hidden text-[11px] text-muted-foreground lg:block">{format(folder.createdAt, 'MMM d, yyyy')}</span>
-                    <span className="hidden text-[11px] text-muted-foreground lg:block">{format(new Date(folderModifiedAt(folder)), 'MMM d, yyyy')}</span>
+                    <span className="hidden text-[11px] text-muted-foreground lg:block">{formatFolderDate(folder.createdAt)}</span>
+                    <span className="hidden text-[11px] text-muted-foreground lg:block">{formatFolderDate(folderModifiedAt(folder))}</span>
                     <span className="hidden items-center gap-1 text-[11px] font-mono text-muted-foreground lg:flex"><HardDrive className="h-3 w-3" />{formatBytes(folderSizeBytes(folder))}</span>
                     <div className="flex items-center justify-end gap-1">
                       <div className={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${selectMode ? 'pointer-events-none hidden' : ''}`}>
@@ -1178,6 +1371,7 @@ export default function FolderView({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

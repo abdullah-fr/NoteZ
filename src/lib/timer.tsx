@@ -62,7 +62,7 @@ interface ExamTimerState {
   examCompleted: boolean;
   hasExamSession: boolean;
   setExamMinutes: (m: number) => void;
-  startExam: () => void;
+  startExam: (overrideMinutes?: number) => void;
   pauseExam: () => void;
   resetExam: () => void;
 }
@@ -226,22 +226,26 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   const taskHasSession = task.running || (activeT !== null && !task.completed && task.timeLeft < (activeT?.minutes ?? 5) * 60);
 
   /* ── Exam timer ── */
-  const [examMinutes, setExamMinutesState] = useState(60);
-  const exam = useCountdown(60 * 60);
+  const [examMinutes, setExamMinutesState] = useState(15);
+  const exam = useCountdown(15 * 60);
   const examStartedAt   = useRef<Date | null>(null);
   const examPrevRunning = useRef(false);
 
   const setExamMinutes = useCallback((m: number) => {
-    setExamMinutesState(m); if (!exam.running) exam.reset(m * 60);
+    setExamMinutesState(m);
+    exam.reset(m * 60);
   }, [exam]);
 
-  const startExam  = useCallback(() => {
+  const startExam = useCallback((overrideMinutes?: number) => {
+    const mins = (overrideMinutes !== undefined && overrideMinutes > 0) ? overrideMinutes : examMinutes;
+    setExamMinutesState(mins);
     examStartedAt.current = new Date();
-    exam.start(exam.completed ? examMinutes * 60 : exam.timeLeft);
+    exam.start(mins * 60);
   }, [exam, examMinutes]);
+
   const pauseExam  = useCallback(() => exam.pause(), [exam]);
   const resetExam  = useCallback(() => exam.reset(examMinutes * 60), [exam, examMinutes]);
-  const examHasSession = exam.running || exam.completed || exam.timeLeft < examMinutes * 60;
+  const examHasSession = exam.running || exam.completed || (examMinutes > 0 && exam.timeLeft < examMinutes * 60);
 
   // Log exam timer on natural completion
   useEffect(() => {

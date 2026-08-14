@@ -33,10 +33,11 @@ import {
   FileQuestion,
   PanelLeftClose,
   PanelLeftOpen,
-  FileOutput,
   MessageCircleHeart,
   Trash2,
   Globe,
+  Layers,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,36 +45,36 @@ import CalendarView from "@/components/dashboard/CalendarView";
 import FocusTimerView from "@/components/dashboard/FocusTimerView";
 import FloatingTimer from "@/components/dashboard/widgets/FloatingTimer";
 import ExamView from "@/components/dashboard/ExamView";
+import FlashcardsView from "@/components/dashboard/FlashcardsView";
+import ActivitiesView from "@/components/dashboard/ActivitiesView";
 import ProgressDashboardView from "@/components/dashboard/ProgressDashboardView";
 import FolderView from "@/components/dashboard/FolderView";
 import ChatView from "@/components/dashboard/ChatView";
 import AccountView from "@/components/dashboard/AccountView";
-import TextToPdfView from "@/components/dashboard/TextToPdfView";
 import FeedbackView from "@/components/dashboard/FeedbackView";
 import TrashView from "@/components/dashboard/TrashView";
 
-type View = "dashboard" | "calendar" | "timer" | "exam" | "folder" | "archived" | "chat" | "account" | "text2pdf" | "feedback" | "trash";
+type View = "dashboard" | "calendar" | "timer" | "exam" | "flashcards" | "activities" | "folder" | "archived" | "chat" | "account" | "feedback" | "trash";
 type NavItem = {
   id: View;
   labelKey: string;
   icon: LucideIcon;
-  group: "Main" | "Study" | "Practice" | "Tools" | "Utilities";
+  group: "Study" | "Practice" | "Tools" | "Utilities";
 };
 
 const NAV: NavItem[] = [
-  { id: "dashboard", labelKey: "sidebar.dashboard", icon: LayoutDashboard, group: "Main" },
+  { id: "dashboard", labelKey: "sidebar.dashboard", icon: LayoutDashboard, group: "Study" },
   { id: "folder", labelKey: "sidebar.folders", icon: Folder, group: "Study" },
-  { id: "archived", labelKey: "sidebar.archived", icon: Archive, group: "Study" },
   { id: "exam", labelKey: "sidebar.exam", icon: GraduationCap, group: "Practice" },
+  { id: "flashcards", labelKey: "sidebar.flashcards", icon: Layers, group: "Practice" },
+  { id: "activities", labelKey: "sidebar.activities", icon: ListChecks, group: "Practice" },
   { id: "chat", labelKey: "sidebar.chat", icon: MessageSquare, group: "Tools" },
   { id: "calendar", labelKey: "sidebar.calendar", icon: Calendar, group: "Tools" },
   { id: "timer", labelKey: "sidebar.pomodoro", icon: Timer, group: "Tools" },
-  { id: "text2pdf", labelKey: "sidebar.textToPdf", icon: FileOutput, group: "Utilities" },
   { id: "feedback", labelKey: "sidebar.feedback", icon: MessageCircleHeart, group: "Utilities" },
-  { id: "trash", labelKey: "sidebar.trash", icon: Trash2, group: "Utilities" },
 ];
 
-const GROUPS = ["Main", "Study", "Practice", "Tools", "Utilities"] as const;
+const GROUPS = ["Study", "Practice", "Tools", "Utilities"] as const;
 
 const LANGUAGES = [
   { code: 'en', label: 'English', flag: '🇬🇧' },
@@ -100,6 +101,13 @@ export default function Dashboard() {
     localStorage.setItem('notez_sidebar', sidebarOpen ? 'open' : 'closed');
   }, [sidebarOpen]);
 
+  // Listen to open-settings custom event
+  useEffect(() => {
+    const handleOpenSettings = () => setActiveView("account");
+    window.addEventListener("notez:open-settings", handleOpenSettings);
+    return () => window.removeEventListener("notez:open-settings", handleOpenSettings);
+  }, []);
+
   const anyActiveSession = hasActiveSession || hasTaskSession || hasExamSession;
   const floatingTimerVisible =
     activeView !== "timer" && anyActiveSession && !timerWidgetClosed;
@@ -125,8 +133,10 @@ export default function Dashboard() {
   }, [langMenuOpen]);
 
   const grouped = useMemo(() => {
-    const g: Record<string, NavItem[]> = { Main: [], Study: [], Practice: [], Tools: [], Utilities: [] };
-    NAV.forEach((i) => g[i.group].push(i));
+    const g: Record<string, NavItem[]> = { Study: [], Practice: [], Tools: [], Utilities: [] };
+    NAV.forEach((i) => {
+      if (g[i.group]) g[i.group].push(i);
+    });
     return g;
   }, []);
 
@@ -186,12 +196,14 @@ export default function Dashboard() {
         );
       case "exam":
         return <ExamView />;
+      case "flashcards":
+        return <FlashcardsView />;
+      case "activities":
+        return <ActivitiesView />;
       case "calendar":
         return <CalendarView />;
       case "timer":
         return <FocusTimerView />;
-      case "text2pdf":
-        return <TextToPdfView />;
       case "feedback":
         return <FeedbackView />;
       case "trash":

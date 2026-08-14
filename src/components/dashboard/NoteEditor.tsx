@@ -32,8 +32,10 @@ import { mergeRegister } from '@lexical/utils';
 import {
   Bold, Italic, Underline, Strikethrough,
   Undo2, Redo2, Sparkles, RefreshCw, AlignLeft, AlignCenter, AlignRight, AlignJustify, Lightbulb, Zap, Loader2,
-  Palette, Highlighter, Code2, Link, ChevronDown, Minus, Plus, Type, Eraser
+  Palette, Highlighter, Code2, Link, ChevronDown, Minus, Plus, Type, Trash2
 } from 'lucide-react';
+import { ClickableLinkPlugin } from '@lexical/react/LexicalClickableLinkPlugin';
+import { htmlToPlainText } from './note-utils';
 
 /* ── Lexical Rich Theme ── */
 const theme = {
@@ -47,7 +49,7 @@ const theme = {
     italic:        'italic text-foreground/90',
     underline:     'underline underline-offset-4 text-foreground',
     strikethrough: 'line-through text-muted-foreground',
-    code:          'font-mono text-[12px] bg-secondary/80 text-amber-500 dark:text-amber-300 px-1.5 py-0.5 rounded border border-border/50',
+    code:          'font-mono text-[12px] bg-secondary/80 px-1.5 py-0.5 rounded border border-border/50',
   },
   list: {
     ul: 'list-disc pl-5 my-1.5 space-y-0.5',
@@ -57,7 +59,7 @@ const theme = {
   quote: 'border-l-2 border-primary/60 pl-3.5 my-2 italic text-muted-foreground bg-secondary/20 py-1 rounded-r-lg text-[13px]',
   code: 'block font-mono text-[12px] bg-slate-900 text-emerald-400 border border-border/80 rounded-xl p-3.5 my-2 leading-relaxed shadow-inner overflow-x-auto selection:bg-primary/30',
   paragraph: 'text-[13px] leading-relaxed text-foreground/90 my-1 min-h-[1.5em]',
-  link: 'text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer',
+  link: 'text-blue-500 font-medium underline underline-offset-2 hover:text-blue-600 cursor-pointer',
 };
 
 const FONTS = [
@@ -94,7 +96,22 @@ interface OutlineHeading {
   level: number;
 }
 
-/* ── Rich Custom Color Picker Popup matching Image 1 ── */
+function hsvToHex(h: number, s: number, v: number): string {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/* ── Rich Custom Color Picker Popup ── */
 function CustomColorPicker({
   title,
   currentColor,
@@ -108,6 +125,22 @@ function CustomColorPicker({
 }) {
   const [hexInput, setHexInput] = useState(currentColor.startsWith('#') ? currentColor : '#000000');
   const [hue, setHue] = useState(0);
+  const [pickerPos, setPickerPos] = useState({ x: 0.8, y: 0.2 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const spectrumRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+
+  // Close when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (isDraggingRef.current) return;
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
 
   const applyHex = (val: string) => {
     setHexInput(val);
@@ -116,13 +149,54 @@ function CustomColorPicker({
     }
   };
 
+  const updateColorFromPointer = (clientX: number, clientY: number) => {
+    if (!spectrumRef.current) return;
+    const rect = spectrumRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    setPickerPos({ x, y });
+    const hex = hsvToHex(hue, x, 1 - y);
+    setHexInput(hex);
+    onSelectColor(hex);
+  };
+
+  const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isDraggingRef.current = true;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    updateColorFromPointer(clientX, clientY);
+
+    const handlePointerMove = (moveEvent: MouseEvent | TouchEvent) => {
+      if (!isDraggingRef.current) return;
+      const moveX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : (moveEvent as MouseEvent).clientX;
+      const moveY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : (moveEvent as MouseEvent).clientY;
+      updateColorFromPointer(moveX, moveY);
+    };
+
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove);
+    window.addEventListener('touchend', handlePointerUp);
+  };
+
   return (
     <div
+      ref={containerRef}
       className="absolute left-0 top-full z-50 mt-1 w-64 p-3 rounded-2xl border border-border bg-[#18181b] text-white shadow-2xl animate-in fade-in zoom-in-95"
-      onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+      onMouseDown={e => { e.stopPropagation(); }}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-zinc-400">Hex</span>
+        <span className="text-xs font-medium text-zinc-400">{title} (Hex)</span>
         <input
           value={hexInput}
           onChange={e => applyHex(e.target.value)}
@@ -131,7 +205,7 @@ function CustomColorPicker({
         />
       </div>
 
-      {/* Swatch color grid matching Image 1 */}
+      {/* Swatch color grid */}
       <div className="grid grid-cols-7 gap-1.5 mb-3">
         {SWATCH_COLORS.map(c => (
           <button
@@ -145,23 +219,28 @@ function CustomColorPicker({
         ))}
       </div>
 
-      {/* 2D Color Spectrum Box */}
+      {/* 2D Color Spectrum Box with Circle Scroller Handle */}
       <div
-        className="w-full h-32 rounded-lg relative cursor-crosshair mb-2"
+        ref={spectrumRef}
+        className="w-full h-32 rounded-lg relative cursor-crosshair mb-2 overflow-hidden select-none touch-none"
         style={{
           background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hue}, 100%, 50%))`
         }}
-        onMouseDown={e => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-          const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-          // Simple RGB conversion for spectrum pick
-          const colorHex = `#${Math.floor(x * 255).toString(16).padStart(2, '0')}${Math.floor((1 - y) * 255).toString(16).padStart(2, '0')}88`;
-          applyHex(colorHex);
-        }}
-      />
+        onMouseDown={handlePointerDown}
+        onTouchStart={handlePointerDown}
+      >
+        {/* Visible Circular Scroller Handle */}
+        <div
+          className="absolute w-4 h-4 rounded-full border-2 border-white shadow-md -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-transform"
+          style={{
+            left: `${pickerPos.x * 100}%`,
+            top: `${pickerPos.y * 100}%`,
+            backgroundColor: hexInput.startsWith('#') ? hexInput : '#000000',
+          }}
+        />
+      </div>
 
-      {/* Rainbow Hue Slider */}
+      {/* Rainbow Hue Slider with Circle Thumb */}
       <div className="mb-2">
         <input
           type="range"
@@ -171,10 +250,10 @@ function CustomColorPicker({
           onChange={e => {
             const h = parseInt(e.target.value, 10);
             setHue(h);
-            const colorHex = `#${Math.floor((h / 360) * 255).toString(16).padStart(2, '0')}55ff`;
-            applyHex(colorHex);
+            const hex = hsvToHex(h, pickerPos.x, 1 - pickerPos.y);
+            applyHex(hex);
           }}
-          className="w-full h-3 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-3 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-500 [&::-webkit-slider-thumb]:shadow-md"
           style={{
             background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)'
           }}
@@ -206,10 +285,12 @@ function ToolbarPlugin({
   onSave,
   onClearAll,
   hasContent,
+  onAiTransform,
 }: {
   onSave?: () => void;
   onClearAll?: () => void;
   hasContent?: boolean;
+  onAiTransform?: (action: string, selectedText: string) => Promise<string>;
 }) {
   const [editor] = useLexicalComposerContext();
   const [canUndo, setCanUndo] = useState(false);
@@ -223,6 +304,38 @@ function ToolbarPlugin({
   const [bgMenuOpen, setBgMenuOpen] = useState(false);
   const [linkInputOpen, setLinkInputOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const [loadingAiAction, setLoadingAiAction] = useState<string | null>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  const closeAllMenus = useCallback(() => {
+    setFontMenuOpen(false);
+    setBlockMenuOpen(false);
+    setColorMenuOpen(false);
+    setBgMenuOpen(false);
+    setLinkInputOpen(false);
+    setAiMenuOpen(false);
+  }, []);
+
+  // Close toolbar dropdowns on outside click or Escape
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+        closeAllMenus();
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeAllMenus();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeAllMenus]);
 
   useEffect(() => mergeRegister(
     editor.registerCommand(CAN_UNDO_COMMAND, value => { setCanUndo(value); return false; }, COMMAND_PRIORITY_NORMAL),
@@ -317,8 +430,45 @@ function ToolbarPlugin({
     setLinkInputOpen(false);
   };
 
+  const handleAiOption = async (action: string) => {
+    closeAllMenus();
+    if (!onAiTransform) return;
+    setLoadingAiAction(action);
+    try {
+      let targetText = '';
+      editor.getEditorState().read(() => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+          targetText = selection.getTextContent();
+        } else {
+          targetText = $getRoot().getTextContent();
+        }
+      });
+      if (!targetText.trim()) return;
+      const result = await onAiTransform(action, targetText);
+      if (result) {
+        editor.update(() => {
+          const selection = $getSelection();
+          if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+            selection.insertText(result);
+          } else {
+            const root = $getRoot();
+            root.clear();
+            const p = $createParagraphNode();
+            p.append(...$generateNodesFromDOM(editor, new DOMParser().parseFromString(result, 'text/html')));
+            root.append(p);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('AI toolbar action error:', err);
+    } finally {
+      setLoadingAiAction(null);
+    }
+  };
+
   return (
-    <div className="relative z-30 flex items-center gap-1 px-3 py-1.5 border-b border-border bg-card/80 backdrop-blur-md flex-wrap shrink-0 overflow-visible">
+    <div ref={toolbarRef} className="relative z-30 flex items-center gap-1 px-3 py-1.5 border-b border-border bg-card/80 backdrop-blur-md flex-wrap shrink-0 overflow-visible">
       {/* Undo / Redo */}
       <button type="button" disabled={!canUndo} onMouseDown={e => { e.preventDefault(); if (canUndo) editor.dispatchCommand(UNDO_COMMAND, undefined); }} className={`${btn()} disabled:cursor-not-allowed disabled:opacity-30`} title="Undo (⌘Z)">
         <Undo2 className="h-3.5 w-3.5" />
@@ -329,11 +479,52 @@ function ToolbarPlugin({
 
       <div className="w-px h-4 bg-border mx-0.5" />
 
+      {/* AI Assist Button */}
+      <div className="relative z-40">
+        <button
+          type="button"
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = !aiMenuOpen;
+            closeAllMenus();
+            setAiMenuOpen(next);
+          }}
+          className="h-7 px-2 flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-xs text-foreground font-medium transition-colors"
+          title="AI Assist"
+        >
+          {loadingAiAction ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" /> : <Sparkles className="h-3.5 w-3.5 text-amber-400" />}
+          <span>AI Assist</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        </button>
+        {aiMenuOpen && (
+          <div className="absolute left-0 top-full z-50 mt-1 min-w-[150px] rounded-xl border border-border bg-card p-1 shadow-2xl animate-in fade-in zoom-in-95">
+            <button onMouseDown={e => { e.preventDefault(); void handleAiOption('improve'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" /> Improve
+            </button>
+            <button onMouseDown={e => { e.preventDefault(); void handleAiOption('rephrase'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
+              <RefreshCw className="h-3.5 w-3.5 text-blue-400" /> Rephrase
+            </button>
+            <button onMouseDown={e => { e.preventDefault(); void handleAiOption('summarize'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
+              <AlignLeft className="h-3.5 w-3.5 text-emerald-400" /> Summarize
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="w-px h-4 bg-border mx-0.5" />
+
       {/* Font Family Dropdown */}
       <div className="relative z-40">
         <button
           type="button"
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setFontMenuOpen(o => !o); setBlockMenuOpen(false); setColorMenuOpen(false); setBgMenuOpen(false); }}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = !fontMenuOpen;
+            closeAllMenus();
+            setFontMenuOpen(next);
+          }}
           className="h-7 px-2 flex items-center gap-1 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-xs text-foreground font-medium transition-colors"
           title="Font Family"
         >
@@ -357,11 +548,17 @@ function ToolbarPlugin({
         )}
       </div>
 
-      {/* Block Type / Format Dropdown */}
+      {/* Block Style Dropdown */}
       <div className="relative z-40">
         <button
           type="button"
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setBlockMenuOpen(o => !o); setFontMenuOpen(false); setColorMenuOpen(false); setBgMenuOpen(false); }}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = !blockMenuOpen;
+            closeAllMenus();
+            setBlockMenuOpen(next);
+          }}
           className="h-7 px-2 flex items-center gap-1 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-xs text-foreground font-medium transition-colors"
           title="Block Style"
         >
@@ -411,18 +608,24 @@ function ToolbarPlugin({
         <Strikethrough className="h-3.5 w-3.5" />
       </button>
       <button type="button" onMouseDown={e => { e.preventDefault(); format('code'); }} className={btn()} title="Inline code">
-        <Code2 className="h-3.5 w-3.5 text-amber-500 dark:text-amber-300" />
+        <Code2 className="h-3.5 w-3.5 text-muted-foreground" />
       </button>
 
-      {/* Text Color Custom Picker matching Image 1 */}
+      {/* Text Color Custom Picker */}
       <div className="relative z-40">
         <button
           type="button"
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setColorMenuOpen(o => !o); setBgMenuOpen(false); setFontMenuOpen(false); setBlockMenuOpen(false); }}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = !colorMenuOpen;
+            closeAllMenus();
+            setColorMenuOpen(next);
+          }}
           className={btn()}
-          title="Text Color Picker"
+          title="Text Color"
         >
-          <Palette className="h-3.5 w-3.5 text-blue-500" />
+          <Type className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
         {colorMenuOpen && (
           <CustomColorPicker
@@ -434,15 +637,21 @@ function ToolbarPlugin({
         )}
       </div>
 
-      {/* Background Highlight Custom Picker matching Image 1 */}
+      {/* Background / Highlight Color Custom Picker */}
       <div className="relative z-40">
         <button
           type="button"
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setBgMenuOpen(o => !o); setColorMenuOpen(false); setFontMenuOpen(false); setBlockMenuOpen(false); }}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = !bgMenuOpen;
+            closeAllMenus();
+            setBgMenuOpen(next);
+          }}
           className={btn()}
-          title="Highlight Text Picker"
+          title="Text Highlight / Background Color"
         >
-          <Highlighter className="h-3.5 w-3.5 text-amber-500" />
+          <Highlighter className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
         {bgMenuOpen && (
           <CustomColorPicker
@@ -476,11 +685,17 @@ function ToolbarPlugin({
       <div className="relative z-40">
         <button
           type="button"
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setLinkInputOpen(o => !o); }}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = !linkInputOpen;
+            closeAllMenus();
+            setLinkInputOpen(next);
+          }}
           className={btn()}
           title="Insert Link"
         >
-          <Link className="h-3.5 w-3.5 text-primary" />
+          <Link className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
         {linkInputOpen && (
           <div className="absolute left-0 top-full z-50 mt-1 flex items-center gap-1.5 p-2 rounded-xl border border-border bg-card shadow-2xl min-w-[220px]">
@@ -505,7 +720,7 @@ function ToolbarPlugin({
 
       <div className="w-px h-4 bg-border mx-0.5" />
 
-      {/* Instant Clear All Button (No Popup Confirmation) */}
+      {/* Clear Text Button */}
       <button
         type="button"
         disabled={!hasContent}
@@ -513,10 +728,10 @@ function ToolbarPlugin({
           e.preventDefault();
           if (hasContent && onClearAll) onClearAll();
         }}
-        className={`${btn()} disabled:opacity-30 disabled:cursor-not-allowed`}
-        title="Clear All Content"
+        className="h-7 px-2 flex items-center justify-center rounded-md text-xs font-medium text-muted-foreground hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        title="Clear text"
       >
-        <Eraser className="h-3.5 w-3.5 text-destructive" />
+        Clear
       </button>
     </div>
   );
@@ -731,6 +946,9 @@ export default function NoteEditor({
   const [headings, setHeadings] = useState<OutlineHeading[]>([]);
   const [railHovered, setRailHovered] = useState(false);
   const [clearTrigger, setClearTrigger] = useState(0);
+  const [hasEditorContent, setHasEditorContent] = useState(() => {
+    return htmlToPlainText(initialHtml).trim().length > 0;
+  });
 
   const initialConfig = {
     namespace: 'NoteZEditor',
@@ -750,8 +968,15 @@ export default function NoteEditor({
   };
 
   const handleClearAllInstant = () => {
+    setHasEditorContent(false);
     setClearTrigger(prev => prev + 1);
     onClearAll?.();
+  };
+
+  const handleHtmlChange = (html: string) => {
+    const plainText = htmlToPlainText(html).trim();
+    setHasEditorContent(plainText.length > 0);
+    onChange(html);
   };
 
   return (
@@ -760,23 +985,23 @@ export default function NoteEditor({
         <ToolbarPlugin
           onSave={onSave}
           onClearAll={handleClearAllInstant}
-          hasContent={headings.length > 0 || initialHtml.length > 10}
+          hasContent={hasEditorContent}
+          onAiTransform={onAiTransform}
         />
-        <SelectionAIBubblePlugin onAiTransform={onAiTransform} />
 
         <div className="flex min-h-0 flex-1 overflow-hidden relative">
-          {/* Main Content Editable Area */}
+          {/* Main Content Editable Area with dedicated right gutter for Minimap Rail */}
           <div className="relative min-h-0 flex-1 bg-background overflow-y-auto" style={{ minHeight }}>
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
-                  className="h-full min-h-full outline-none px-4 md:px-6 py-4 text-[13px] text-foreground leading-relaxed"
+                  className="h-full min-h-full outline-none pl-4 md:pl-6 pr-16 md:pr-20 py-4 text-[13px] text-foreground leading-relaxed"
                   style={{ minHeight }}
                   aria-label="Note editor"
                 />
               }
               placeholder={
-                <div className="absolute top-4 left-4 md:left-6 text-[13px] text-muted-foreground pointer-events-none select-none">
+                <div className="absolute top-4 left-[19px] md:left-[27px] text-[13px] text-muted-foreground pointer-events-none select-none">
                   {placeholder}
                 </div>
               }
@@ -784,14 +1009,14 @@ export default function NoteEditor({
             />
           </div>
 
-          {/* ChatGPT Style Floating Vertical Outline Rail & Hover Card matching Image 2 & Image 3 */}
+          {/* Floating Vertical Outline Rail & Hover Card */}
           <aside
             onMouseEnter={() => setRailHovered(true)}
             onMouseLeave={() => setRailHovered(false)}
-            className="group absolute right-0 top-0 bottom-0 z-40 flex items-center pr-2 pl-4 cursor-pointer select-none"
+            className="group absolute right-3 top-0 bottom-0 z-40 flex items-center pr-3 pl-4 cursor-pointer select-none"
           >
-            {/* Resting Vertical Dash Indicators (Image 2) */}
-            <div className="flex flex-col gap-2 py-4 items-end">
+            {/* Resting Vertical Dash Indicators */}
+            <div className="flex flex-col gap-2 py-4 items-end pointer-events-auto">
               {(headings.length > 0 ? headings : Array.from({ length: 14 })).map((h, i) => (
                 <div
                   key={typeof h === 'object' ? h.id : i}
@@ -805,15 +1030,15 @@ export default function NoteEditor({
               ))}
             </div>
 
-            {/* Hover Popover Outline Card matching Image 3 */}
+            {/* Hover Popover Outline Card */}
             {railHovered && headings.length > 0 && (
-              <div className="absolute right-6 top-1/2 -translate-y-1/2 w-64 max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-[#1f1f23]/95 backdrop-blur-2xl p-2.5 shadow-2xl animate-in fade-in zoom-in-95 text-white">
+              <div className="absolute right-8 top-1/2 -translate-y-1/2 w-64 max-h-[75vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl p-2.5 z-50 text-foreground pointer-events-auto animate-in fade-in zoom-in-95">
                 <div className="space-y-1">
                   {headings.map((h, i) => (
                     <button
                       key={h.id}
                       onClick={() => scrollToHeading(i)}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs text-zinc-200 hover:bg-[#2e2e34] hover:text-white transition-colors truncate"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs text-foreground/80 hover:bg-secondary hover:text-foreground transition-colors truncate"
                     >
                       {h.text}
                     </button>
@@ -826,11 +1051,12 @@ export default function NoteEditor({
 
         <HistoryPlugin />
         <LinkPlugin />
+        <ClickableLinkPlugin newTab={true} />
         {autoFocus && <AutoFocusPlugin />}
         <ListPlugin />
         <HtmlLoaderPlugin html={initialHtml} />
-        <HtmlExtractPlugin onChange={onChange} onHeadingsUpdate={setHeadings} />
-        <ClearAllPlugin clearTrigger={clearTrigger} onCleared={() => onChange('')} />
+        <HtmlExtractPlugin onChange={handleHtmlChange} onHeadingsUpdate={setHeadings} />
+        <ClearAllPlugin clearTrigger={clearTrigger} onCleared={() => handleHtmlChange('')} />
       </LexicalComposer>
     </div>
   );
