@@ -1,73 +1,78 @@
-# Welcome to your Lovable project
+# NoteZ — Git Workflow Guide 🚀
 
-## Project info
+Welcome to the NoteZ codebase! This guide covers essential Git commands for pulling updates, committing changes, and pushing your code safely to GitHub.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+---
 
-## How can I edit this code?
+## 📥 1. How to Get the Latest Code (Git Pull)
 
-There are several ways of editing your application.
+Before starting work or before pushing new changes, always update your local workspace:
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```bash
+# Pull the latest changes from the main branch
+git pull origin main
 ```
 
-**Edit a file directly in GitHub**
+> 💡 **Best Practice**: Run `git pull origin main` every time you begin coding to make sure you have the newest updates from your teammates.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## 📤 2. How to Save and Push Your Changes (Git Push)
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Follow these 3 steps whenever you finish writing or fixing code:
 
-## What technologies are used for this project?
+### Step 1: Check your modified files
+```bash
+git status
+```
 
-This project is built with:
+### Step 2: Stage and commit your changes
+```bash
+# Stage all modified files
+git add .
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+# Save your changes with a clear commit message
+git commit -m "feat: describe your change here"
+```
 
-## How can I deploy this project?
+### Step 3: Push your commit to GitHub
+```bash
+# Push your local commits to GitHub
+git push origin main
+```
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+---
 
-## Can I connect a custom domain to my Lovable project?
+## ⚡ Quick Reference Sheet
 
-Yes, you can!
+| Action | Command |
+| :--- | :--- |
+| **Get latest updates** | `git pull origin main` |
+| **Check current status** | `git status` |
+| **Stage all changes** | `git add .` |
+| **Commit changes** | `git commit -m "your message"` |
+| **Push to GitHub** | `git push origin main` |
+| **View commit history** | `git log --oneline` |
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+---
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## ⚠️ Important Rules for Pushing
+
+1. **Never commit secrets or API keys**: Keep sensitive keys inside your local `.env` file (which is git-ignored).
+2. **Pull before pushing**: If your push gets rejected, run `git pull origin main` first, resolve any conflicts, and then run `git push origin main`.
+3. **Write clear commit messages**: Use short, descriptive messages like `feat: add exam timer` or `fix: sidebar responsive alignment`.
+
+---
+
+## 🛠 Local Setup & Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start local dev server
+npm run dev
+
+# Build for production verification
+npm run build
+```
