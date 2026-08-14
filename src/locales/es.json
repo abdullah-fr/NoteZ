@@ -1,0 +1,135 @@
+{
+  "brand": "NoteZ",
+  "sidebar": {
+    "dashboard": "Panel",
+    "folders": "Carpetas",
+    "archived": "Archivado",
+    "exam": "Examen",
+    "chat": "Chat",
+    "calendar": "Calendario",
+    "pomodoro": "Pomodoro",
+    "textToPdf": "Texto a PDF",
+    "feedback": "Comentarios",
+    "trash": "Papelera",
+    "search": "Buscar…",
+    "signOut": "Cerrar sesión",
+    "account": "Configuración de cuenta"
+  },
+  "groups": {
+    "main": "Principal",
+    "study": "Estudio",
+    "practice": "Práctica",
+    "tools": "Herramientas",
+    "utilities": "Utilidades"
+  },
+  "auth": {
+    "welcomeBack": "Bienvenido de nuevo",
+    "signInContinue": "Inicia sesión para seguir aprendiendo",
+    "createAccount": "Crear cuenta",
+    "startJourney": "Comienza tu viaje de aprendizaje hoy",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "fullName": "Nombre completo",
+    "signIn": "Iniciar sesión",
+    "signUp": "Crear cuenta",
+    "continueGoogle": "Continuar con Google",
+    "or": "o",
+    "noAccount": "¿No tienes cuenta?",
+    "haveAccount": "¿Ya tienes cuenta?",
+    "signUpLink": "Regístrate",
+    "signInLink": "Inicia sesión",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "resetPassword": "Restablecer contraseña",
+    "sendResetLink": "Enviar enlace",
+    "backToLogin": "Volver al inicio de sesión",
+    "resetSent": "Correo de restablecimiento enviado",
+    "resetSentDesc": "Revisa tu bandeja de entrada para el enlace de restablecimiento.",
+    "checkEmail": "Revisa tu correo",
+    "confirmEmail": "Enviamos un enlace de confirmación a {{email}}. Verifica tu correo antes de iniciar sesión.",
+    "validation": {
+      "emailRequired": "El correo es obligatorio",
+      "emailInvalid": "Introduce un correo válido",
+      "emailTemp": "No se permiten correos temporales. Usa un correo real.",
+      "passwordRequired": "La contraseña es obligatoria",
+      "passwordMin": "La contraseña debe tener al menos 8 caracteres",
+      "passwordStrength": "Debe contener al menos 1 mayúscula y 1 número",
+      "nameRequired": "El nombre es obligatorio",
+      "nameMin": "El nombre debe tener al menos 2 caracteres"
+    },
+    "passwordStrength": {
+      "weak": "Débil",
+      "fair": "Regular",
+      "good": "Buena",
+      "strong": "Fuerte"
+    }
+  },
+  "timer": {
+    "pomodoro": "Pomodoro",
+    "focus": "Enfoque",
+    "shortBreak": "Descanso corto",
+    "longBreak": "Descanso largo",
+    "taskTimer": "Temporizador de tareas",
+    "examTimer": "Temporizador de examen",
+    "deepLearning": "Sesiones de estudio profundo",
+    "shortSprints": "Sprints cortos de tareas",
+    "examCountdown": "Cuenta regresiva de examen",
+    "cycleOf": "Ciclo {{current}} de {{total}}",
+    "sessionDone": "¡Sesión completada!",
+    "focusing": "Enfocando…",
+    "ready": "Listo",
+    "breakTime": "¡Hora de descanso!",
+    "startFocus": "Iniciar temporizador"
+  },
+  "tools": {
+    "textToPdf": {
+      "title": "Texto a PDF",
+      "desc": "Convierte tu texto en un documento PDF descargable",
+      "placeholder": "Pega o escribe tu texto aquí…",
+      "fileName": "Nombre del archivo",
+      "generate": "Generar PDF",
+      "generating": "Generando…",
+      "success": "¡PDF descargado con éxito!"
+    },
+    "feedback": {
+      "title": "Enviar comentarios",
+      "desc": "Ayúdanos a mejorar NoteZ con tus comentarios",
+      "category": "Categoría",
+      "bug": "Reporte de error",
+      "feature": "Solicitud de función",
+      "general": "General",
+      "rating": "Calificación",
+      "message": "Tu mensaje",
+      "messagePlaceholder": "Cuéntanos qué piensas…",
+      "submit": "Enviar comentarios",
+      "thankYou": "¡Gracias!",
+      "thankYouDesc": "Tus comentarios han sido recibidos. ¡Apreciamos tu opinión!",
+      "sendAnother": "Enviar otro"
+    },
+    "trash": {
+      "title": "Papelera",
+      "desc": "Las notas eliminadas se borran automáticamente después de 30 días",
+      "empty": "La papelera está vacía",
+      "emptyDesc": "Las notas eliminadas aparecerán aquí durante 30 días.",
+      "restore": "Restaurar",
+      "deletePermanently": "Eliminar permanentemente",
+      "emptyTrash": "Vaciar papelera",
+      "emptyTrashConfirm": "¿Eliminar permanentemente todos los elementos?",
+      "daysLeft": "{{days}}d restantes",
+      "fromFolder": "De: {{folder}}"
+    }
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "close": "Cerrar",
+    "loading": "Cargando…",
+    "error": "Error",
+    "success": "Éxito"
+  },
+  "language": {
+    "label": "Idioma",
+    "en": "English",
+    "es": "Español"
+  }
+}

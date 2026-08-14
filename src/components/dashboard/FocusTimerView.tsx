@@ -4,12 +4,14 @@ import {
   Brain, ListChecks, GraduationCap,
   Play, Pause, RotateCcw, Square, Check,
   Plus, Trash2, ChevronRight, ChevronLeft,
-  Clock, Target, Zap,
+  Clock, Target, Zap, SkipForward, Coffee, Settings2,
 } from 'lucide-react';
 import { useTimer } from '@/lib/timer';
+import { useTranslation } from 'react-i18next';
 
 /* ─── types ─── */
 type Tab = 'focus' | 'task' | 'exam';
+type PomodoroPhase = 'focus' | 'shortBreak' | 'longBreak';
 
 interface Task {
   id: string;
@@ -21,16 +23,15 @@ interface Task {
 interface ExamQuestion {
   id: string;
   label: string;
-  allocatedSeconds: number; // per-question allocated time
+  allocatedSeconds: number;
   done: boolean;
 }
 
 /* ─── constants ─── */
-const FOCUS_OPTIONS = [15, 30, 60];
 const TASK_OPTIONS = [1, 2, 5, 10];
-const EXAM_PER_Q = [0.5, 1, 1.5, 2, 3, 5]; // minutes per question
+const EXAM_PER_Q = [0.5, 1, 1.5, 2, 3, 5];
 
-/* ─── tiny local timer hook (independent of global provider) ─── */
+/* ─── tiny local timer hook ─── */
 function useLocalTimer(initialSeconds: number) {
   const [timeLeft, setTimeLeft] = useState(initialSeconds);
   const [total, setTotal] = useState(initialSeconds);
@@ -101,34 +102,199 @@ function Ring({ progress, size = 200, stroke = 10, color }: { progress: number; 
 }
 
 /* ══════════════════════════════════════════════════════════════
-   FOCUS TIMER — uses global context so floating widget syncs
+   POMODORO TIMER — Work → Short Break → ... → Long Break
 ══════════════════════════════════════════════════════════════ */
-function FocusTimer() {
-  const { selectedMinutes, timeLeft, progress, isRunning, isCompleted, start, pause, reset, selectMinutes } = useTimer();
-  const [sessions, setSessions] = useState(0);
+const PHASE_COLORS: Record<PomodoroPhase, string> = {
+  focus: 'hsl(var(--timer-purple))',
+  shortBreak: 'hsl(142, 70%, 55%)',
+  longBreak: 'hsl(210, 80%, 55%)',
+};
 
-  // count completed sessions
-  const prevCompleted = useRef(false);
+function PomodoroTimer() {
+  const { t } = useTranslation();
+
+  // Settings
+  const [focusMins, setFocusMins] = useState(25);
+  const [shortBreakMins, setShortBreakMins] = useState(5);
+  const [longBreakMins, setLongBreakMins] = useState(15);
+  const [cyclesPerLong, setCyclesPerLong] = useState(4);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Pomodoro state
+  const [phase, setPhase] = useState<PomodoroPhase>('focus');
+  const [currentCycle, setCurrentCycle] = useState(1);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [autoTransition, setAutoTransition] = useState(true);
+
+  const phaseSeconds = phase === 'focus' ? focusMins * 60
+    : phase === 'shortBreak' ? shortBreakMins * 60
+    : longBreakMins * 60;
+
+  const [timeLeft, setTimeLeft] = useState(phaseSeconds);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const endRef = useRef<number | null>(null);
+  const ivRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Tick logic
   useEffect(() => {
-    if (isCompleted && !prevCompleted.current) setSessions(s => s + 1);
-    prevCompleted.current = isCompleted;
+    if (!isRunning) return;
+    const tick = () => {
+      if (!endRef.current) return;
+      const rem = Math.max(0, Math.round((endRef.current - Date.now()) / 1000));
+      setTimeLeft(rem);
+      if (rem <= 0) {
+        endRef.current = null;
+        setIsRunning(false);
+        setIsCompleted(true);
+      }
+    };
+    tick();
+    ivRef.current = setInterval(tick, 250);
+    const vis = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { if (ivRef.current) clearInterval(ivRef.current); document.removeEventListener('visibilitychange', vis); };
+  }, [isRunning]);
+
+  // Auto-transition when phase completes
+  useEffect(() => {
+    if (!isCompleted) return;
+    if (phase === 'focus') {
+      setTotalSessions(s => s + 1);
+    }
+    if (!autoTransition) return;
+    const timeout = setTimeout(() => {
+      advancePhase();
+    }, 3000);
+    return () => clearTimeout(timeout);
   }, [isCompleted]);
 
+  function advancePhase() {
+    if (phase === 'focus') {
+      if (currentCycle >= cyclesPerLong) {
+        // Long break after N cycles
+        startPhase('longBreak');
+        setCurrentCycle(1);
+      } else {
+        startPhase('shortBreak');
+      }
+    } else {
+      // After any break → focus
+      if (phase === 'longBreak') {
+        setCurrentCycle(1);
+      } else {
+        setCurrentCycle(c => c + 1);
+      }
+      startPhase('focus');
+    }
+  }
+
+  function startPhase(p: PomodoroPhase) {
+    const secs = p === 'focus' ? focusMins * 60 : p === 'shortBreak' ? shortBreakMins * 60 : longBreakMins * 60;
+    setPhase(p);
+    setTimeLeft(secs);
+    setIsCompleted(false);
+    setIsRunning(false);
+    endRef.current = null;
+  }
+
+  function handleStart() {
+    const secs = isCompleted ? phaseSeconds : timeLeft;
+    endRef.current = Date.now() + secs * 1000;
+    if (isCompleted) setTimeLeft(phaseSeconds);
+    setIsCompleted(false);
+    setIsRunning(true);
+  }
+
+  function handlePause() {
+    if (endRef.current) setTimeLeft(Math.max(0, Math.round((endRef.current - Date.now()) / 1000)));
+    endRef.current = null;
+    setIsRunning(false);
+  }
+
+  function handleReset() {
+    endRef.current = null;
+    setIsRunning(false);
+    setIsCompleted(false);
+    setTimeLeft(phaseSeconds);
+  }
+
+  function handleSkip() {
+    endRef.current = null;
+    setIsRunning(false);
+    setIsCompleted(false);
+    advancePhase();
+  }
+
+  // Sync timeLeft when settings change and not running
+  useEffect(() => {
+    if (!isRunning && !isCompleted) {
+      setTimeLeft(phaseSeconds);
+    }
+  }, [focusMins, shortBreakMins, longBreakMins, phase]);
+
+  const progress = phaseSeconds > 0 ? ((phaseSeconds - timeLeft) / phaseSeconds) * 100 : 0;
+  const phaseColor = PHASE_COLORS[phase];
+  const phaseLabel = phase === 'focus' ? t('timer.focus') : phase === 'shortBreak' ? t('timer.shortBreak') : t('timer.longBreak');
+
   return (
-    <div className="flex flex-col items-center gap-6 max-w-sm mx-auto pt-2">
-      {/* Description */}
-      <p className="text-[12px] text-muted-foreground text-center leading-relaxed">
-        Deep focus for learning concepts, reviewing study material, and planning your study guides.
-      </p>
+    <div className="flex flex-col items-center gap-5 max-w-sm mx-auto pt-2">
+      {/* Phase selector pills */}
+      <div className="flex gap-1 p-1 rounded-xl bg-background border border-border w-full">
+        {(['focus', 'shortBreak', 'longBreak'] as PomodoroPhase[]).map(p => (
+          <button
+            key={p}
+            onClick={() => { if (!isRunning) startPhase(p); }}
+            disabled={isRunning}
+            className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all disabled:cursor-not-allowed ${
+              phase === p
+                ? 'text-white shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            style={phase === p ? { backgroundColor: PHASE_COLORS[p] } : undefined}
+          >
+            {p === 'focus' ? `🎯 ${t('timer.focus')}` : p === 'shortBreak' ? `☕ ${t('timer.shortBreak')}` : `🌿 ${t('timer.longBreak')}`}
+          </button>
+        ))}
+      </div>
+
+      {/* Cycle indicator */}
+      <div className="flex items-center gap-2">
+        {Array.from({ length: cyclesPerLong }).map((_, i) => (
+          <div
+            key={i}
+            className={`w-2.5 h-2.5 rounded-full transition-all ${
+              i < currentCycle - (phase === 'focus' && !isCompleted ? 1 : 0)
+                ? 'bg-emerald-500'
+                : i === currentCycle - 1 && phase === 'focus'
+                ? `animate-pulse`
+                : 'bg-border'
+            }`}
+            style={i === currentCycle - 1 && phase === 'focus' ? { backgroundColor: phaseColor } : undefined}
+          />
+        ))}
+        <span className="text-[10px] font-mono text-muted-foreground ml-1">
+          {t('timer.cycleOf', { current: currentCycle, total: cyclesPerLong })}
+        </span>
+      </div>
 
       {/* Ring */}
       <div className="relative shrink-0">
-        <Ring progress={progress} size={200} stroke={10} color="hsl(var(--timer-purple))" />
+        <Ring progress={progress} size={200} stroke={10} color={phaseColor} />
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           {isCompleted ? (
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex flex-col items-center gap-1">
-              <Check className="h-10 w-10 text-notez-success" />
-              <span className="text-[13px] font-medium text-notez-success">Session done!</span>
+              {phase === 'focus' ? (
+                <>
+                  <Check className="h-10 w-10 text-notez-success" />
+                  <span className="text-[13px] font-medium text-notez-success">{t('timer.sessionDone')}</span>
+                </>
+              ) : (
+                <>
+                  <Coffee className="h-10 w-10 text-emerald-500" />
+                  <span className="text-[13px] font-medium text-emerald-500">{t('timer.breakTime')}</span>
+                </>
+              )}
             </motion.div>
           ) : (
             <>
@@ -138,53 +304,119 @@ function FocusTimer() {
                 {fmt(timeLeft)}
               </motion.span>
               <span className="text-[11px] text-muted-foreground mt-1 font-mono">
-                {isRunning ? 'Focusing…' : 'Ready'}
+                {isRunning ? (phase === 'focus' ? t('timer.focusing') : '☕ Break…') : phaseLabel}
               </span>
             </>
           )}
         </div>
       </div>
 
-      {/* Duration pills */}
-      <div className="flex gap-2 flex-wrap justify-center">
-        {FOCUS_OPTIONS.map(m => (
-          <button key={m} onClick={() => selectMinutes(m)} disabled={isRunning}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${selectedMinutes === m && !isRunning
-                ? 'bg-[hsl(var(--timer-purple))] text-white shadow-[0_0_12px_hsl(var(--timer-purple)/0.3)]'
-                : 'bg-secondary border border-border text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-          >{m}m</button>
-        ))}
-      </div>
-
       {/* Controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {!isRunning ? (
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={start}
-            className="w-14 h-14 rounded-full bg-[hsl(var(--timer-purple))] flex items-center justify-center shadow-[0_0_20px_hsl(var(--timer-purple)/0.4)] hover:bg-[hsl(var(--timer-purple))] transition-colors"
+          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleStart}
+            className="w-14 h-14 rounded-full flex items-center justify-center transition-colors"
+            style={{ backgroundColor: phaseColor, boxShadow: `0 0 20px ${phaseColor}40` }}
           >
             <Play className="h-6 w-6 text-white ml-0.5" fill="white" />
           </motion.button>
         ) : (
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={pause}
+          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handlePause}
             className="w-14 h-14 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
           >
             <Pause className="h-6 w-6 text-foreground" fill="currentColor" />
           </motion.button>
         )}
-        <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={() => reset()}
+        <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleReset}
           className="w-12 h-12 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
         >
-          <RotateCcw className="h-4.5 w-4.5 text-muted-foreground" style={{ width: 18, height: 18 }} />
+          <RotateCcw className="text-muted-foreground" style={{ width: 18, height: 18 }} />
+        </motion.button>
+        <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleSkip}
+          title="Skip to next phase"
+          className="w-12 h-12 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
+        >
+          <SkipForward className="text-muted-foreground" style={{ width: 18, height: 18 }} />
         </motion.button>
       </div>
 
-      {/* Session counter */}
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-[hsl(var(--timer-purple))] animate-pulse' : 'bg-secondary'}`} />
-        <span>{isRunning ? 'Session in progress' : isCompleted ? 'Session complete' : 'Ready to start'}</span>
-        {sessions > 0 && <span className="ml-2 px-2 py-0.5 rounded-md bg-[hsl(var(--secondary))] border border-border text-[hsl(var(--timer-purple))]">{sessions} done</span>}
+      {/* Stats row */}
+      <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <div className={`w-2 h-2 rounded-full ${isRunning ? 'animate-pulse' : 'bg-secondary'}`}
+            style={isRunning ? { backgroundColor: phaseColor } : undefined} />
+          <span>{isRunning ? phaseLabel : isCompleted ? t('timer.sessionDone') : t('timer.ready')}</span>
+        </div>
+        {totalSessions > 0 && (
+          <span className="px-2 py-0.5 rounded-md bg-secondary border border-border" style={{ color: phaseColor }}>
+            {totalSessions} done
+          </span>
+        )}
       </div>
+
+      {/* Settings toggle */}
+      <button
+        onClick={() => setShowSettings(s => !s)}
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Settings2 className="h-3.5 w-3.5" />
+        Settings
+      </button>
+
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="w-full overflow-hidden"
+          >
+            <div className="grid grid-cols-2 gap-3 p-4 rounded-xl border border-border bg-background">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Focus (min)</label>
+                <input type="number" min={1} max={120} value={focusMins}
+                  onChange={e => setFocusMins(Math.max(1, +e.target.value))}
+                  disabled={isRunning}
+                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Short Break</label>
+                <input type="number" min={1} max={30} value={shortBreakMins}
+                  onChange={e => setShortBreakMins(Math.max(1, +e.target.value))}
+                  disabled={isRunning}
+                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Long Break</label>
+                <input type="number" min={1} max={60} value={longBreakMins}
+                  onChange={e => setLongBreakMins(Math.max(1, +e.target.value))}
+                  disabled={isRunning}
+                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Cycles</label>
+                <input type="number" min={1} max={10} value={cyclesPerLong}
+                  onChange={e => setCyclesPerLong(Math.max(1, +e.target.value))}
+                  disabled={isRunning}
+                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
+                />
+              </div>
+              <div className="col-span-2 flex items-center gap-2">
+                <button
+                  onClick={() => setAutoTransition(a => !a)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${autoTransition ? 'bg-emerald-500' : 'bg-border'}`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${autoTransition ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+                <span className="text-[11px] text-muted-foreground">Auto-transition to next phase</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -193,6 +425,7 @@ function FocusTimer() {
    TASK TIMER
 ══════════════════════════════════════════════════════════════ */
 function TaskTimer() {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newLabel, setNewLabel] = useState('');
   const [newMins, setNewMins] = useState(5);
@@ -202,7 +435,6 @@ function TaskTimer() {
   const activeTask = activeIdx !== null ? tasks[activeIdx] : null;
   const timer = useLocalTimer(activeTask ? activeTask.minutes * 60 : 300);
 
-  // Reset timer when active task changes
   const prevIdxRef = useRef<number | null>(null);
   useEffect(() => {
     if (activeIdx !== prevIdxRef.current) {
@@ -212,7 +444,6 @@ function TaskTimer() {
     prevIdxRef.current = activeIdx;
   }, [activeIdx]);
 
-  // Mark task done when timer completes
   useEffect(() => {
     if (timer.completed && activeIdx !== null) {
       setTasks(prev => prev.map((t, i) => i === activeIdx ? { ...t, done: true } : t));
@@ -252,14 +483,12 @@ function TaskTimer() {
         Allocate a short deadline for each task. Complete it, move on. Short sprints drive real progress.
       </p>
 
-      {/* Add task form */}
       <div className="flex flex-wrap gap-2 items-center">
         <input ref={inputRef} value={newLabel} onChange={e => setNewLabel(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addTask()}
           placeholder="Task name…"
           className="min-w-0 flex-1 bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
         />
-        {/* Duration pills */}
         <div className="flex flex-wrap gap-1">
           {TASK_OPTIONS.map(m => (
             <button key={m} onClick={() => setNewMins(m)}
@@ -276,7 +505,6 @@ function TaskTimer() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Task list */}
         <div className="space-y-1.5">
           {tasks.length === 0 && (
             <div className="text-center py-8 text-[11px] text-muted-foreground">
@@ -314,7 +542,6 @@ function TaskTimer() {
           )}
         </div>
 
-        {/* Active task timer */}
         <div className="flex flex-col items-center gap-3">
           {activeTask ? (
             <>
@@ -378,6 +605,7 @@ function TaskTimer() {
    EXAM TIMER
 ══════════════════════════════════════════════════════════════ */
 function ExamTimer() {
+  const { t } = useTranslation();
   type ExamMode = 'whole' | 'perQuestion';
 
   const [examMode, setExamMode] = useState<ExamMode>('whole');
@@ -388,10 +616,7 @@ function ExamTimer() {
   const [activeQIdx, setActiveQIdx] = useState<number | null>(null);
   const [showSetup, setShowSetup] = useState(true);
 
-  // Whole exam timer
   const wholeTimer = useLocalTimer(wholeMinutes * 60);
-
-  // Per-question timer
   const activeQ = activeQIdx !== null ? questions[activeQIdx] : null;
   const perQTimer = useLocalTimer(activeQ ? activeQ.allocatedSeconds : perQMins * 60);
 
@@ -453,7 +678,6 @@ function ExamTimer() {
         Set a whole-exam countdown or allocate time per question — track exactly how much time each answer gets.
       </p>
 
-      {/* Mode toggle */}
       <div className="flex gap-2 p-1 rounded-xl bg-secondary border border-border">
         {(['whole', 'perQuestion'] as ExamMode[]).map(m => (
           <button key={m} onClick={() => setExamMode(m)}
@@ -466,7 +690,6 @@ function ExamTimer() {
       </div>
 
       {examMode === 'whole' ? (
-        /* Whole exam duration */
         <div className="flex flex-col gap-3">
           <p className="text-[11px] text-muted-foreground text-center">Total exam duration</p>
           <div className="flex gap-2 flex-wrap justify-center">
@@ -486,7 +709,6 @@ function ExamTimer() {
           </div>
         </div>
       ) : (
-        /* Per-question setup */
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-2 items-center">
             <input value={newQLabel} onChange={e => setNewQLabel(e.target.value)}
@@ -510,7 +732,7 @@ function ExamTimer() {
           </div>
 
           <div className="space-y-1.5 max-h-48 overflow-auto">
-            {questions.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-3">Add questions above — or start without them for a generic per-question timer</p>}
+            {questions.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-3">Add questions above</p>}
             {questions.map((q, i) => (
               <div key={q.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary">
                 <span className="text-[11px] text-muted-foreground font-mono shrink-0">Q{i + 1}</span>
@@ -535,7 +757,6 @@ function ExamTimer() {
     </div>
   );
 
-  /* ── Active exam session ── */
   return (
     <div className="max-w-lg mx-auto flex flex-col gap-5 pt-2">
       <div className="flex items-center justify-between">
@@ -592,9 +813,7 @@ function ExamTimer() {
           </div>
         </div>
       ) : (
-        /* Per-question view */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Question list */}
           <div className="space-y-1.5 max-h-72 overflow-auto">
             {questions.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
@@ -617,7 +836,6 @@ function ExamTimer() {
             ))}
           </div>
 
-          {/* Active question timer */}
           <div className="flex flex-col items-center gap-3">
             {activeQIdx !== null && activeQ ? (
               <>
@@ -642,7 +860,7 @@ function ExamTimer() {
                 <div className="flex items-center gap-2">
                   {!perQTimer.running ? (
                     <button onClick={perQTimer.start} className="w-10 h-10 rounded-full bg-[hsl(var(--timer-purple))] flex items-center justify-center hover:bg-[hsl(var(--timer-purple))] transition-colors">
-                      <Play className="h-4.5 w-4.5 text-white ml-0.5" fill="white" style={{ width: 18, height: 18 }} />
+                      <Play className="text-white ml-0.5" fill="white" style={{ width: 18, height: 18 }} />
                     </button>
                   ) : (
                     <button onClick={perQTimer.pause} className="w-10 h-10 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-muted transition-colors">
@@ -673,13 +891,14 @@ function ExamTimer() {
 /* ══════════════════════════════════════════════════════════════
    MAIN EXPORT — tabbed shell
 ══════════════════════════════════════════════════════════════ */
-const TABS: { id: Tab; label: string; icon: any; color: string; desc: string }[] = [
-  { id: 'focus', label: 'Focus Timer', icon: Brain, color: 'hsl(var(--timer-purple))', desc: 'Deep learning sessions' },
-  { id: 'task', label: 'Task Timer', icon: ListChecks, color: 'hsl(var(--timer-purple))', desc: 'Short task sprints' },
-  { id: 'exam', label: 'Exam Timer', icon: GraduationCap, color: 'hsl(var(--timer-purple))', desc: 'Exam countdown' },
+const TABS: { id: Tab; label: string; icon: any; color: string; descKey: string }[] = [
+  { id: 'focus', label: 'Pomodoro', icon: Brain, color: 'hsl(var(--timer-purple))', descKey: 'timer.deepLearning' },
+  { id: 'task', label: 'Task Timer', icon: ListChecks, color: 'hsl(var(--timer-purple))', descKey: 'timer.shortSprints' },
+  { id: 'exam', label: 'Exam Timer', icon: GraduationCap, color: 'hsl(var(--timer-purple))', descKey: 'timer.examCountdown' },
 ];
 
 export default function FocusTimerView() {
+  const { t } = useTranslation();
   const [active, setActive] = useState<Tab>('focus');
   const activeTab = TABS.find(t => t.id === active)!;
 
@@ -692,7 +911,7 @@ export default function FocusTimerView() {
         </div>
         <div>
           <h2 className="font-serif text-2xl tracking-tight leading-none">{activeTab.label}</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{activeTab.desc}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{t(activeTab.descKey)}</p>
         </div>
       </div>
 
@@ -723,7 +942,7 @@ export default function FocusTimerView() {
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}
           >
-            {active === 'focus' && <FocusTimer />}
+            {active === 'focus' && <PomodoroTimer />}
             {active === 'task' && <TaskTimer />}
             {active === 'exam' && <ExamTimer />}
           </motion.div>

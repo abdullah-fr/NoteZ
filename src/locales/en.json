@@ -1,0 +1,135 @@
+{
+  "brand": "NoteZ",
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "folders": "Folders",
+    "archived": "Archived",
+    "exam": "Exam",
+    "chat": "Chat",
+    "calendar": "Calendar",
+    "pomodoro": "Pomodoro",
+    "textToPdf": "Text to PDF",
+    "feedback": "Feedback",
+    "trash": "Trash",
+    "search": "Search…",
+    "signOut": "Sign out",
+    "account": "Account Settings"
+  },
+  "groups": {
+    "main": "Main",
+    "study": "Study",
+    "practice": "Practice",
+    "tools": "Tools",
+    "utilities": "Utilities"
+  },
+  "auth": {
+    "welcomeBack": "Welcome Back",
+    "signInContinue": "Sign in to continue learning",
+    "createAccount": "Create Account",
+    "startJourney": "Start your learning journey today",
+    "email": "Email",
+    "password": "Password",
+    "fullName": "Full Name",
+    "signIn": "Sign In",
+    "signUp": "Create Account",
+    "continueGoogle": "Continue with Google",
+    "or": "or",
+    "noAccount": "Don't have an account?",
+    "haveAccount": "Already have an account?",
+    "signUpLink": "Sign up",
+    "signInLink": "Sign in",
+    "forgotPassword": "Forgot password?",
+    "resetPassword": "Reset Password",
+    "sendResetLink": "Send Reset Link",
+    "backToLogin": "Back to login",
+    "resetSent": "Password reset email sent",
+    "resetSentDesc": "Check your inbox for a link to reset your password.",
+    "checkEmail": "Check your email",
+    "confirmEmail": "We sent a confirmation link to {{email}}. Please verify your email before signing in.",
+    "validation": {
+      "emailRequired": "Email is required",
+      "emailInvalid": "Enter a valid email address",
+      "emailTemp": "Temporary/disposable emails are not allowed. Please use a real email.",
+      "passwordRequired": "Password is required",
+      "passwordMin": "Password must be at least 8 characters",
+      "passwordStrength": "Must contain at least 1 uppercase letter and 1 number",
+      "nameRequired": "Full name is required",
+      "nameMin": "Name must be at least 2 characters"
+    },
+    "passwordStrength": {
+      "weak": "Weak",
+      "fair": "Fair",
+      "good": "Good",
+      "strong": "Strong"
+    }
+  },
+  "timer": {
+    "pomodoro": "Pomodoro",
+    "focus": "Focus",
+    "shortBreak": "Short Break",
+    "longBreak": "Long Break",
+    "taskTimer": "Task Timer",
+    "examTimer": "Exam Timer",
+    "deepLearning": "Deep learning sessions",
+    "shortSprints": "Short task sprints",
+    "examCountdown": "Exam countdown",
+    "cycleOf": "Cycle {{current}} of {{total}}",
+    "sessionDone": "Session done!",
+    "focusing": "Focusing…",
+    "ready": "Ready",
+    "breakTime": "Break time!",
+    "startFocus": "Start Focus Timer"
+  },
+  "tools": {
+    "textToPdf": {
+      "title": "Text to PDF",
+      "desc": "Convert your text into a downloadable PDF document",
+      "placeholder": "Paste or type your text here…",
+      "fileName": "File name",
+      "generate": "Generate PDF",
+      "generating": "Generating…",
+      "success": "PDF downloaded successfully!"
+    },
+    "feedback": {
+      "title": "Send Feedback",
+      "desc": "Help us improve NoteZ with your feedback",
+      "category": "Category",
+      "bug": "Bug Report",
+      "feature": "Feature Request",
+      "general": "General",
+      "rating": "Rating",
+      "message": "Your message",
+      "messagePlaceholder": "Tell us what you think…",
+      "submit": "Send Feedback",
+      "thankYou": "Thank you!",
+      "thankYouDesc": "Your feedback has been received. We appreciate your input!",
+      "sendAnother": "Send another"
+    },
+    "trash": {
+      "title": "Trash",
+      "desc": "Deleted notes are automatically removed after 30 days",
+      "empty": "Trash is empty",
+      "emptyDesc": "Deleted notes will appear here for 30 days before permanent removal.",
+      "restore": "Restore",
+      "deletePermanently": "Delete permanently",
+      "emptyTrash": "Empty Trash",
+      "emptyTrashConfirm": "Permanently delete all items in trash?",
+      "daysLeft": "{{days}}d left",
+      "fromFolder": "From: {{folder}}"
+    }
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "close": "Close",
+    "loading": "Loading…",
+    "error": "Error",
+    "success": "Success"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "es": "Español"
+  }
+}
