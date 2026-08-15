@@ -7,36 +7,60 @@ import { useUpgradeModal, parseLimitError } from '@/hooks/use-upgrade-modal';
 import UpgradeModal from '@/components/dashboard/UpgradeModal';
 import { useTimer } from '@/lib/timer';
 import {
-  GraduationCap, Loader2, Check, X, Lightbulb, ArrowRight,
-  RotateCcw, Trophy, Zap, Target, ChevronDown, ChevronUp, Brain, Sparkles,
-  Timer, Folder, FileText, CheckSquare, Square, Clock, BookOpen, Award
+  BookOpen, Zap, Pencil, Loader2, Check, X, Lightbulb, ArrowRight,
+  RotateCcw, Trophy, Target, ChevronDown, ChevronUp, Brain,
+  Folder, FileText, CheckSquare, Square, Clock, Award
 } from 'lucide-react';
 
+/* Custom Exam Paper with Pencil Icon */
+function ExamPaperPencilIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Paper Sheet */}
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      {/* Exam lines */}
+      <line x1="8" y1="12" x2="12" y2="12" />
+      <line x1="8" y1="16" x2="10" y2="16" />
+      {/* Pencil writing on paper */}
+      <path d="M18.4 12.6l-5.8 5.8-2.6.8.8-2.6 5.8-5.8a1.5 1.5 0 0 1 2.1 2.1z" />
+    </svg>
+  );
+}
+
 const examModes = [
-  { id: 'practice', label: 'Practice', tag: 'Learn & review as you go' },
-  { id: 'mock', label: 'Mock', tag: 'Simulate a real test' },
+  { id: 'practice', label: 'Practice Mode', tag: 'Get instant answers and detailed explanations as you progress.' },
+  { id: 'mock', label: 'Mock Exam', tag: 'Simulate real test conditions and get feedback at the end.' },
 ];
 
 const difficulties = [
-  { id: 'easy', label: 'Easy', tag: 'Fundamental concepts' },
-  { id: 'medium', label: 'Medium', tag: 'Standard practice' },
-  { id: 'hard', label: 'Hard', tag: 'Advanced challenge' },
+  { id: 'easy', label: 'Easy' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'hard', label: 'Hard' },
 ];
 
 const questionCounts = [5, 10, 15];
 
-const timerOptions = [
-  { minutes: 0, label: 'Untimed', tag: 'No time limit' },
-  { minutes: 5, label: '5 Mins', tag: 'Quick blitz' },
-  { minutes: 10, label: '10 Mins', tag: 'Balanced pace' },
-  { minutes: 15, label: '15 Mins', tag: 'Standard exam' },
-  { minutes: 30, label: '30 Mins', tag: 'Deep assessment' },
+const defaultTimerOptions = [
+  { minutes: 0, label: 'Untimed' },
+  { minutes: 5, label: '5m' },
+  { minutes: 10, label: '10m' },
+  { minutes: 15, label: '15m' },
+  { minutes: 30, label: '30m' },
 ];
 
 const LOADING_STEPS = [
-  'Analyzing subject and target difficulty…',
-  'Crafting contextual questions with Gemini 3.1 Flash Lite…',
-  'Generating distractor options & explanations…',
+  'Preparing study material & notes…',
+  'Crafting contextual questions…',
+  'Validating options & explanations…',
   'Finalizing AI exam suite…',
 ];
 
@@ -70,14 +94,20 @@ function cleanNoteText(html: string): string {
 export default function ExamQuizView() {
   const { user } = useAuth();
   const { upgradeModal, handleLimitError, closeUpgradeModal } = useUpgradeModal();
-  const { setExamMinutes, startExam, pauseExam, resetExam: resetTimerState, examTimeLeft, examRunning } = useTimer();
+  const { setExamMinutes, startExam, pauseExam, resetExam: resetTimerState, examTimeLeft, examRunning, examCompleted: timerExamCompleted } = useTimer();
 
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const [subject, setSubject] = useState('');
   const [examMode, setExamMode] = useState<'practice' | 'mock'>('practice');
   const [difficulty, setDifficulty] = useState('medium');
   const [questionCount, setQuestionCount] = useState(10);
+  const [isCustomQuestions, setIsCustomQuestions] = useState(false);
+  const [customQuestionsInput, setCustomQuestionsInput] = useState('20');
+
+  // Timer Selection: 0 (untimed), preset minutes, or custom
   const [timerMinutes, setTimerMinutes] = useState(0);
+  const [isCustomTimer, setIsCustomTimer] = useState(false);
+  const [customTimerInput, setCustomTimerInput] = useState('20');
 
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -93,6 +123,8 @@ export default function ExamQuizView() {
   // Folder & Notes Scope Selection
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
+  const [studyDropdownOpen, setStudyDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Load folders and notes from localStorage
   const localFoldersData: LocalFolderData[] = (() => {
@@ -123,9 +155,21 @@ export default function ExamQuizView() {
 
   const currentFolder = localFoldersData.find(f => f.id === selectedFolderId);
 
+  // Close study dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setStudyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // When folder selection changes, select all notes inside that folder by default
   const handleFolderSelect = (folderId: string | null) => {
     setSelectedFolderId(folderId);
+    setStudyDropdownOpen(false);
     if (!folderId) {
       setSelectedNoteIds(new Set());
       return;
@@ -134,9 +178,16 @@ export default function ExamQuizView() {
     if (folder) {
       setSelectedNoteIds(new Set(folder.notes.map(n => n.id)));
       if (!subject.trim()) {
-        setSubject(folder.name);
+        const folderNameLetters = folder.name.replace(/[^a-zA-Z\s]/g, '');
+        setSubject(folderNameLetters);
       }
     }
+  };
+
+  // Subject Input Validation (Keystroke Enforcement): Only allow letters and spaces
+  const handleSubjectChange = (val: string) => {
+    const lettersOnly = val.replace(/[^a-zA-Z\s]/g, '');
+    setSubject(lettersOnly);
   };
 
   const toggleNoteSelection = (noteId: string) => {
@@ -176,22 +227,37 @@ export default function ExamQuizView() {
     return parts.join('\n\n');
   }
 
-  // Handle timer expiration during exam
+  // Handle timer expiration during exam — use the countdown's own completed flag
   useEffect(() => {
-    if (examRunning && examTimeLeft <= 0 && questions.length > 0 && !examCompleted && timerMinutes > 0) {
+    if (timerExamCompleted && questions.length > 0 && !examCompleted && timerMinutes > 0) {
       setExamCompleted(true);
       pauseExam();
       toast.warning('Time is up! Exam auto-submitted.');
-    }
-  }, [examRunning, examTimeLeft, questions.length, examCompleted, pauseExam, timerMinutes]);
 
-  // Multi-step loading rotator
+      // Compute final score from whatever was answered
+      const finalScore = answers.reduce((acc, curr) => (curr && curr.correct ? acc + 1 : acc), 0);
+      setScore(finalScore);
+
+      if (user) {
+        const targetSubject = subject.trim() || (currentFolder ? currentFolder.name : 'General Quiz');
+        saveExamResult(user.id, {
+          subject: targetSubject,
+          score: finalScore,
+          totalQuestions: questions.length,
+          difficulty,
+          questions,
+        });
+      }
+    }
+  }, [timerExamCompleted, questions.length, examCompleted, pauseExam, timerMinutes, answers, user, subject, currentFolder, difficulty, questions]);
+
+  // Multi-step loading rotator (Staged progress, forward-only)
   useEffect(() => {
     if (!loading) return;
     setLoadingStep(0);
     const interval = setInterval(() => {
-      setLoadingStep(prev => (prev + 1) % LOADING_STEPS.length);
-    }, 1800);
+      setLoadingStep(prev => (prev < LOADING_STEPS.length - 1 ? prev + 1 : prev));
+    }, 2200);
     return () => clearInterval(interval);
   }, [loading]);
 
@@ -203,7 +269,14 @@ export default function ExamQuizView() {
   }, []);
 
   const handleGenerateExam = async () => {
-    // Empty Folder / No Notes check (Requirement 3.4)
+    const trimmedSubject = subject.trim();
+
+    if (!selectedFolderId && !trimmedSubject) {
+      toast.error('Please enter a subject or topic name.');
+      subjectInputRef.current?.focus();
+      return;
+    }
+
     if (selectedFolderId) {
       if (!currentFolder || currentFolder.notes.length === 0) {
         toast.error('No study notes are available in this folder to generate an exam from.');
@@ -215,7 +288,11 @@ export default function ExamQuizView() {
       }
     }
 
-    const targetSubject = subject.trim() || (currentFolder ? currentFolder.name : 'General Quiz');
+    const targetSubject = trimmedSubject || (currentFolder ? currentFolder.name : 'General Quiz');
+    const effectiveQuestionCount = isCustomQuestions
+      ? Math.min(30, Math.max(1, parseInt(customQuestionsInput) || 10))
+      : questionCount;
+
     setLoading(true);
     try {
       const sourceText = selectedFolderId ? getSelectedNotesSourceText() : undefined;
@@ -228,7 +305,7 @@ export default function ExamQuizView() {
       const data = await generateExamWithGemini({
         subject: targetSubject,
         difficulty,
-        questionCount,
+        questionCount: effectiveQuestionCount,
         mode: examMode,
         sourceText,
       });
@@ -241,9 +318,11 @@ export default function ExamQuizView() {
       setExamCompleted(false);
       setAnswers([]);
 
-      if (timerMinutes > 0) {
-        setExamMinutes(timerMinutes);
-        startExam(timerMinutes);
+      // Effective active timer minutes (Custom vs Preset)
+      const activeMinutes = isCustomTimer ? Math.max(1, parseInt(customTimerInput) || 10) : timerMinutes;
+      if (activeMinutes > 0) {
+        setExamMinutes(activeMinutes);
+        startExam(activeMinutes);
       } else {
         pauseExam();
         resetTimerState();
@@ -254,7 +333,7 @@ export default function ExamQuizView() {
       if (limitErr) {
         handleLimitError(limitErr.field, limitErr.limit);
       } else {
-        toast.error(e.message || 'Failed to generate exam');
+        toast.error(e.message || 'The exam service encountered an issue. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -271,7 +350,6 @@ export default function ExamQuizView() {
       if (isCorrect) setScore(prev => prev + 1);
       setAnswers(prev => [...prev, { selected: index, correct: isCorrect }]);
     } else {
-      // Mock Mode: Store answer quietly without revealing feedback until complete
       const isCorrect = index === questions[currentIndex].correctIndex;
       setAnswers(prev => {
         const next = [...prev];
@@ -288,11 +366,9 @@ export default function ExamQuizView() {
       setSelectedAnswer(nextAns ? nextAns.selected : null);
       setShowFeedback(false);
     } else {
-      // Complete Exam
       setExamCompleted(true);
       pauseExam();
 
-      // Recalculate score for Mock Mode or Practice Mode
       const finalScore = answers.reduce((acc, curr) => (curr && curr.correct ? acc + 1 : acc), 0);
       setScore(finalScore);
 
@@ -306,7 +382,6 @@ export default function ExamQuizView() {
           questions,
         });
 
-        // Auto-create remediation activity for wrong questions
         const wrongIndices = answers
           .map((a, i) => (a && !a.correct ? i : null))
           .filter((i): i is number => i !== null);
@@ -343,105 +418,158 @@ export default function ExamQuizView() {
     setScore(0);
     setExamCompleted(false);
     setAnswers([]);
-  };
 
-  const formatTimer = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    setSubject('');
+    setSelectedFolderId(null);
+    setSelectedNoteIds(new Set());
+    setExamMode('practice');
+    setDifficulty('medium');
+    setQuestionCount(10);
+    setIsCustomQuestions(false);
+    setTimerMinutes(0);
+    setIsCustomTimer(false);
   };
 
   /* ────────────────── SETUP SCREEN ────────────────── */
   if (questions.length === 0 && !loading) {
     return (
-      <div className="max-w-4xl mx-auto min-h-0 flex flex-col justify-center">
-        {/* Header - Compact Desktop Spacing */}
-        <div className="flex items-center justify-between mb-3 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shadow-xs">
-              <GraduationCap className="h-4 w-4" />
-            </div>
-            <div>
-              <h2 className="font-serif text-xl tracking-tight text-foreground flex items-center gap-2">
-                AI Exam Mode
-              </h2>
-              <p className="text-[11px] text-muted-foreground font-medium">
-                Generate predictive exams from your folders & notes using Gemini 3.1 Flash Lite
-              </p>
-            </div>
+      <div className="max-w-3xl mx-auto py-2 flex flex-col justify-center px-1">
+        {/* Top Header matching Image 2 */}
+        <div className="text-center mb-5 shrink-0">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-secondary/60 border border-border/80 text-foreground mb-3 shadow-xs">
+            <BookOpen className="h-6 w-6 text-foreground" />
           </div>
-          <span className="hidden sm:inline-block px-2 py-0.5 rounded-lg border border-border bg-card font-mono text-[9px] uppercase tracking-wider text-muted-foreground shadow-2xs">
-            Predictive Test Studio
-          </span>
+          <h2 className="font-serif text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+            Exam Mode
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto leading-relaxed font-medium">
+            Create personalized practice tests or simulate real exam conditions from your notes and topics.
+          </p>
         </div>
 
-        {/* Setup Card Container - Compact Desktop Grid Layout (Fits within 100vh) */}
+        {/* Setup Card Container matching Image 2 */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-border bg-card p-4 md:p-5 space-y-3.5 shadow-xl shrink-0"
+          className="rounded-2xl border border-border/80 bg-card p-5 md:p-6 space-y-5 shadow-xl shrink-0"
         >
-          {/* Row 1: Subject (Left) & Generate From Folder (Right) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Row 1: Subject & Custom Study Material Dropdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 font-semibold">
-                Subject / Topic
+              <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
+                <span>Subject or Topic</span>
+                <span className="text-[10px] text-muted-foreground font-normal">Letters only</span>
               </label>
-              <input
-                ref={subjectInputRef}
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleGenerateExam()}
-                placeholder="e.g., Organic Chemistry, Machine Learning…"
-                className="w-full h-9 px-3 rounded-lg bg-secondary/80 border border-border text-[12px] text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-              />
+              <div className="relative">
+                <input
+                  ref={subjectInputRef}
+                  value={subject}
+                  onChange={(e) => handleSubjectChange(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleGenerateExam()}
+                  placeholder="e.g., Data Structures, Operating Systems..."
+                  className="w-full h-11 px-4 rounded-xl bg-secondary/60 border border-border/80 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all font-medium shadow-2xs"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 font-semibold flex items-center gap-1.5">
-                <Folder className="h-3 w-3 text-primary" />
-                Generate From Folder <span className="text-muted-foreground font-sans text-[10px] normal-case tracking-normal">(Uses notes)</span>
+            {/* Custom Optimized Dropdown for Study Material */}
+            <div ref={dropdownRef} className="relative">
+              <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
+                <span>Study Material</span>
+                <span className="text-[10px] text-muted-foreground font-normal">Optional source folder</span>
               </label>
-              <select
-                value={selectedFolderId ?? ''}
-                onChange={e => handleFolderSelect(e.target.value || null)}
-                className="w-full h-9 px-3 rounded-lg bg-secondary/80 border border-border text-[12px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-medium"
+              <button
+                type="button"
+                onClick={() => setStudyDropdownOpen(open => !open)}
+                className="w-full h-11 px-4 rounded-xl bg-secondary/60 border border-border/80 text-xs text-foreground flex items-center justify-between font-medium hover:bg-secondary transition-colors outline-none focus:border-primary shadow-2xs"
               >
-                <option value="">— Generic (Topic only) —</option>
-                {localFoldersData.map(f => (
-                  <option key={f.id} value={f.id}>{f.name} ({f.notes.length} notes)</option>
-                ))}
-              </select>
+                <span className="flex items-center gap-2 truncate">
+                  <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="truncate">
+                    {currentFolder ? `${currentFolder.name} (${currentFolder.notes.length} notes)` : 'Topic Only (Generic)'}
+                  </span>
+                </span>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ${studyDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Sleek Custom Dropdown Menu */}
+              <AnimatePresence>
+                {studyDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    className="absolute right-0 left-0 top-full mt-1 z-30 rounded-xl border border-border bg-card p-1.5 shadow-xl max-h-48 overflow-y-auto space-y-0.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleFolderSelect(null)}
+                      className={`flex w-full items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                        selectedFolderId === null
+                          ? 'bg-primary text-primary-foreground font-semibold'
+                          : 'text-foreground hover:bg-secondary'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                        Topic Only (Generic)
+                      </span>
+                      {selectedFolderId === null && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
+                    </button>
+
+                    {localFoldersData.map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => handleFolderSelect(f.id)}
+                        className={`flex w-full items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                          selectedFolderId === f.id
+                            ? 'bg-primary text-primary-foreground font-semibold'
+                            : 'text-foreground hover:bg-secondary'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 truncate pr-2">
+                          <Folder className="h-3.5 w-3.5 text-primary-foreground shrink-0" />
+                          <span className="truncate">{f.name}</span>
+                        </span>
+                        <span className="font-mono text-[10px] opacity-80 shrink-0">
+                          {f.notes.length} notes
+                        </span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
-          {/* Optional Note Checklist when Folder is selected */}
+          {/* Compact Note Checklist when Folder is selected */}
           {currentFolder && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2"
+              className="rounded-xl border border-border bg-secondary/30 p-2.5 space-y-1.5"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-                  <FileText className="h-3 w-3 text-primary" />
+                <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 text-primary" />
                   Notes in {currentFolder.name} ({selectedNoteIds.size}/{currentFolder.notes.length} selected)
                 </span>
                 <button
                   type="button"
                   onClick={toggleSelectAllNotes}
-                  className="text-[11px] text-primary font-semibold hover:underline flex items-center gap-1"
+                  className="text-[11px] text-primary font-semibold hover:underline"
                 >
                   {selectedNoteIds.size === currentFolder.notes.length ? 'Clear all' : 'Select all'}
                 </button>
               </div>
 
               {currentFolder.notes.length === 0 ? (
-                <p className="text-[11px] text-destructive font-medium py-1">
-                  ⚠️ No study notes available in this folder to generate an exam from.
+                <p className="text-[11px] text-destructive font-medium py-0.5">
+                  ⚠️ No notes available in this folder.
                 </p>
               ) : (
-                <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                   {currentFolder.notes.map(note => {
                     const isChecked = selectedNoteIds.has(note.id);
                     return (
@@ -462,7 +590,7 @@ export default function ExamQuizView() {
                           )}
                           <span className="truncate">{note.title}</span>
                         </div>
-                        <span className="font-mono text-[9px] text-muted-foreground shrink-0 px-1.5 py-0.5 rounded bg-secondary">
+                        <span className="text-[9px] text-muted-foreground shrink-0 px-1.5 py-0.5 rounded bg-secondary">
                           {note.categoryName}
                         </span>
                       </div>
@@ -473,169 +601,273 @@ export default function ExamQuizView() {
             </motion.div>
           )}
 
-          {/* Row 2: Exam Mode (Left) & Difficulty (Right) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 font-semibold">
-                Exam Mode
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {examModes.map(m => {
-                  const isSelected = examMode === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setExamMode(m.id as 'practice' | 'mock')}
-                      className={`relative p-2.5 rounded-xl text-left transition-all duration-200 ${
-                        isSelected
-                          ? 'border-2 border-primary bg-primary/10 text-foreground ring-2 ring-primary/30 shadow-md scale-[1.01]'
-                          : 'border border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
-                          <Check className="h-2.5 w-2.5 stroke-[3]" />
-                        </div>
-                      )}
-                      <p className={`font-bold text-[12px] ${isSelected ? 'text-foreground font-bold' : ''}`}>
-                        {m.label}
-                      </p>
-                      <p className={`text-[9px] leading-tight mt-0.5 ${isSelected ? 'text-foreground/90 font-medium' : 'text-muted-foreground'}`}>
-                        {m.tag}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          {/* Row 2: Exam Mode */}
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">
+              Exam Mode
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setExamMode('practice')}
+                className={`p-3.5 rounded-xl border text-left transition-all flex items-start justify-between ${
+                  examMode === 'practice'
+                    ? 'border-2 border-primary/80 bg-primary/80 text-primary-foreground font-bold shadow-sm'
+                    : 'border-border/80 bg-secondary/70 text-foreground/90 hover:bg-secondary hover:text-foreground'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg border shrink-0 mt-0.5 ${
+                    examMode === 'practice'
+                      ? 'bg-primary-foreground/15 border-primary-foreground/30 text-primary-foreground'
+                      : 'bg-secondary border-border/80 text-foreground'
+                  }`}>
+                    <Zap className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className={`text-xs font-bold ${examMode === 'practice' ? 'text-primary-foreground' : 'text-foreground'}`}>
+                      Practice Mode
+                    </p>
+                    <p className={`text-[11px] leading-snug mt-1 ${examMode === 'practice' ? 'text-primary-foreground/80 font-medium' : 'text-muted-foreground font-medium'}`}>
+                      Get instant answers and detailed explanations as you progress.
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                  examMode === 'practice' ? 'border-primary-foreground bg-primary-foreground/20' : 'border-muted-foreground/50'
+                }`}>
+                  {examMode === 'practice' && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
+                </div>
+              </button>
 
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 font-semibold">
-                Difficulty Level
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {difficulties.map(d => {
-                  const isSelected = difficulty === d.id;
-                  return (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onClick={() => setDifficulty(d.id)}
-                      className={`relative p-2.5 rounded-xl text-left transition-all duration-200 ${
-                        isSelected
-                          ? 'border-2 border-primary bg-primary/10 text-foreground ring-2 ring-primary/30 shadow-md scale-[1.01]'
-                          : 'border border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
-                          <Check className="h-2.5 w-2.5 stroke-[3]" />
-                        </div>
-                      )}
-                      <p className={`font-bold text-[12px] capitalize ${isSelected ? 'text-foreground font-bold' : ''}`}>
-                        {d.label}
-                      </p>
-                      <p className={`text-[9px] truncate mt-0.5 ${isSelected ? 'text-foreground/90 font-medium' : 'text-muted-foreground'}`}>
-                        {d.tag}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Row 3: Number of Questions (Left) & Exam Timer (Right) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 font-semibold">
-                Number of Questions
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {questionCounts.map(count => {
-                  const isSelected = questionCount === count;
-                  return (
-                    <button
-                      key={count}
-                      type="button"
-                      onClick={() => setQuestionCount(count)}
-                      className={`relative p-2 rounded-xl text-center transition-all duration-200 ${
-                        isSelected
-                          ? 'border-2 border-primary bg-primary/10 text-foreground ring-2 ring-primary/30 shadow-md scale-[1.01]'
-                          : 'border border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="absolute top-1.5 right-1.5 h-3.5 w-3.5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
-                          <Check className="h-2.5 w-2.5 stroke-[3]" />
-                        </div>
-                      )}
-                      <span className={`text-lg font-bold font-serif ${isSelected ? 'text-foreground font-bold' : ''}`}>
-                        {count}
-                      </span>
-                      <p className={`text-[9px] ${isSelected ? 'text-foreground/90 font-semibold' : 'text-muted-foreground'}`}>
-                        Questions
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 font-semibold flex items-center gap-1.5">
-                <Clock className="h-3 w-3 text-primary" />
-                Exam Timer <span className="text-muted-foreground font-sans text-[10px] normal-case tracking-normal">(Synced)</span>
-              </label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {timerOptions.map(tOpt => {
-                  const isSelected = timerMinutes === tOpt.minutes;
-                  return (
-                    <button
-                      key={tOpt.minutes}
-                      type="button"
-                      onClick={() => setTimerMinutes(tOpt.minutes)}
-                      className={`relative p-1.5 rounded-xl text-center transition-all duration-200 ${
-                        isSelected
-                          ? 'border-2 border-primary bg-primary/10 text-foreground ring-2 ring-primary/30 shadow-md scale-[1.01]'
-                          : 'border border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      <p className={`font-bold text-[11px] ${isSelected ? 'text-foreground font-bold' : ''}`}>{tOpt.label}</p>
-                      <p className={`text-[8px] truncate ${isSelected ? 'text-foreground/90 font-medium' : 'text-muted-foreground'}`}>{tOpt.tag}</p>
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                onClick={() => setExamMode('mock')}
+                className={`p-3.5 rounded-xl border text-left transition-all flex items-start justify-between ${
+                  examMode === 'mock'
+                    ? 'border-2 border-primary/80 bg-primary/80 text-primary-foreground font-bold shadow-sm'
+                    : 'border-border/80 bg-secondary/70 text-foreground/90 hover:bg-secondary hover:text-foreground'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg border shrink-0 mt-0.5 ${
+                    examMode === 'mock'
+                      ? 'bg-primary-foreground/15 border-primary-foreground/30 text-primary-foreground'
+                      : 'bg-secondary border-border/80 text-foreground'
+                  }`}>
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className={`text-xs font-bold ${examMode === 'mock' ? 'text-primary-foreground' : 'text-foreground'}`}>
+                      Mock Exam
+                    </p>
+                    <p className={`text-[11px] leading-snug mt-1 ${examMode === 'mock' ? 'text-primary-foreground/80 font-medium' : 'text-muted-foreground font-medium'}`}>
+                      Simulate real test conditions and get feedback at the end.
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                  examMode === 'mock' ? 'border-primary-foreground bg-primary-foreground/20' : 'border-muted-foreground/50'
+                }`}>
+                  {examMode === 'mock' && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
+                </div>
+              </button>
             </div>
           </div>
 
-          {/* Submit Action Button */}
+          {/* Row 3: Difficulty & Questions (2 Columns) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Difficulty */}
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Difficulty
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {difficulties.map(d => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setDifficulty(d.id)}
+                    className={`py-2 px-3 rounded-xl text-center text-xs transition-all ${
+                      difficulty === d.id
+                        ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
+                        : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Number of Questions */}
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
+                <span>Number of Questions</span>
+                {isCustomQuestions && <span className="text-[10px] text-muted-foreground font-normal">Max 30</span>}
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {questionCounts.map(count => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => {
+                      setIsCustomQuestions(false);
+                      setQuestionCount(count);
+                    }}
+                    className={`py-2 px-1 rounded-xl text-center text-xs transition-all ${
+                      !isCustomQuestions && questionCount === count
+                        ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
+                        : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                    }`}
+                  >
+                    {count}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomQuestions(true);
+                    const qty = Math.min(30, Math.max(1, parseInt(customQuestionsInput) || 20));
+                    setQuestionCount(qty);
+                  }}
+                  className={`py-2 px-1 rounded-xl text-center text-xs transition-all ${
+                    isCustomQuestions
+                      ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
+                      : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {/* Custom Questions Input Box */}
+              {isCustomQuestions && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="mt-2 flex items-center gap-2"
+                >
+                  <span className="text-xs text-muted-foreground font-medium">Questions:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={customQuestionsInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomQuestionsInput(val);
+                      let qty = parseInt(val) || 0;
+                      if (qty > 30) {
+                        qty = 30;
+                        toast.info('Maximum limit of 30 questions applied.');
+                      }
+                      setQuestionCount(qty);
+                    }}
+                    className="w-20 h-8 px-2.5 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
+                  />
+                  <span className="text-[10px] text-muted-foreground font-medium">(1-30)</span>
+                </motion.div>
+              )}
+            </div>
+          </div>
+
+          {/* Row 4: Exam Timer (Full Width across card with 6 spacious buttons) */}
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-primary" />
+                Exam Timer
+              </span>
+              <span className="text-[10px] text-muted-foreground font-normal">Synced with Pomodoro</span>
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {defaultTimerOptions.map(tOpt => (
+                <button
+                  key={tOpt.minutes}
+                  type="button"
+                  onClick={() => {
+                    setIsCustomTimer(false);
+                    setTimerMinutes(tOpt.minutes);
+                  }}
+                  className={`py-2 px-2 rounded-xl text-center text-xs transition-all ${
+                    !isCustomTimer && timerMinutes === tOpt.minutes
+                      ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
+                      : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                  }`}
+                >
+                  {tOpt.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomTimer(true);
+                  const mins = parseInt(customTimerInput) || 20;
+                  setTimerMinutes(mins);
+                }}
+                className={`py-2 px-2 rounded-xl text-center text-xs transition-all ${
+                  isCustomTimer
+                    ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
+                    : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                }`}
+              >
+                Custom
+              </button>
+            </div>
+
+            {/* Custom Timer Input Box */}
+            {isCustomTimer && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="mt-2 flex items-center gap-2"
+              >
+                <span className="text-xs text-muted-foreground font-medium">Duration:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={180}
+                  value={customTimerInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomTimerInput(val);
+                    const mins = parseInt(val) || 0;
+                    setTimerMinutes(mins);
+                  }}
+                  className="w-20 h-8 px-2.5 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
+                />
+                <span className="text-xs text-foreground font-medium">Minutes</span>
+              </motion.div>
+            )}
+          </div>
+
+          {/* Action Button: Exam Paper with Pencil Icon on Left of Generate Exam Text */}
           <button
             onClick={handleGenerateExam}
             disabled={!subject.trim() && !selectedFolderId}
-            className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed shrink-0 mt-3"
           >
-            <Zap className="h-4 w-4" /> Generate AI Exam
+            <ExamPaperPencilIcon className="h-4 w-4 text-primary-foreground shrink-0" />
+            <span>Generate Exam</span>
           </button>
         </motion.div>
       </div>
     );
   }
 
-  /* ────────────────── LOADING SCREEN ────────────────── */
+  /* ────────────────── STAGED PROGRESS LOADING SCREEN ────────────────── */
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto py-8">
+      <div className="max-w-xl mx-auto py-12">
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="rounded-2xl border border-border bg-card p-12 text-center shadow-xl"
+          className="rounded-2xl border border-border bg-card p-10 text-center shadow-xl"
         >
-          <div className="relative w-16 h-16 mx-auto mb-6 flex items-center justify-center">
+          <div className="relative w-14 h-14 mx-auto mb-6 flex items-center justify-center">
             <div className="absolute inset-0 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-            <Brain className="h-7 w-7 text-primary animate-pulse" />
+            <Brain className="h-6 w-6 text-primary animate-pulse" />
           </div>
 
           <AnimatePresence mode="wait">
@@ -646,20 +878,25 @@ export default function ExamQuizView() {
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.3 }}
             >
+              <span className="inline-block px-2.5 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-bold mb-2">
+                Step {loadingStep + 1} of {LOADING_STEPS.length}
+              </span>
               <h3 className="text-base font-semibold text-foreground mb-1">
                 {LOADING_STEPS[loadingStep]}
               </h3>
-              <p className="text-[11px] text-muted-foreground font-mono capitalize">
-                {questionCount} {difficulty} questions · {examMode} mode · {subject || currentFolder?.name}
+              <p className="text-xs text-muted-foreground font-medium capitalize">
+                {isCustomQuestions ? customQuestionsInput : questionCount} {difficulty} questions · {examMode} mode · {subject || currentFolder?.name}
               </p>
             </motion.div>
           </AnimatePresence>
 
-          <div className="w-56 h-1.5 bg-secondary rounded-full mx-auto mt-6 overflow-hidden">
+          {/* Smooth Continuous Shimmer Bar */}
+          <div className="w-56 h-1.5 bg-secondary rounded-full mx-auto mt-6 overflow-hidden relative">
             <motion.div
-              className="h-full bg-primary"
-              animate={{ width: `${((loadingStep + 1) / LOADING_STEPS.length) * 100}%` }}
-              transition={{ duration: 0.5 }}
+              className="h-full bg-primary rounded-full"
+              initial={{ width: '15%' }}
+              animate={{ width: `${Math.min(95, ((loadingStep + 1) / LOADING_STEPS.length) * 100)}%` }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
             />
           </div>
         </motion.div>
@@ -667,7 +904,7 @@ export default function ExamQuizView() {
     );
   }
 
-  /* ────────────────── RESULTS SCREEN (NO GRADE / NO PERCENTAGE) ────────────────── */
+  /* ────────────────── RESULTS SCREEN ────────────────── */
   if (examCompleted) {
     const totalCorrect = answers.reduce((acc, a) => (a && a.correct ? acc + 1 : acc), 0);
     const totalIncorrect = questions.length - totalCorrect;
@@ -680,32 +917,30 @@ export default function ExamQuizView() {
           className="rounded-2xl border border-border bg-card p-6 sm:p-8 shadow-xl"
         >
           <div className="text-center mb-6">
-            <Trophy className="h-12 w-12 mx-auto mb-3 text-primary" />
+            <Trophy className="h-10 w-10 mx-auto mb-3 text-primary" />
             <h2 className="text-2xl font-bold font-serif text-foreground">Exam Complete</h2>
-            <p className="text-[11px] font-mono text-muted-foreground capitalize mt-1">
+            <p className="text-xs text-muted-foreground capitalize mt-1 font-medium">
               {subject || currentFolder?.name} · {difficulty} · {examMode} Mode
             </p>
           </div>
 
-          {/* Clean Result Counts: ONLY CORRECT & INCORRECT (Requirement 4) */}
           <div className="grid grid-cols-2 gap-4 mb-6 max-w-md mx-auto">
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
-              <p className="text-4xl font-extrabold font-mono text-emerald-500">{totalCorrect}</p>
-              <p className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mt-1">
+              <p className="text-3xl font-bold font-mono text-emerald-500">{totalCorrect}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mt-1">
                 CORRECT
               </p>
             </div>
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-center">
-              <p className="text-4xl font-extrabold font-mono text-destructive">{totalIncorrect}</p>
-              <p className="text-xs font-mono font-bold uppercase tracking-wider text-destructive mt-1">
+              <p className="text-3xl font-bold font-mono text-destructive">{totalIncorrect}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-destructive mt-1">
                 INCORRECT
               </p>
             </div>
           </div>
 
-          {/* Detailed Question Review Accordion */}
           <div className="space-y-2 mb-6">
-            <h3 className="text-[12px] font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Question Breakdown & Explanations
             </h3>
             {questions.map((qItem, i) => {
@@ -723,7 +958,7 @@ export default function ExamQuizView() {
                       ) : (
                         <X className="h-4 w-4 text-destructive shrink-0" />
                       )}
-                      <span className="text-[12px] text-foreground font-medium line-clamp-2">
+                      <span className="text-xs text-foreground font-medium line-clamp-2">
                         Q{i + 1}: {qItem.question}
                       </span>
                     </div>
@@ -735,7 +970,7 @@ export default function ExamQuizView() {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden border-t border-border bg-card p-4 space-y-2.5 text-[12px] text-foreground"
+                        className="overflow-hidden border-t border-border bg-card p-4 space-y-2.5 text-xs text-foreground"
                       >
                         <p><strong>Question:</strong> {qItem.question}</p>
                         <div className="space-y-1 my-2 pl-2 border-l-2 border-border">
@@ -769,9 +1004,9 @@ export default function ExamQuizView() {
 
           <button
             onClick={handleResetExam}
-            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-colors shadow-md"
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-colors shadow-md"
           >
-            <RotateCcw className="h-4 w-4" /> Take Another Exam
+            <RotateCcw className="h-4 w-4" /> Generate Exam Again
           </button>
         </motion.div>
       </div>
@@ -786,31 +1021,17 @@ export default function ExamQuizView() {
       {/* Active Exam Header Bar */}
       <div className="flex items-center justify-between mb-3 gap-2">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2 truncate">
-          <GraduationCap className="h-4.5 w-4.5 text-primary shrink-0" />
+          <ExamPaperPencilIcon className="h-4.5 w-4.5 text-primary shrink-0" />
           <span className="truncate">{subject || currentFolder?.name}</span>
         </h2>
 
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Live Countdown Timer accurately formatted */}
-          {timerMinutes > 0 && (
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-mono font-bold transition-all ${
-              examTimeLeft < 60
-                ? 'border-destructive bg-destructive/10 text-destructive animate-pulse'
-                : 'border-primary/40 bg-primary/10 text-primary'
-            }`}>
-              <Timer className="h-3.5 w-3.5" />
-              <span>{formatTimer(examTimeLeft)}</span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
-            <Target className="h-3.5 w-3.5" />
-            <span className="capitalize">{difficulty}</span>
-            <span>·</span>
-            <span className="capitalize">{examMode}</span>
-            <span>·</span>
-            <span>Q{currentIndex + 1}/{questions.length}</span>
-          </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium shrink-0">
+          <Target className="h-3.5 w-3.5 text-primary" />
+          <span className="capitalize">{difficulty}</span>
+          <span>·</span>
+          <span className="capitalize">{examMode}</span>
+          <span>·</span>
+          <span>Q{currentIndex + 1}/{questions.length}</span>
         </div>
       </div>
 
@@ -868,7 +1089,7 @@ export default function ExamQuizView() {
                   animate={(showFeedback && isWrong && examMode === 'practice') ? { x: [0, -6, 6, -4, 4, 0] } : {}}
                   onClick={() => handleAnswer(i)}
                   disabled={showFeedback && examMode === 'practice'}
-                  className={`w-full p-3.5 rounded-xl text-left border text-[13px] transition-all flex items-center justify-between ${
+                  className={`w-full p-3.5 rounded-xl text-left border text-xs transition-all flex items-center justify-between ${
                     examMode === 'practice' && showFeedback
                       ? isCorrect
                         ? 'border-emerald-500/50 bg-emerald-500/10 text-foreground font-semibold'
@@ -897,7 +1118,7 @@ export default function ExamQuizView() {
           {/* Instant Question Feedback for Practice Mode */}
           {examMode === 'practice' && showFeedback && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 pt-2">
-              <div className="rounded-xl border border-border bg-secondary/60 p-4 text-[12px] text-foreground">
+              <div className="rounded-xl border border-border bg-secondary/60 p-4 text-xs text-foreground">
                 <div className="flex items-start gap-2">
                   {selectedAnswer === q.correctIndex ? (
                     <Check className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
@@ -919,7 +1140,7 @@ export default function ExamQuizView() {
 
               <button
                 onClick={nextQuestion}
-                className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-colors shadow-md"
+                className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-colors shadow-md"
               >
                 {currentIndex < questions.length - 1 ? (
                   <>Next Question <ArrowRight className="h-4 w-4" /></>
@@ -936,7 +1157,7 @@ export default function ExamQuizView() {
               <button
                 onClick={nextQuestion}
                 disabled={selectedAnswer === null}
-                className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-colors shadow-md disabled:opacity-40"
+                className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-colors shadow-md disabled:opacity-40"
               >
                 {currentIndex < questions.length - 1 ? (
                   <>Next Question <ArrowRight className="h-4 w-4" /></>

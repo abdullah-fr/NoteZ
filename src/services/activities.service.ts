@@ -101,3 +101,131 @@ export async function deleteChecklistItem(itemId: string): Promise<void> {
     .eq('id', itemId);
   if (error) throw error;
 }
+
+/* ── Generate Activity Checklists from Document via Gemini ── */
+export interface GeneratedActivityDraft {
+  title: string;
+  subject: string;
+  description: string;
+  tasks: string[];
+}
+
+const GEMINI_ACTIVITIES_API_KEY =
+  import.meta.env.VITE_GEMINI_ACTIVITIES_API_KEY ||
+  import.meta.env.GEMINI_ACTIVITIES_API_KEY ||
+  '';
+
+export async function generateActivitiesFromDoc(
+  documentText: string,
+  fileName?: string,
+): Promise<GeneratedActivityDraft[]> {
+  const prompt = `You are an expert academic project and task breakdown assistant.
+Analyze the following document (syllabus, assignment rubric, project requirements, concept document, or presentation guidelines):
+
+Document Name: "${fileName || 'Uploaded Document'}"
+Document Content:
+"""
+${documentText.slice(0, 16000)}
+"""
+
+CRITICAL INSTRUCTIONS:
+1. Extract and auto-generate structured Activity packages specifically for assignments, projects, concepts, or presentations found in the document.
+2. For EACH activity package, assign detailed, step-by-step checklist tasks covering ALL file content requirements specifically.
+3. Make sure the user can focus on each activity step by step to complete the whole task/project inside the document.
+
+Return ONLY a valid JSON array matching this structure with no markdown or wrappers:
+[
+  {
+    "title": "Assignment/Project Title",
+    "subject": "Subject Name",
+    "description": "Clear overview of requirements from document",
+    "tasks": [
+      "Step 1: Specific requirement...",
+      "Step 2: Specific requirement...",
+      "Step 3: Specific requirement..."
+    ]
+  }
+]`;
+
+  // 1. Try Vite proxy endpoint first (/api/generate-activities-from-doc)
+  try {
+    const res = await fetch('/api/generate-activities-from-doc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) {
+        const cleanJson = rawText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+        const drafts = JSON.parse(cleanJson);
+        if (Array.isArray(drafts) && drafts.length > 0) {
+          return drafts.map((d: any) => ({
+            title: d.title || 'Activity Package',
+            subject: d.subject || 'General',
+            description: d.description || 'Document requirements breakdown',
+            tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean) : ['Review document requirements'],
+          }));
+        }
+      }
+    }
+  } catch {
+    /* silent fallback */
+  }
+
+  // 2. Direct Gemini REST endpoint fallback with gemini-3.1-flash-lite
+  const fallbackModels = [
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash-lite',
+    'gemini-1.5-flash-lite',
+    'gemini-2.0-flash-lite',
+  ];
+
+  for (const model of fallbackModels) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_ACTIVITIES_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              responseMimeType: 'application/json',
+            },
+          }),
+        },
+      );
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) continue;
+
+      const cleanJson = rawText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+      const drafts = JSON.parse(cleanJson);
+
+      if (Array.isArray(drafts) && drafts.length > 0) {
+        return drafts.map((d: any) => ({
+          title: d.title || 'Activity Package',
+          subject: d.subject || 'General',
+          description: d.description || 'Document requirements breakdown',
+          tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean) : ['Review document requirements'],
+        }));
+      }
+    } catch {
+      /* continue to next model */
+    }
+  }
+
+  throw new Error('Unable to analyze document and generate activities. Please try again.');
+}

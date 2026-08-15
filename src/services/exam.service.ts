@@ -29,14 +29,6 @@ const GEMINI_EXAM_API_KEY =
 export async function generateExamWithGemini(
   payload: GenerateExamPayload,
 ): Promise<GenerateExamResult> {
-  const models = [
-    'gemini-3.1-flash-lite',
-    'gemini-2.5-flash-lite',
-    'gemini-1.5-flash-lite',
-    'gemini-2.0-flash-lite',
-    'gemini-2.5-flash',
-  ];
-
   const prompt = payload.sourceText
     ? `You are an expert exam creator generating an exam for a student.
 
@@ -94,7 +86,53 @@ Return ONLY a valid JSON array of ${payload.questionCount} questions matching th
   }
 ]`;
 
-  for (const model of models) {
+  // 1. Try clean local proxy endpoint first (Masks model name & API key in network tab)
+  try {
+    const res = await fetch('/api/generate-ai-exam', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) {
+        const cleanJson = rawText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+        const questions = JSON.parse(cleanJson);
+        if (Array.isArray(questions) && questions.length > 0) {
+          return {
+            questions: questions.map((q: any) => ({
+              question: q.question || 'Question',
+              options: Array.isArray(q.options) && q.options.length >= 2 ? q.options : ['True', 'False'],
+              correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+              explanation: q.explanation || 'Refer to course materials.',
+              wrongExplanations: q.wrongExplanations || {},
+              betterApproach: q.betterApproach || 'Review key definitions and formulas.',
+            })),
+          };
+        }
+      }
+    }
+  } catch {
+    /* silent retry with direct fallback */
+  }
+
+  // 2. Fallback to direct fetch endpoints if proxy is bypassed
+  const fallbackModels = [
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash-lite',
+    'gemini-1.5-flash-lite',
+    'gemini-2.0-flash-lite',
+  ];
+
+  for (const model of fallbackModels) {
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_EXAM_API_KEY}`,
@@ -131,25 +169,43 @@ Return ONLY a valid JSON array of ${payload.questionCount} questions matching th
           })),
         };
       }
-    } catch (err) {
-      console.warn(`Gemini model ${model} error:`, err);
+    } catch {
+      /* continue to next model */
     }
   }
 
-  // Fallback to Supabase function
-  return await generateExam(payload);
+  // 3. Fallback to Supabase function with clean error handling
+  try {
+    return await generateExam(payload);
+  } catch (err: any) {
+    console.error('Exam service error:', err);
+    throw new Error('The exam generator encountered a temporary connection issue. Please try again in a moment.');
+  }
 }
 
 export async function generateExam(
   payload: GenerateExamPayload,
 ): Promise<GenerateExamResult> {
-  const { data, error } = await supabase.functions.invoke('generate-exam', {
-    body: payload,
-  });
-  if (error) throw error;
-  if (data?.error) throw data;
-  if (!data?.questions?.length) throw new Error('No questions generated');
-  return data as GenerateExamResult;
+  try {
+    const { data, error } = await supabase.functions.invoke('generate-exam', {
+      body: payload,
+    });
+    if (error) {
+      throw new Error('The exam service is currently busy. Please try again in a few seconds.');
+    }
+    if (data?.error) {
+      throw new Error(typeof data.error === 'string' ? data.error : 'Failed to generate exam. Please try again.');
+    }
+    if (!data?.questions?.length) {
+      throw new Error('Unable to create questions for this topic. Please try a different topic or folder.');
+    }
+    return data as GenerateExamResult;
+  } catch (err: any) {
+    if (err.message && err.message.includes('non-2xx')) {
+      throw new Error('The exam service encountered a temporary server error. Please try generating your exam again.');
+    }
+    throw err;
+  }
 }
 
 export async function saveExamResult(

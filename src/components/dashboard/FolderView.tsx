@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Folder, Plus, Trash2, Edit3, Save, X,
+  Folder, Plus, Trash, Trash2, Edit3, Save, X,
   FileText, Search, ChevronRight, ArrowLeft,
   LayoutGrid, List, Network,
   ArrowDownAZ, Check, ChevronDown,
@@ -17,6 +17,7 @@ import NoteEditor from './NoteEditor';
 import TrashView from './TrashView';
 import { htmlToPlainText } from './note-utils';
 import { useAuth } from '@/lib/auth';
+import { editorAiAssist } from '@/services';
 import { createConversation, getStreamingToken } from '@/services/chat.service';
 import { fetchSources, triggerProcessSource, uploadSourceFile } from '@/services/sources.service';
 
@@ -396,6 +397,32 @@ export default function FolderView({
     } catch { return []; }
   });
 
+  /* ── Dynamic trash state ── */
+  const [hasTrashItems, setHasTrashItems] = useState<boolean>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('notez_trash') || '[]').length > 0;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const checkTrash = () => {
+      try {
+        setHasTrashItems(JSON.parse(localStorage.getItem('notez_trash') || '[]').length > 0);
+      } catch {
+        setHasTrashItems(false);
+      }
+    };
+    checkTrash();
+    window.addEventListener('notez:trash-updated', checkTrash);
+    window.addEventListener('notez:folders-updated', checkTrash);
+    return () => {
+      window.removeEventListener('notez:trash-updated', checkTrash);
+      window.removeEventListener('notez:folders-updated', checkTrash);
+    };
+  }, []);
+
   useEffect(() => {
     const reloadFromStorage = () => {
       try {
@@ -746,39 +773,12 @@ export default function FolderView({
 
   async function helpWrite(action: string, selectedText: string): Promise<string> {
     try {
-      if (user) {
-        const conversation = await createConversation(user.id, 'tutor', `Note AI · ${action}`);
-        const token = await getStreamingToken();
-        if (token) {
-          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              conversationId: conversation.id,
-              message: `${action.toUpperCase()} this selected text for study notes: "${selectedText}"`,
-              mode: 'tutor',
-              scope: 'folder',
-            }),
-          });
-          if (response.ok && response.body) {
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let result = '';
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              result += decoder.decode(value, { stream: true });
-            }
-            const clean = result.replace(/^data:\s?/gm, '').replace(/\n{2,}/g, '\n').trim();
-            if (clean) return clean;
-          }
-        }
-      }
+      const transformed = await editorAiAssist(action, selectedText);
+      if (transformed && transformed !== selectedText) return transformed;
     } catch {
-      /* Client-side fallback */
+      /* Fallback */
     }
 
-    // Client-side intelligent text transformers fallback
     if (action === 'improve') {
       return selectedText.charAt(0).toUpperCase() + selectedText.slice(1);
     } else if (action === 'summarize') {
@@ -826,6 +826,14 @@ export default function FolderView({
       <div className="h-full flex flex-col overflow-y-auto">
         <div className="sticky top-0 z-20 border-b border-border bg-card/60 backdrop-blur-md px-4 md:px-6 py-3 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setFolderScope('active')}
+              className="h-8 w-8 rounded-lg border border-border bg-secondary flex items-center justify-center text-foreground hover:bg-secondary/80 transition-colors shrink-0"
+              title="Back to Folders"
+            >
+              <ArrowLeft className="h-4 w-4 text-primary" />
+            </button>
+
             {!sidebarOpen && onToggleSidebar && (
               <button
                 onClick={onToggleSidebar}
@@ -855,7 +863,7 @@ export default function FolderView({
         <div className="p-4 md:p-6 max-w-5xl mx-auto w-full">
           {visibleFolders.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
-              <Archive className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
+              <Archive className="mx-auto mb-3 h-9 w-9 text-emerald-600 dark:text-emerald-400 opacity-80" />
               <p className="text-[13px] font-medium text-foreground">Nothing archived</p>
               <p className="text-xs text-muted-foreground mt-1">Archived folders will stay here safely until you restore them.</p>
             </div>
@@ -869,9 +877,9 @@ export default function FolderView({
                   <button
                     type="button"
                     onClick={() => restoreFolder(folder.id)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-medium text-foreground hover:bg-secondary transition-colors"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                   >
-                    <ArchiveRestore className="h-3.5 w-3.5 text-emerald-500" /> Unarchive
+                    <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Unarchive
                   </button>
                   <button
                     type="button"
@@ -1143,8 +1151,8 @@ export default function FolderView({
               <button onClick={toggleSelectAll} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-background">
                 <Check className="h-3.5 w-3.5" /> {allVisibleSelected ? 'Clear' : 'All'}
               </button>
-              <button onClick={archiveSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-background disabled:opacity-40">
-                <Archive className="h-3.5 w-3.5" /> Archive
+              <button onClick={archiveSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors">
+                <Archive className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Archive
               </button>
               <button onClick={deleteSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40">
                 <Trash2 className="h-3.5 w-3.5" /> Delete
@@ -1177,20 +1185,24 @@ export default function FolderView({
                     : 'bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary'
                 }`}
               >
-                <Archive className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="hidden sm:inline">Archive</span>
+                <Archive className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="hidden sm:inline">Archived</span>
               </button>
 
               <button
                 onClick={() => setView(v => v === 'trash' ? 'folders' : 'trash')}
-                title="Trash"
+                title={hasTrashItems ? "Trash (Items inside)" : "Trash (Empty)"}
                 className={`h-8 px-2.5 flex items-center gap-1.5 rounded-lg border border-border text-xs font-medium transition-colors ${
                   view === 'trash'
                     ? 'bg-secondary text-foreground border-border font-semibold'
                     : 'bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary'
                 }`}
               >
-                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                {hasTrashItems ? (
+                  <Trash2 className="h-3.5 w-3.5 text-foreground shrink-0" />
+                ) : (
+                  <Trash className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                )}
                 <span className="hidden sm:inline">Trash</span>
               </button>
 

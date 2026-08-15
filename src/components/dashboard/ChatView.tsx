@@ -29,6 +29,13 @@ import {
 /* ─── types ─── */
 type Mode          = 'researcher' | 'summarizer' | 'analyst' | 'mentor' | 'tutor';
 type ThinkingStage = 'initializing' | 'thinking' | 'evaluating' | 'displaying' | null;
+type ThinkingLevel = 'low' | 'high' | 'max';
+
+const THINKING_LEVELS: { id: ThinkingLevel; label: string; desc: string }[] = [
+  { id: 'low',  label: 'Low',  desc: 'Fast & concise response' },
+  { id: 'high', label: 'High', desc: 'Deep reasoning (Recommended)' },
+  { id: 'max',  label: 'Max',  desc: 'Maximum intelligence & detail' },
+];
 interface QuickTask { id: string; label: string; icon: any; desc: string; prompt: string; accent: string }
 
 interface LocalFolder { id: string; name: string; color: string }
@@ -135,6 +142,8 @@ export default function ChatView() {
   const [thinkingStage, setThinkingStage] = useState<ThinkingStage>(null);
   const [input, setInput]                 = useState('');
   const [mode, setMode]                   = useState<Mode>('tutor');
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('high');
+  const [thinkingOpen, setThinkingOpen]   = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [scopeOpen, setScopeOpen]         = useState(false);
   const [attached, setAttached]           = useState<AttachedSource | null>(null);
@@ -416,7 +425,7 @@ export default function ChatView() {
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ conversationId: convId, message: msg + scopeHint + weakSpotHint, mode, sourceId: attached?.status === 'ready' ? attached.id : null, scope: 'folder' }),
+        body: JSON.stringify({ conversationId: convId, message: msg + scopeHint + weakSpotHint, mode, sourceId: attached?.status === 'ready' ? attached.id : null, scope: 'folder', thinkingLevel }),
       });
       if (!resp.ok || !resp.body) {
         const errText = await resp.text();
@@ -646,6 +655,57 @@ export default function ChatView() {
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-secondary text-[11px] text-muted-foreground">
             <activeMode.icon className="h-3.5 w-3.5 text-foreground" />
             <span className="font-medium text-foreground">{activeMode.label}</span>
+          </div>
+
+          {/* Intelligence Thinking Level Picker */}
+          <div className="relative">
+            <button
+              onClick={() => setThinkingOpen(o => !o)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-secondary text-[11px] font-medium text-foreground hover:bg-secondary transition-colors"
+              title="Select Intelligence Thinking Level"
+            >
+              <Brain className="h-3.5 w-3.5 text-primary" />
+              <span>Thinking: <strong className="capitalize text-primary font-semibold">{thinkingLevel}</strong></span>
+              <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${thinkingOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <AnimatePresence>
+              {thinkingOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                  transition={{ duration: 0.13 }}
+                  className="absolute top-full mt-2 left-0 z-50 w-56 rounded-2xl border border-border bg-card shadow-2xl p-1.5 space-y-0.5"
+                >
+                  <div className="px-3 py-1.5 border-b border-border/80 mb-1">
+                    <p className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                      <Brain className="h-3.5 w-3.5 text-primary" /> Intelligence Thinking
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Select AI reasoning level</p>
+                  </div>
+                  {THINKING_LEVELS.map(l => (
+                    <button
+                      key={l.id}
+                      onClick={() => {
+                        setThinkingLevel(l.id);
+                        setThinkingOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors ${
+                        thinkingLevel === l.id
+                          ? 'bg-primary/10 border border-primary/30 text-foreground font-semibold'
+                          : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                      }`}
+                    >
+                      <div>
+                        <p className="text-[12px] capitalize font-medium text-foreground">{l.label}</p>
+                        <p className="text-[10px] text-muted-foreground">{l.desc}</p>
+                      </div>
+                      {thinkingLevel === l.id && <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Attachment chip */}

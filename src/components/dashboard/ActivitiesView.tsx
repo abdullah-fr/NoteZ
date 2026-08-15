@@ -7,6 +7,7 @@ import {
   fetchActivities, fetchChecklistItems, createActivity,
   updateActivityProgress, deleteActivity, addChecklistItems,
   addChecklistItem, toggleChecklistItem, deleteChecklistItem,
+  generateActivitiesFromDoc,
   type Activity, type ChecklistItem,
 } from '@/services';
 import { uploadSourceFile, triggerProcessSource, subscribeToSourceChanges } from '@/services/sources.service';
@@ -42,37 +43,44 @@ export default function ActivitiesView() {
 
     setImportStep('uploading');
     try {
-      const source = await uploadSourceFile(user.id, file);
-      setImportSourceId(source.id);
-      setImportStep('processing');
-      await triggerProcessSource(source.id);
+      let docText = '';
+      try {
+        const source = await uploadSourceFile(user.id, file);
+        setImportSourceId(source.id);
+        setImportStep('processing');
+        await triggerProcessSource(source.id);
 
-      // Poll for ready status (max 60 s)
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        const { data } = await supabase.from('sources').select('status, error').eq('id', source.id).single();
-        if (data?.status === 'ready') {
-          clearInterval(poll);
-          // Now generate activities
-          const { data: result, error } = await supabase.functions.invoke('generate-from-source', {
-            body: { sourceId: source.id, mode: 'activities' },
-          });
-          if (error || result?.error) {
-            toast.error('Could not generate work breakdown — try again');
-            setImportStep('idle');
-            return;
+        // Poll for processed text (max 30s)
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const { data } = await supabase.from('sources').select('status, extracted_text, summary, error').eq('id', source.id).single();
+          if (data?.status === 'ready') {
+            docText = data.extracted_text || data.summary || '';
+            break;
           }
-          setImportDraft(result.activities || []);
-          setImportStep('reviewing');
-        } else if (data?.status === 'failed' || attempts > 24) {
-          clearInterval(poll);
-          toast.error(data?.error || 'Document processing failed');
-          setImportStep('idle');
+          if (data?.status === 'failed') break;
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
-      }, 2500);
+      } catch {
+        /* Fallback */
+      }
+
+      // Fallback text reading
+      if (!docText.trim()) {
+        docText = await file.text().catch(() => file.name);
+      }
+
+      setImportStep('processing');
+      const drafts = await generateActivitiesFromDoc(docText, file.name);
+      if (!drafts || drafts.length === 0) {
+        toast.error('Could not generate activity breakdown from this document.');
+        setImportStep('idle');
+        return;
+      }
+
+      setImportDraft(drafts);
+      setImportStep('reviewing');
     } catch (err: any) {
-      toast.error(err.message || 'Upload failed');
+      toast.error(err.message || 'Failed to process document');
       setImportStep('idle');
     }
   }
@@ -215,8 +223,8 @@ export default function ActivitiesView() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Hidden file input */}
-      <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleSyllabusFile} />
+      {/* Hidden file input supporting PDF, Word, PPT */}
+      <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" className="hidden" onChange={handleSyllabusFile} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-xl sm:text-2xl tracking-tight flex items-center gap-2.5">
@@ -235,8 +243,8 @@ export default function ActivitiesView() {
               <Upload className="h-3 w-3" />
             )}
             {importStep === 'uploading' ? 'Uploading…'
-              : importStep === 'processing' ? 'Processing…'
-              : 'Import syllabus'}
+              : importStep === 'processing' ? 'Generating Checklists…'
+              : 'Import Document (PDF, Word, PPT)'}
           </button>
           <button
             onClick={() => setShowForm(s => !s)}

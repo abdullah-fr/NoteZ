@@ -15,7 +15,7 @@ export interface TrashItem {
   deletedAt: string; // ISO string
 }
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getTrashItems(): TrashItem[] {
   try {
@@ -27,11 +27,12 @@ function getTrashItems(): TrashItem[] {
 
 function setTrashItems(items: TrashItem[]) {
   localStorage.setItem('notez_trash', JSON.stringify(items));
+  window.dispatchEvent(new Event('notez:trash-updated'));
 }
 
 function daysRemaining(deletedAt: string): number {
   const elapsed = Date.now() - new Date(deletedAt).getTime();
-  return Math.max(0, Math.ceil((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000)));
+  return Math.max(0, Math.ceil((SEVEN_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000)));
 }
 
 export default function TrashView({ onBack }: { onBack?: () => void }) {
@@ -42,7 +43,7 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     const raw = getTrashItems();
     const now = Date.now();
-    const valid = raw.filter(item => now - new Date(item.deletedAt).getTime() < THIRTY_DAYS_MS);
+    const valid = raw.filter(item => now - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS);
     if (valid.length !== raw.length) {
       setTrashItems(valid);
     }
@@ -147,7 +148,7 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
           <div>
             <h2 className="font-serif text-2xl tracking-tight leading-none text-foreground">{t('tools.trash.title')}</h2>
             <p className="text-[11px] text-muted-foreground mt-1 font-medium">
-              Deleted notes are automatically removed after 30 days
+              Deleted items are automatically removed after 7 days
             </p>
           </div>
         </div>

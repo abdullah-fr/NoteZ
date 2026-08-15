@@ -430,6 +430,63 @@ function ToolbarPlugin({
     setLinkInputOpen(false);
   };
 
+  const animateTextReplacement = async (transformedText: string) => {
+    const cleanText = transformedText.replace(/<[^>]+>/g, '').trim();
+    if (!cleanText) return;
+
+    const words = cleanText.split(/\s+/);
+    if (words.length <= 2) {
+      editor.update(() => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+          selection.insertText(cleanText);
+        } else {
+          const root = $getRoot();
+          root.clear();
+          const p = $createParagraphNode();
+          p.append(...$generateNodesFromDOM(editor, new DOMParser().parseFromString(cleanText, 'text/html')));
+          root.append(p);
+        }
+      });
+      return;
+    }
+
+    const chunkSize = Math.max(1, Math.ceil(words.length / 20));
+    let currentIdx = chunkSize;
+
+    editor.update(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+        selection.insertText(words.slice(0, chunkSize).join(' ') + ' ');
+      } else {
+        const root = $getRoot();
+        root.clear();
+        const p = $createParagraphNode();
+        p.setTextContent(words.slice(0, chunkSize).join(' ') + ' ');
+        root.append(p);
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      const interval = setInterval(() => {
+        if (currentIdx >= words.length) {
+          clearInterval(interval);
+          resolve();
+          return;
+        }
+        const nextWords = words.slice(currentIdx, currentIdx + chunkSize).join(' ');
+        currentIdx += chunkSize;
+
+        editor.update(() => {
+          const selection = $getSelection();
+          if ($isRangeSelection(selection)) {
+            selection.insertText(nextWords + (currentIdx < words.length ? ' ' : ''));
+          }
+        });
+      }, 30);
+    });
+  };
+
   const handleAiOption = async (action: string) => {
     closeAllMenus();
     if (!onAiTransform) return;
@@ -447,18 +504,7 @@ function ToolbarPlugin({
       if (!targetText.trim()) return;
       const result = await onAiTransform(action, targetText);
       if (result) {
-        editor.update(() => {
-          const selection = $getSelection();
-          if ($isRangeSelection(selection) && !selection.isCollapsed()) {
-            selection.insertText(result);
-          } else {
-            const root = $getRoot();
-            root.clear();
-            const p = $createParagraphNode();
-            p.append(...$generateNodesFromDOM(editor, new DOMParser().parseFromString(result, 'text/html')));
-            root.append(p);
-          }
-        });
+        await animateTextReplacement(result);
       }
     } catch (err) {
       console.error('AI toolbar action error:', err);
@@ -779,12 +825,43 @@ function SelectionAIBubblePlugin({ onAiTransform }: { onAiTransform?: (action: s
     try {
       const transformed = await onAiTransform(action, selectedText);
       if (transformed) {
-        editor.update(() => {
-          const selection = $getSelection();
-          if ($isRangeSelection(selection)) {
-            selection.insertText(transformed);
-          }
-        });
+        const cleanText = transformed.replace(/<[^>]+>/g, '').trim();
+        const words = cleanText.split(/\s+/);
+        if (words.length <= 2) {
+          editor.update(() => {
+            const selection = $getSelection();
+            if ($isRangeSelection(selection)) {
+              selection.insertText(cleanText);
+            }
+          });
+        } else {
+          const chunkSize = Math.max(1, Math.ceil(words.length / 20));
+          let currentIdx = chunkSize;
+          editor.update(() => {
+            const selection = $getSelection();
+            if ($isRangeSelection(selection)) {
+              selection.insertText(words.slice(0, chunkSize).join(' ') + ' ');
+            }
+          });
+
+          await new Promise<void>((resolve) => {
+            const interval = setInterval(() => {
+              if (currentIdx >= words.length) {
+                clearInterval(interval);
+                resolve();
+                return;
+              }
+              const nextWords = words.slice(currentIdx, currentIdx + chunkSize).join(' ');
+              currentIdx += chunkSize;
+              editor.update(() => {
+                const selection = $getSelection();
+                if ($isRangeSelection(selection)) {
+                  selection.insertText(nextWords + (currentIdx < words.length ? ' ' : ''));
+                }
+              });
+            }, 30);
+          });
+        }
       }
     } catch (err) {
       console.error('AI selection action:', err);

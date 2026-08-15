@@ -109,9 +109,9 @@
     },
     "trash": {
       "title": "Trash",
-      "desc": "Deleted notes are automatically removed after 30 days",
+      "desc": "Deleted items are automatically removed after 7 days",
       "empty": "Trash is empty",
-      "emptyDesc": "Deleted notes will appear here for 30 days before permanent removal.",
+      "emptyDesc": "Deleted items will appear here for 7 days before permanent removal.",
       "restore": "Restore",
       "deletePermanently": "Delete permanently",
       "emptyTrash": "Empty Trash",

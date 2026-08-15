@@ -30,24 +30,29 @@ export async function logCompletedSession(
   });
 
   if (error) {
-    // Log server-side failures silently — never break the timer UX over
-    // a logging failure.
     console.error('[timer.service] Failed to log session:', error.message);
     return;
   }
 
-  // Increment total_study_minutes on user_progress via an upsert so the
-  // Dashboard Focus Time stat moves immediately without waiting for a
-  // Realtime event to recompute from raw sessions.
-  await supabase.rpc('increment_study_minutes', {
-    p_user_id: userId,
-    p_minutes: Math.round(durationMinutes),
-  }).then(({ error: rpcError }) => {
-    if (rpcError) {
-      // RPC may not exist yet in all environments — fail silently.
-      // The Realtime subscription on study_sessions will still update
-      // the dashboard on the next poll.
-      console.warn('[timer.service] increment_study_minutes RPC not available:', rpcError.message);
-    }
-  });
+  // Increment total_study_minutes on user_progress via direct table upsert
+  // to avoid calling missing RPC functions that trigger 404 network errors.
+  try {
+    const { data: existing } = await supabase
+      .from('user_progress')
+      .select('total_study_minutes')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const currentMinutes = existing?.total_study_minutes || 0;
+    const newMinutes = currentMinutes + Math.round(durationMinutes);
+
+    await supabase
+      .from('user_progress')
+      .upsert({
+        user_id: userId,
+        total_study_minutes: newMinutes,
+      }, { onConflict: 'user_id' });
+  } catch (err) {
+    // Fail silently without breaking the user experience
+  }
 }

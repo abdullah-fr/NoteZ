@@ -85,13 +85,6 @@ async function fetchCards(userId: string, dueOnly: boolean): Promise<Flashcard[]
   return ((legacyResult.data ?? []) as unknown as FlashcardRow[]).map(normalizeCard);
 }
 
-const DEFAULT_SEEDS = [
-  { question: 'What is photosynthesis?', answer: 'The process by which plants convert sunlight, water, and CO₂ into glucose and oxygen.' },
-  { question: "What is Newton's First Law?", answer: 'An object at rest stays at rest and an object in motion stays in motion unless acted upon by an external force.' },
-  { question: 'What is the Pythagorean theorem?', answer: 'In a right triangle, a² + b² = c², where c is the hypotenuse.' },
-  { question: 'What is DNA?', answer: 'Deoxyribonucleic acid — the molecule that carries genetic instructions for all living organisms.' },
-  { question: 'What is the speed of light?', answer: 'Approximately 299,792 km/s (186,282 mi/s) in a vacuum.' },
-];
 
 /* ── fetch ── */
 export async function fetchFlashcards(userId: string): Promise<Flashcard[]> {
@@ -114,32 +107,10 @@ export async function fetchDueCount(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-/* ── seed new accounts ── */
-export async function seedDefaultCardsIfEmpty(userId: string): Promise<void> {
-  const { count } = await supabase
-    .from('flashcards')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId);
-  if ((count ?? 0) > 0) return;
-
-  const now = new Date().toISOString();
-  const rows = DEFAULT_SEEDS.map(s => ({
-    user_id: userId,
-    question: s.question,
-    answer: s.answer,
-    due_at: now,
-    stability: 0,
-    difficulty: 0,
-    last_reviewed_at: null,
-    review_count: 0,
-    state: 0,
-  }));
-  const modernInsert = await supabase.from('flashcards').insert(rows);
-  if (modernInsert.error) {
-    const legacyRows = DEFAULT_SEEDS.map(s => ({ user_id: userId, question: s.question, answer: s.answer }));
-    const legacyInsert = await supabase.from('flashcards').insert(legacyRows);
-    if (legacyInsert.error) throw modernInsert.error;
-  }
+/* ── seed — kept as no-op for backward compat ── */
+export async function seedDefaultCardsIfEmpty(_userId: string): Promise<void> {
+  // No longer seeds default cards — user only sees cards they created or generated.
+  return;
 }
 
 /* ── add / delete ── */
@@ -227,3 +198,121 @@ export async function reviewCard(card: Flashcard, rating: Rating): Promise<Flash
   // result usable in the current session rather than breaking the deck.
   return { ...card, ...patch, due_at: patch.due_at };
 }
+
+/* ── Generate flashcards from notes via Gemini ── */
+export interface GenerateFlashcardsPayload {
+  sourceText: string;
+  subject: string;
+  count?: number;
+}
+
+const GEMINI_FLASHCARDS_API_KEY =
+  import.meta.env.VITE_GEMINI_FLASHCARDS_API_KEY ||
+  import.meta.env.GEMINI_FLASHCARDS_API_KEY ||
+  '';
+
+export async function generateFlashcardsFromNotes(
+  payload: GenerateFlashcardsPayload,
+): Promise<{ question: string; answer: string }[]> {
+  const cardCount = payload.count || 10;
+  const prompt = `You are a study-aid flashcard creator. Given the study material below, generate ${cardCount} high-quality flashcards.
+
+Study Material:
+"""
+${payload.sourceText.slice(0, 16000)}
+"""
+
+Subject/Topic: ${payload.subject}
+
+Rules:
+- Each flashcard should have a concise "question" (front side) and a clear "answer" (back side).
+- Cover key concepts, definitions, facts, relationships, and important details from the material.
+- Vary question types: definitions, fill-in-the-blank style, cause-effect, comparisons, etc.
+- Keep answers brief but complete (1-3 sentences).
+- Do NOT invent facts not present in the material.
+
+Return ONLY a valid JSON array with no markdown wrappers:
+[
+  { "question": "What is...?", "answer": "It is..." },
+  ...
+]`;
+
+  // 1. Try local proxy first (hides API key)
+  try {
+    const res = await fetch('/api/generate-ai-flashcards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) {
+        const cleanJson = rawText.replace(/^\`\`\`json\\s*/, '').replace(/\`\`\`$/, '').trim();
+        const cards = JSON.parse(cleanJson);
+        if (Array.isArray(cards) && cards.length > 0) {
+          return cards.map((c: any) => ({
+            question: c.question || 'Question',
+            answer: c.answer || 'Answer',
+          }));
+        }
+      }
+    }
+  } catch {
+    /* silent fallback */
+  }
+
+  // 2. Fallback to direct Gemini endpoints
+  const fallbackModels = [
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash-lite',
+    'gemini-1.5-flash-lite',
+    'gemini-2.0-flash-lite',
+  ];
+
+  for (const model of fallbackModels) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_FLASHCARDS_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              responseMimeType: 'application/json',
+            },
+          }),
+        },
+      );
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) continue;
+
+      const cleanJson = rawText.replace(/^\`\`\`json\\s*/, '').replace(/\`\`\`$/, '').trim();
+      const cards = JSON.parse(cleanJson);
+
+      if (Array.isArray(cards) && cards.length > 0) {
+        return cards.map((c: any) => ({
+          question: c.question || 'Question',
+          answer: c.answer || 'Answer',
+        }));
+      }
+    } catch {
+      /* continue to next model */
+    }
+  }
+
+  throw new Error('Unable to generate flashcards. Please try again in a moment.');
+}
+
