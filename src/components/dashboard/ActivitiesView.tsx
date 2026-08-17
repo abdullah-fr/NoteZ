@@ -7,12 +7,12 @@ import {
   fetchActivities, fetchChecklistItems, createActivity,
   updateActivityProgress, deleteActivity, addChecklistItems,
   addChecklistItem, toggleChecklistItem, deleteChecklistItem,
-  generateActivitiesFromDoc,
+  generateActivitiesFromDoc, cleanTaskLabel,
   type Activity, type ChecklistItem,
 } from '@/services';
 import { uploadSourceFile, triggerProcessSource, subscribeToSourceChanges } from '@/services/sources.service';
 import { toast } from 'sonner';
-import { Plus, Trash2, ListChecks, Check, X, ChevronDown, ChevronUp, Layers, BookOpen, Upload, Loader2, Edit3, Save } from 'lucide-react';
+import { Plus, Trash2, ListChecks, Check, X, ChevronDown, ChevronUp, Layers, BookOpen, Upload, Loader2, Edit3, Save, CheckCircle2 } from 'lucide-react';
 
 export default function ActivitiesView() {
   const { user } = useAuth();
@@ -177,6 +177,10 @@ export default function ActivitiesView() {
     const list = (itemsByActivity[item.activity_id] || []).map(i => i.id === item.id ? { ...i, done: newDone } : i);
     const pct = list.length ? Math.round((list.filter(i => i.done).length / list.length) * 100) : 0;
     persistProgress(item.activity_id, pct);
+    if (pct === 100) {
+      toast.success('🎉 Activity package 100% completed!');
+      setTimeout(() => setExpanded(prev => prev === item.activity_id ? null : prev), 400);
+    }
   };
 
   const addItemToActivity = async (activityId: string) => {
@@ -221,16 +225,16 @@ export default function ActivitiesView() {
     return Object.entries(m).map(([s, v]) => ({ subject: s, progress: Math.round(v.total / v.count) }));
   }, [activities]);
 
+  const filteredActivities = useMemo(() => {
+    return activities.filter(a => computeProgress(a.id) < 100);
+  }, [activities, itemsByActivity]);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Hidden file input supporting PDF, Word, PPT */}
       <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" className="hidden" onChange={handleSyllabusFile} />
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-serif text-xl sm:text-2xl tracking-tight flex items-center gap-2.5">
-          <ListChecks className="h-5 w-5 text-foreground shrink-0" />
-          Activities & Work Breakdown
-        </h2>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -250,7 +254,7 @@ export default function ActivitiesView() {
             onClick={() => setShowForm(s => !s)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" /> New Activity
+            <Plus className="h-3.5 w-3.5" /> New Task Package
           </button>
         </div>
       </div>
@@ -429,35 +433,43 @@ export default function ActivitiesView() {
       {/* Activities list */}
       <div className="space-y-3">
         {loading ? (
-          <p className="text-[12px] text-muted-foreground font-mono">Loading activities…</p>
-        ) : activities.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground font-mono">Loading task packages…</p>
+        ) : filteredActivities.length === 0 ? (
           <div className="rounded-2xl border border-border bg-secondary p-10 text-center">
             <ListChecks className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-[14px] font-medium text-foreground mb-1">Track your study work here</p>
+            <p className="text-[14px] font-medium text-foreground mb-1">Track your study action plans here</p>
             <p className="text-[12px] text-muted-foreground mb-4 max-w-xs mx-auto">
-              Break assignments and units into tasks. Every expert was once a beginner — log your first activity.
+              Import a document (PDF, Word, PPT) or create a new task package. Break complex assignments into manageable steps.
             </p>
             <button
               onClick={() => setShowForm(true)}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" /> Create your first activity
+              <Plus className="h-3.5 w-3.5" /> Create your first task package
             </button>
           </div>
         ) : (
-          activities.map(a => {
+          filteredActivities.map(a => {
             const list = itemsByActivity[a.id] || [];
             const pct = computeProgress(a.id);
+            const isCompleted = pct === 100 && list.length > 0;
             const open = expanded === a.id;
             return (
-              <div key={a.id} className="rounded-2xl border border-border bg-secondary overflow-hidden">
+              <div key={a.id} className={`rounded-2xl border bg-secondary overflow-hidden transition-all ${isCompleted ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'border-border'}`}>
                 <button
                   onClick={() => setExpanded(open ? null : a.id)}
                   className="w-full p-4 text-left hover:bg-secondary transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div>
-                      <div className="font-semibold text-[14px] text-foreground">{a.title}</div>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-semibold text-[14px] ${isCompleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{a.title}</span>
+                        {isCompleted && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> 100% Done
+                          </span>
+                        )}
+                      </div>
                       {a.subject && (
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span
@@ -510,19 +522,26 @@ export default function ActivitiesView() {
                     >
                       <div className="p-4 space-y-2">
                         {list.map(item => (
-                          <div key={item.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-secondary px-3 py-2">
+                          <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border bg-card/60 px-3.5 py-2.5 hover:border-border transition-all">
                             <button
                               onClick={() => toggleItem(item)}
-                              className={`h-4.5 w-4.5 rounded flex items-center justify-center border transition-colors ${
-                                item.done ? 'bg-[hsl(var(--foreground))] border-[hsl(var(--foreground))]' : 'border-border'
+                              className={`h-5 w-5 rounded-md flex items-center justify-center border-2 transition-all shrink-0 cursor-pointer ${
+                                item.done
+                                  ? 'bg-primary border-primary text-primary-foreground shadow-sm'
+                                  : 'border-muted-foreground/40 hover:border-primary bg-background/80'
                               }`}
+                              title={item.done ? "Mark incomplete" : "Mark completed"}
                             >
-                              {item.done && <Check className="h-3 w-3 text-[hsl(var(--accent-foreground))]" />}
+                              {item.done ? (
+                                <Check className="h-3.5 w-3.5 stroke-[3]" />
+                              ) : (
+                                <div className="w-1.5 h-1.5 rounded-sm bg-transparent hover:bg-primary/30" />
+                              )}
                             </button>
-                            <span className={`flex-1 text-[12px] ${item.done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                              {item.label}
+                            <span className={`flex-1 text-[13px] leading-snug ${item.done ? 'line-through text-muted-foreground font-normal' : 'text-foreground font-medium'}`}>
+                              {cleanTaskLabel(item.label)}
                             </span>
-                            <button onClick={() => deleteItem(item)} className="text-muted-foreground hover:text-destructive transition-colors">
+                            <button onClick={() => deleteItem(item)} className="text-muted-foreground/50 hover:text-destructive p-1 rounded transition-colors">
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>

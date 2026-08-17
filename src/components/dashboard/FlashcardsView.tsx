@@ -67,7 +67,6 @@ export default function FlashcardsView() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newQ, setNewQ]              = useState('');
   const [newA, setNewA]              = useState('');
-  const [sessionDone, setSessionDone] = useState(0);
 
   // Navigation direction state for distinct card change animation ('next' = 1, 'prev' = -1)
   const [slideDirection, setSlideDirection] = useState<number>(1);
@@ -148,16 +147,15 @@ export default function FlashcardsView() {
 
   useEffect(() => { load(); }, [load]);
 
-  /* ── keyboard shortcuts for ratings ── */
+  /* ── keyboard shortcuts (left/right nav) ── */
   useEffect(() => {
-    if (!flipped) return;
     const handler = (e: KeyboardEvent) => {
-      const r = RATINGS.find(r => r.key === e.key);
-      if (r) handleRate(r.rating);
+      if (e.key === 'ArrowRight') handleNextCard();
+      if (e.key === 'ArrowLeft')  handlePrevCard();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [flipped, currentIdx, queue]);
+  }, [currentIdx, queue]);
 
   /* ── generate steps rotator ── */
   useEffect(() => {
@@ -171,31 +169,9 @@ export default function FlashcardsView() {
 
   const currentCard = queue[currentIdx];
 
-  /* ── review ── */
-  async function handleRate(rating: Rating) {
-    if (!currentCard || reviewing) return;
-    setReviewing(true);
-    try {
-      const updated = await reviewCard(currentCard, rating);
-      setAllCards(prev => prev.map(c => c.id === updated.id ? updated : c));
-      setQueue(prev => prev.map(c => c.id === updated.id ? updated : c));
-      setSessionDone(n => n + 1);
-      // Advance to next card with slide right transition
-      setSlideDirection(1);
-      setFlipped(false);
-      setTimeout(() => {
-        if (currentIdx + 1 < queue.length) {
-          setCurrentIdx(i => i + 1);
-        } else {
-          load();
-          setSessionDone(0);
-        }
-      }, 120);
-    } catch {
-      toast.error('Failed to save review');
-    } finally {
-      setReviewing(false);
-    }
+  /* ── review (kept internal, no UI shown) ── */
+  async function handleRate() {
+    // no-op: rating UI removed, cards are browsed freely
   }
 
   /* ── add ── */
@@ -364,30 +340,24 @@ export default function FlashcardsView() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-start sm:items-center justify-between mb-5 gap-2 flex-wrap">
-        <h2 className="font-serif text-2xl tracking-tight flex items-center gap-2.5 shrink-0">
-          <Layers className="h-5 w-5 text-foreground" />
-          Flashcards
-        </h2>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => {
-              loadLocalFolders();
-              setShowGeneratePanel(v => !v);
-              if (showAddForm) setShowAddForm(false);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 text-[12px] font-medium text-primary hover:bg-primary/20 transition-colors"
-          >
-            <Sparkles className="h-3.5 w-3.5" /> Generate from Notes
-          </button>
-          <button
-            onClick={() => { setShowAddForm(v => !v); if (showGeneratePanel) setShowGeneratePanel(false); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add Card
-          </button>
-        </div>
+      {/* Actions */}
+      <div className="flex items-center justify-end mb-5 gap-2 flex-wrap">
+        <button
+          onClick={() => {
+            loadLocalFolders();
+            setShowGeneratePanel(v => !v);
+            if (showAddForm) setShowAddForm(false);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 text-[12px] font-medium text-primary hover:bg-primary/20 transition-colors"
+        >
+          <Sparkles className="h-3.5 w-3.5" /> Generate from Notes
+        </button>
+        <button
+          onClick={() => { setShowAddForm(v => !v); if (showGeneratePanel) setShowGeneratePanel(false); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Card
+        </button>
       </div>
 
       {/* Generate from Notes Panel */}
@@ -651,17 +621,9 @@ export default function FlashcardsView() {
         </div>
       ) : (
         <>
-          {/* Counter + session progress */}
+          {/* Counter */}
           <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground mb-3">
             <span>Card {currentIdx + 1} / {queue.length}</span>
-            <span className="flex items-center gap-1.5">
-              {sessionDone > 0 && <span className="text-foreground">{sessionDone} reviewed this session</span>}
-              {currentCard && (
-                <span className={currentCard.review_count === 0 ? 'text-notez-indigo/70' : 'text-muted-foreground'}>
-                  {currentCard.review_count === 0 ? 'New' : `Reviewed ${currentCard.review_count}×`}
-                </span>
-              )}
-            </span>
           </div>
 
           {/* Outer Slide Animation Container for Next / Previous Card Navigation */}
@@ -719,26 +681,6 @@ export default function FlashcardsView() {
             </AnimatePresence>
           </div>
 
-          {/* Rating buttons — only visible after flip */}
-          <AnimatePresence>
-            {flipped && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.18 }}
-                className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5"
-              >
-                {RATINGS.map(r => (
-                  <button key={r.rating} onClick={() => handleRate(r.rating)} disabled={reviewing}
-                    className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-border bg-secondary hover:bg-secondary hover:border-border transition-all disabled:opacity-40"
-                  >
-                    <span className="text-[13px] font-semibold text-foreground">{r.label}</span>
-                    <span className="text-[9px] font-mono text-muted-foreground">{r.desc}</span>
-                    <span className="text-[9px] font-mono text-muted-foreground">Press {r.key}</span>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Nav controls */}
           <div className="flex items-center justify-center gap-2 flex-wrap">
@@ -781,8 +723,7 @@ export default function FlashcardsView() {
                 onClick={() => handleJumpToCard(i)}
                 className={`h-1.5 rounded-full transition-all ${
                   i === currentIdx ? 'bg-[hsl(var(--foreground))] w-4'
-                  : c.review_count === 0 ? 'bg-notez-indigo/40 w-1.5'
-                  : 'bg-secondary w-1.5 hover:bg-secondary'
+                  : 'bg-secondary w-1.5 hover:bg-muted-foreground/40'
                 }`}
               />
             ))}

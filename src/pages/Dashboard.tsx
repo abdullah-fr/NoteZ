@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { useTimer } from "@/lib/timer";
-import { useDueCardsCount } from "@/hooks/use-due-cards";
+
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -84,7 +84,7 @@ const LANGUAGES = [
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const { hasActiveSession, hasTaskSession, hasExamSession, selectMinutes, start: startFocusTimer } = useTimer();
-  const dueCardsCount = useDueCardsCount(user?.id);
+
   const { t, i18n } = useTranslation();
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -94,8 +94,15 @@ export default function Dashboard() {
   const [folderResetKey, setFolderResetKey] = useState(0);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
-  const closeSidebarForFolder = useCallback(() => setSidebarOpen(false), []);
-  const reopenSidebarForFolderList = useCallback(() => setSidebarOpen(true), []);
+  const [isInsideEditor, setIsInsideEditor] = useState(false);
+  // Track pre-chat sidebar state so we can restore it when leaving chat
+  const [preChatSidebarOpen, setPreChatSidebarOpen] = useState<boolean | null>(null);
+  const closeSidebarForFolder = useCallback(() => {
+    setIsInsideEditor(true);
+  }, []);
+  const reopenSidebarForFolderList = useCallback(() => {
+    setIsInsideEditor(false);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('notez_sidebar', sidebarOpen ? 'open' : 'closed');
@@ -151,6 +158,18 @@ export default function Dashboard() {
       setSelectedFolderId(null);
       setFolderResetKey(key => key + 1);
     }
+    // Auto-collapse main sidebar & open chat history when entering chat
+    if (view === 'chat' && activeView !== 'chat') {
+      setPreChatSidebarOpen(sidebarOpen);
+      setSidebarOpen(false);
+      // Open chat history sidebar after a tick so ChatView is mounted
+      setTimeout(() => window.dispatchEvent(new CustomEvent('notez:open-chat-history')), 80);
+    }
+    // Restore sidebar when leaving chat
+    if (view !== 'chat' && activeView === 'chat' && preChatSidebarOpen !== null) {
+      setSidebarOpen(preChatSidebarOpen);
+      setPreChatSidebarOpen(null);
+    }
     setActiveView(view);
   };
 
@@ -171,7 +190,7 @@ export default function Dashboard() {
           />
         );
       case "chat":
-        return <ChatView />;
+        return <ChatView sidebarOpen={sidebarOpen} onToggleSidebar={() => window.dispatchEvent(new CustomEvent('notez:open-chat-history'))} />;
       case "folder":
         return (
           <FolderView
@@ -252,17 +271,35 @@ export default function Dashboard() {
                 >
                   <item.icon className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{t(item.labelKey)}</span>
-                  {item.id === "exam" && dueCardsCount > 0 && (
-                    <span className="ml-auto flex items-center justify-center rounded-full bg-destructive text-white font-mono font-bold leading-none h-4 min-w-[1rem] px-1 text-[9px]">
-                      {dueCardsCount > 99 ? "99+" : dueCardsCount}
-                    </span>
-                  )}
                 </button>
               );
             })}
           </div>
         </div>
       ))}
+    </div>
+  );
+
+  const CollapsedSideNavList = () => (
+    <div className="space-y-2">
+      {NAV.map((item) => {
+        const active = activeView === item.id;
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleNavigate(item.id)}
+            title={t(item.labelKey)}
+            aria-label={t(item.labelKey)}
+            className={`relative w-9 h-9 mx-auto flex items-center justify-center rounded-lg transition-colors ${
+              active
+                ? "bg-secondary text-foreground font-semibold shadow-xs"
+                : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+            }`}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -306,98 +343,163 @@ export default function Dashboard() {
         <FloatingTimer onClose={() => setTimerWidgetClosed(true)} />
       )}
 
-      {/* Left sidebar — w-44 compact width */}
-      {sidebarOpen && (
-        <aside className="hidden md:flex h-screen w-44 shrink-0 flex-col border-r border-border bg-card/70 backdrop-blur-md transition-all duration-200 z-30">
-          <div className="h-11 flex items-center justify-between border-b border-border px-2.5">
-            <Brand />
-            <button
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Collapse sidebar"
-              title="Collapse sidebar"
-              className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-            >
-              <PanelLeftClose className="h-3.5 w-3.5" />
-            </button>
-          </div>
+      {/* Left sidebar — expanded (w-44) or collapsed icon-only rail (w-14) — hidden in Note Editor */}
+      {(!isInsideEditor || activeView !== 'folder') && (
+        <aside className={`hidden md:flex h-screen shrink-0 flex-col border-r border-border bg-card/70 backdrop-blur-md transition-all duration-200 z-30 ${sidebarOpen ? 'w-44' : 'w-14'}`}>
+          {sidebarOpen ? (
+            /* Expanded Sidebar */
+            <>
+              <div className="h-11 flex items-center justify-between border-b border-border px-2.5">
+                <Brand />
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                  className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
+              </div>
 
-          <div className="p-1.5 border-b border-border">
-            <button
-              onClick={() => setPaletteOpen(true)}
-              aria-label="Search"
-              className="w-full flex items-center justify-between gap-1 px-2 h-7 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-left text-[11px] text-muted-foreground transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <Search className="h-3 w-3" />
-                <span>{t('sidebar.search')}</span>
-              </span>
-              <span className="flex items-center gap-0.5">
-                <span className="kbd">⌘</span>
-                <span className="kbd">K</span>
-              </span>
-            </button>
-          </div>
+              <div className="p-1.5 border-b border-border">
+                <button
+                  onClick={() => setPaletteOpen(true)}
+                  aria-label="Search"
+                  className="w-full flex items-center justify-between gap-1 px-2 h-7 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-left text-[11px] text-muted-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Search className="h-3 w-3" />
+                    <span>{t('sidebar.search')}</span>
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <span className="kbd">⌘</span>
+                    <span className="kbd">K</span>
+                  </span>
+                </button>
+              </div>
 
-          <nav className="flex-1 overflow-y-auto p-1.5">
-            <SideNavList />
-          </nav>
+              <nav className="flex-1 overflow-y-auto p-1.5">
+                <SideNavList />
+              </nav>
 
-          {/* Language switcher + account footer */}
-          <div className="border-t border-border p-1.5 space-y-1">
-            {/* Language switcher */}
-            <div className="relative">
-              <button
-                onClick={(e) => { e.stopPropagation(); setLangMenuOpen(o => !o); }}
-                className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-secondary/70 hover:text-foreground transition-colors"
-              >
-                <Globe className="h-3 w-3 shrink-0" />
-                <span>{LANGUAGES.find(l => l.code === i18n.language)?.flag || '🌐'} {LANGUAGES.find(l => l.code === i18n.language)?.label || 'English'}</span>
-              </button>
-              {langMenuOpen && (
-                <div className="absolute bottom-full left-0 mb-1 w-full bg-card border border-border rounded-lg shadow-lg py-1 z-50">
-                  {LANGUAGES.map(lang => (
-                    <button
-                      key={lang.code}
-                      onClick={(e) => { e.stopPropagation(); i18n.changeLanguage(lang.code); setLangMenuOpen(false); }}
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors ${
-                        i18n.language === lang.code ? 'bg-secondary text-foreground font-medium' : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground'
-                      }`}
-                    >
-                      <span>{lang.flag}</span>
-                      <span>{lang.label}</span>
-                    </button>
-                  ))}
+              {/* Language switcher + account footer */}
+              <div className="border-t border-border p-1.5 space-y-1">
+                {/* Language switcher */}
+                <div className="relative">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setLangMenuOpen(o => !o); }}
+                    className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-secondary/70 hover:text-foreground transition-colors"
+                  >
+                    <Globe className="h-3 w-3 shrink-0" />
+                    <span>{LANGUAGES.find(l => l.code === i18n.language)?.flag || '🌐'} {LANGUAGES.find(l => l.code === i18n.language)?.label || 'English'}</span>
+                  </button>
+                  {langMenuOpen && (
+                    <div className="absolute bottom-full left-0 mb-1 w-full bg-card border border-border rounded-lg shadow-lg py-1 z-50">
+                      {LANGUAGES.map(lang => (
+                        <button
+                          key={lang.code}
+                          onClick={(e) => { e.stopPropagation(); i18n.changeLanguage(lang.code); setLangMenuOpen(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors ${
+                            i18n.language === lang.code ? 'bg-secondary text-foreground font-medium' : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground'
+                          }`}
+                        >
+                          <span>{lang.flag}</span>
+                          <span>{lang.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Account */}
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => handleNavigate("account")}
-                title={t('sidebar.account')}
-                className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors min-w-0 ${
-                  activeView === "account"
-                    ? "bg-secondary text-foreground"
-                    : "hover:bg-secondary/70 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <div className="w-5 h-5 rounded-sm bg-secondary border border-border flex items-center justify-center shrink-0">
-                  <span className="text-[9px] font-bold font-mono text-foreground">
+                {/* Account */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleNavigate("account")}
+                    title={t('sidebar.account')}
+                    className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors min-w-0 ${
+                      activeView === "account"
+                        ? "bg-secondary text-foreground"
+                        : "hover:bg-secondary/70 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <div className="w-5 h-5 rounded-sm bg-secondary border border-border flex items-center justify-center shrink-0">
+                      <span className="text-[9px] font-bold font-mono text-foreground">
+                        {(user?.user_metadata?.full_name || user?.email || "?")
+                          .split(/[\s@]/).filter(Boolean).map((s: string) => s[0].toUpperCase()).slice(0, 2).join("")}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono truncate flex-1 text-left">
+                      {user?.user_metadata?.full_name || user?.email}
+                    </span>
+                    <Settings className="h-3 w-3 shrink-0 opacity-50" />
+                  </button>
+                  <Button variant="ghost" size="icon" onClick={signOut} aria-label={t('sidebar.signOut')} className="h-7 w-7 shrink-0">
+                    <LogOut className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Collapsed Icon-Only Navigation Rail */
+            <>
+              <div className="h-11 flex items-center justify-center border-b border-border">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Expand sidebar"
+                  title="Expand sidebar"
+                  className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-2 border-b border-border flex justify-center">
+                <button
+                  onClick={() => setPaletteOpen(true)}
+                  aria-label="Search"
+                  title={t('sidebar.search')}
+                  className="h-8 w-8 rounded-lg border border-border bg-secondary/60 hover:bg-secondary flex items-center justify-center text-muted-foreground transition-colors"
+                >
+                  <Search className="h-4 w-4" />
+                </button>
+              </div>
+
+              <nav className="flex-1 overflow-y-auto py-3">
+                <CollapsedSideNavList />
+              </nav>
+
+              <div className="border-t border-border p-2 space-y-2 flex flex-col items-center">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setLangMenuOpen(o => !o); }}
+                  title="Switch Language"
+                  className="h-7 w-7 rounded-md flex items-center justify-center text-[12px] hover:bg-secondary transition-colors"
+                >
+                  {LANGUAGES.find(l => l.code === i18n.language)?.flag || '🌐'}
+                </button>
+
+                <button
+                  onClick={() => handleNavigate("account")}
+                  title={user?.user_metadata?.full_name || user?.email || t('sidebar.account')}
+                  className={`w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${
+                    activeView === "account" ? "border-primary bg-primary/10 text-primary font-bold" : "border-border bg-secondary text-foreground"
+                  }`}
+                >
+                  <span className="text-[10px] font-bold font-mono">
                     {(user?.user_metadata?.full_name || user?.email || "?")
                       .split(/[\s@]/).filter(Boolean).map((s: string) => s[0].toUpperCase()).slice(0, 2).join("")}
                   </span>
-                </div>
-                <span className="text-[10px] font-mono truncate flex-1 text-left">
-                  {user?.user_metadata?.full_name || user?.email}
-                </span>
-                <Settings className="h-3 w-3 shrink-0 opacity-50" />
-              </button>
-              <Button variant="ghost" size="icon" onClick={signOut} aria-label={t('sidebar.signOut')} className="h-7 w-7 shrink-0">
-                <LogOut className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
+                </button>
+
+                <button
+                  onClick={signOut}
+                  title={t('sidebar.signOut')}
+                  className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </>
+          )}
         </aside>
       )}
 
@@ -447,20 +549,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Desktop Header bar when sidebar is closed (non-folder views) */}
-        {!sidebarOpen && activeView !== 'folder' && (
-          <div className="hidden md:flex items-center gap-3 px-4 py-2 border-b border-border bg-background/95 backdrop-blur-md shrink-0">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              title="Open sidebar"
-              aria-label="Open sidebar"
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-secondary/80 hover:bg-secondary text-foreground transition-colors shrink-0"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-            <span className="font-serif text-base font-medium capitalize">{activeView}</span>
-          </div>
-        )}
+
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden paper-texture min-w-0">

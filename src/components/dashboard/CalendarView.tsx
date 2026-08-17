@@ -116,6 +116,7 @@ export default function CalendarView() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showForm, setShowForm]     = useState(false);
   const [form, setForm]             = useState(blank);
+  const [reminderAlert, setReminderAlert] = useState<{ title: string; timeStr: string; minutesLeft: number } | null>(null);
 
   const monthStart   = startOfMonth(month);
   const monthEnd     = endOfMonth(month);
@@ -130,6 +131,27 @@ export default function CalendarView() {
     return m;
   }, [events]);
 
+  function checkUpcoming1HourReminder(date: Date, hour: number, ampm: "AM" | "PM", title: string) {
+    const target = new Date(date);
+    let h24 = hour;
+    if (ampm === "PM" && hour < 12) h24 += 12;
+    if (ampm === "AM" && hour === 12) h24 = 0;
+    target.setHours(h24, 0, 0, 0);
+
+    const diffMs = target.getTime() - Date.now();
+    const diffMins = Math.round(diffMs / (1000 * 60));
+
+    // If deadline/event is within 60 minutes (or set within 1 hour)
+    if (diffMins >= -15 && diffMins <= 60) {
+      const timeStr = `${String(hour).padStart(2, "0")}:00 ${ampm}`;
+      setReminderAlert({
+        title,
+        timeStr,
+        minutesLeft: Math.max(1, diffMins),
+      });
+    }
+  }
+
   function startAdding(t: EventType) { setForm({ ...blank, type: t }); setPickerOpen(false); setShowForm(true); }
   function cancel() { setShowForm(false); setPickerOpen(false); setForm(blank); }
 
@@ -141,7 +163,9 @@ export default function CalendarView() {
       link: form.type === "event" && form.link.trim() ? normalizeLink(form.link) : undefined,
       hour: form.hour, minute: 0, ampm: form.ampm, completed: false,
     };
-    addEvent(ev); cancel();
+    addEvent(ev);
+    checkUpcoming1HourReminder(selected, form.hour, form.ampm, form.title);
+    cancel();
   }
 
   return (
@@ -423,6 +447,52 @@ export default function CalendarView() {
           )}
         </div>
       </div>
+
+      {/* ══ Advanced Bottom-Right Pre-Deadline Push Notification Alert ══ */}
+      <AnimatePresence>
+        {reminderAlert && (
+          <motion.div
+            initial={{ opacity: 0, x: 80, y: 80, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 80, y: 80, scale: 0.9 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+            className="fixed bottom-6 right-6 z-50 w-80 rounded-2xl border border-primary/40 bg-card/95 backdrop-blur-xl shadow-2xl p-4 space-y-3"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Clock className="h-4 w-4 text-amber-500 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-[12px] font-semibold text-foreground leading-tight">1-Hour Pre-Deadline Alert</h4>
+                  <p className="text-[10px] text-muted-foreground">Deadline approaching soon</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReminderAlert(null)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="rounded-xl border border-border bg-secondary/80 p-2.5 space-y-1">
+              <p className="text-[12px] font-medium text-foreground">{reminderAlert.title}</p>
+              <p className="text-[10px] font-mono text-amber-500">
+                Scheduled at {reminderAlert.timeStr} (in ~{reminderAlert.minutesLeft} mins)
+              </p>
+            </div>
+            <div className="flex items-center justify-between pt-0.5">
+              <span className="text-[10px] text-muted-foreground font-mono">Reminder set for Calendar</span>
+              <button
+                onClick={() => setReminderAlert(null)}
+                className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

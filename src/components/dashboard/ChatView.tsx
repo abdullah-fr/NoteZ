@@ -23,7 +23,7 @@ import {
   CheckCircle2, AlertCircle, BookOpen, Folder, ClipboardCheck,
   Zap, Brain, Layers, ArrowRight, ChevronDown, ArrowUpRight,
   MessageSquarePlus, Search, MessageSquare, Pin, Archive,
-  MoreHorizontal, PinOff, ArchiveRestore, History,
+  PinOff, ArchiveRestore, MoreHorizontal, History, PanelLeft, PanelLeftClose,
 } from 'lucide-react';
 
 /* ─── types ─── */
@@ -129,10 +129,16 @@ function useTypewriter(phrases: string[], speed = 55, pause = 2200) {
   return display;
 }
 
+interface ChatViewProps {
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+}
+
 /* ─── main component ─── */
-export default function ChatView() {
+export default function ChatView({ sidebarOpen, onToggleSidebar }: ChatViewProps = {}) {
   const { user } = useAuth();
   const { upgradeModal, handleLimitError, closeUpgradeModal } = useUpgradeModal();
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [convMeta, setConvMeta]           = useState<Record<string, ConvMeta>>(loadMeta);
   const [activeId, setActiveId]           = useState<string | null>(null);
@@ -195,9 +201,23 @@ export default function ChatView() {
     return () => window.removeEventListener('storage', refreshFolders);
   }, []);
 
+  useEffect(() => {
+    const handler = () => setHistoryOpen(o => !o);
+    window.addEventListener('notez:open-chat-history', handler);
+    return () => window.removeEventListener('notez:open-chat-history', handler);
+  }, []);
+
+  const skipLoadOnActiveId = useRef<string | null>(null);
+
   useEffect(() => { if (user?.id) loadConversations(); }, [user?.id]);
   useEffect(() => {
-    if (activeId) loadMessages(activeId);
+    if (activeId) {
+      if (skipLoadOnActiveId.current === activeId) {
+        skipLoadOnActiveId.current = null;
+        return;
+      }
+      loadMessages(activeId);
+    }
     else { setMessages([]); setAttached(null); }
   }, [activeId]);
   useEffect(() => {
@@ -258,7 +278,6 @@ export default function ChatView() {
       setStreaming('');
       setAttached(null);
       setInput('');
-      // Focus the textarea after the view settles
       setTimeout(() => textareaRef.current?.focus(), 120);
     };
     window.addEventListener('notez:new-chat-tutor', handler);
@@ -280,7 +299,7 @@ export default function ChatView() {
     }
   }
 
-  // "New chat" — just clears the active conversation instead of creating a blank DB row
+  // "New chat" — clears active conversation
   function newConversation() {
     setActiveId(null);
     setMessages([]);
@@ -309,7 +328,6 @@ export default function ChatView() {
     const updated = { ...convMeta, [id]: { ...convMeta[id], archived: !convMeta[id]?.archived } };
     setConvMeta(updated); saveMeta(updated);
     if (convMeta[id]?.archived === false || !convMeta[id]?.archived) {
-      // archiving — deselect if active
       if (activeId === id) { setActiveId(null); setMessages([]); }
     }
     setMenuOpenId(null);
@@ -336,15 +354,31 @@ export default function ChatView() {
     try {
       let convId = activeId;
       if (!convId) {
-        const prefix = `[${FOLDER_SCOPE.label}] `;
+        const prefix = selectedFolder ? `[Folder: ${selectedFolder.name}] ` : '';
         const data = await createConversation(user.id, mode, prefix + msg.slice(0, 60), attached?.id);
-        convId = data.id; setActiveId(convId); setConversations(prev => [data, ...prev]);
+        convId = data.id;
+        skipLoadOnActiveId.current = convId;
+        setActiveId(convId);
+        setConversations(prev => [data, ...prev]);
       } else {
         await updateConversation(convId, { mode, source_id: attached?.id ?? null });
       }
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: msg, created_at: new Date().toISOString() }]);
 
-      // ── Prompt 14: inject real folder note content as scope ──────────────
+      const userMsgObj: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: msg, created_at: new Date().toISOString() };
+      setMessages(prev => [...prev, userMsgObj]);
+
+      // Save user message to Supabase DB immediately
+      try {
+        await supabase.from('chat_messages').insert({
+          conversation_id: convId,
+          user_id: user.id,
+          role: 'user',
+          content: msg,
+        });
+      } catch (err) {
+        console.error('Failed to save user message to DB:', err);
+      }
+
       let folderContext = '';
       if (selectedFolder) {
         try {
@@ -369,14 +403,13 @@ export default function ChatView() {
               }
             }
           }
-        } catch { /* fall through — folder name only */ }
+        } catch { /* fall through */ }
       }
 
       const scopeHint = folderContext
         ? `\n\n[CONTEXT SCOPE: Folder — ${selectedFolder?.name}]${folderContext}`
         : `\n\n[CONTEXT SCOPE: ${selectedFolder ? `Folder: ${selectedFolder.name}` : FOLDER_SCOPE.label} — ${FOLDER_SCOPE.desc}.]`;
 
-      // ── Prompt 14: Tutor-mode weak-spot memory from recent exam results ──
       let weakSpotHint = '';
       if (mode === 'tutor' && user) {
         try {
@@ -388,7 +421,6 @@ export default function ChatView() {
             .limit(5);
 
           if (recentExams && recentExams.length > 0) {
-            // Filter to subject-relevant exams when a folder is selected
             const relevant = selectedFolder
               ? recentExams.filter((e: any) =>
                   e.subject?.toLowerCase().includes(selectedFolder.name.toLowerCase()) ||
@@ -402,7 +434,6 @@ export default function ChatView() {
                 ? Math.round((exam.score / exam.total_questions) * 100)
                 : 100;
               if (pct < 70 && Array.isArray(exam.questions)) {
-                // Extract questions the student got wrong
                 exam.questions
                   .filter((q: any) => q.selectedIndex !== undefined && q.selectedIndex !== q.correctIndex)
                   .slice(0, 3)
@@ -416,44 +447,132 @@ export default function ChatView() {
               weakSpotHint = `\n\n[TUTOR NOTE — known weak areas from recent exams]:\n${weakTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')}\nAddress these proactively if relevant to the student's question.`;
             }
           }
-        } catch { /* fail silently — never break chat */ }
+        } catch { /* fail silently */ }
       }
-      // ─────────────────────────────────────────────────────────────────────
 
       const token = await getStreamingToken();
-      if (!token) throw new Error('Not authenticated — please sign in again.');
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ conversationId: convId, message: msg + scopeHint + weakSpotHint, mode, sourceId: attached?.status === 'ready' ? attached.id : null, scope: 'folder', thinkingLevel }),
-      });
-      if (!resp.ok || !resp.body) {
-        const errText = await resp.text();
-        // Try to parse as structured JSON error (e.g. USAGE_LIMIT_REACHED)
+      let streamSuccess = false;
+
+      if (token) {
         try {
-          const errJson = JSON.parse(errText);
-          throw errJson; // throw the object — parseLimitError will handle it
-        } catch (parseErr) {
-          // Not JSON — throw as plain message
-          if (typeof parseErr === 'object' && parseErr !== null && 'error' in (parseErr as object)) throw parseErr;
-          throw new Error(`${resp.status}: ${errText || 'Stream failed'}`);
+          const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ conversationId: convId, message: msg + scopeHint + weakSpotHint, mode, sourceId: attached?.status === 'ready' ? attached.id : null, scope: 'folder' }),
+          });
+
+          if (resp.ok && resp.body) {
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let acc = '';
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              acc += decoder.decode(value, { stream: true });
+              setStreaming(acc);
+            }
+            if (acc.trim()) {
+              setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: acc, created_at: new Date().toISOString() }]);
+              setStreaming('');
+              loadConversations();
+              streamSuccess = true;
+            }
+          }
+        } catch {
+          /* Edge function failed — proceed to Gemini direct proxy fallback */
         }
       }
-      const reader = resp.body.getReader(); const decoder = new TextDecoder(); let acc = '';
-      while (true) { const { done, value } = await reader.read(); if (done) break; acc += decoder.decode(value, { stream: true }); setStreaming(acc); }
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: acc, created_at: new Date().toISOString() }]);
-      setStreaming(''); loadConversations();
+
+      // ── Direct Gemini Fallback (/api/ai-chat-proxy & direct API) ──
+      if (!streamSuccess) {
+        setStreaming('NoteZ AI is thinking…');
+        const systemPrompt = `You are NoteZ AI, an advanced academic tutor and study assistant. Mode: ${mode}. Thinking level: ${thinkingLevel}. Answer clearly in clean GitHub-style Markdown with appropriate headings, bullet points, and formatting.`;
+        const fullPrompt = `${systemPrompt}\n\nUser Question: ${msg}${scopeHint}${weakSpotHint}`;
+
+        let rawText = '';
+        let fallbackOk = false;
+
+        // Try Vite proxy endpoint first
+        try {
+          const fallbackRes = await fetch('/api/ai-chat-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }],
+              generationConfig: {
+                temperature: thinkingLevel === 'low' ? 0.3 : thinkingLevel === 'high' ? 0.7 : 0.9,
+              },
+            }),
+          });
+
+          if (fallbackRes.ok) {
+            const data = await fallbackRes.json();
+            rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (rawText) fallbackOk = true;
+          }
+        } catch {
+          /* proxy call failed */
+        }
+
+        // Direct fetch to Gemini API as robust secondary fallback
+        if (!fallbackOk) {
+          const chatApiKey = import.meta.env.VITE_GEMINI_CHAT_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
+          if (chatApiKey) {
+            const directRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${chatApiKey}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: fullPrompt }] }],
+                  generationConfig: {
+                    temperature: thinkingLevel === 'low' ? 0.3 : thinkingLevel === 'high' ? 0.7 : 0.9,
+                  },
+                }),
+              }
+            );
+
+            if (directRes.ok) {
+              const data = await directRes.json();
+              rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (rawText) fallbackOk = true;
+            }
+          }
+        }
+
+        if (fallbackOk && rawText) {
+          setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: rawText, created_at: new Date().toISOString() }]);
+          setStreaming('');
+          loadConversations();
+          streamSuccess = true;
+
+          // Save assistant message to Supabase DB
+          if (convId && user) {
+            try {
+              await supabase.from('chat_messages').insert({
+                conversation_id: convId,
+                user_id: user.id,
+                role: 'assistant',
+                content: rawText,
+              });
+              await supabase.from('chat_conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId);
+            } catch { /* silent */ }
+          }
+        } else {
+          throw new Error('AI service temporarily unavailable. Please try again.');
+        }
+      }
     } catch (e: any) {
       console.error('Chat send error:', e);
-      // Check for usage limit before showing generic error
       const limitErr = parseLimitError(e);
       if (limitErr) {
         handleLimitError(limitErr.field, limitErr.limit);
       } else {
         toast({ title: 'Chat error', description: e?.message || e?.error || 'The AI service is unavailable.', variant: 'destructive' });
       }
-      setStreaming('');
-    } finally { setSending(false); }
+    } finally {
+      setSending(false);
+    }
   }
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -464,153 +583,157 @@ export default function ChatView() {
   /* ─── render ─── */
   return (
     <>
-      <div className="h-[calc(100vh-9rem)] md:h-[calc(100vh-8rem)] flex gap-3 min-w-0">
+      <div className="h-[calc(100vh-9rem)] md:h-[calc(100vh-8rem)] flex w-full min-w-0 overflow-hidden border border-border/60 rounded-2xl bg-background/50">
 
-      {/* ══ Sidebar — conversations list only ══ */}
-      <aside className="hidden lg:flex flex-col w-56 shrink-0 rounded-2xl border border-border bg-secondary overflow-hidden min-w-0">
-        {/* New chat button */}
-        <div className="p-2.5 border-b border-border">
-          <button onClick={newConversation}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-secondary hover:bg-secondary text-[13px] font-medium text-foreground transition-colors"
-          >
-            <MessageSquarePlus className="h-4 w-4 text-foreground" /> New chat
-          </button>
-        </div>
-
-        {/* Full conversation history */}
-        <ScrollArea className="flex-1">
-          <div ref={menuRef} className="p-2 space-y-0.5">
-            {sortedConversations.length === 0 && (
-              <div className="flex flex-col items-center gap-2 py-10 px-3 text-center">
-                <MessageSquare className="h-7 w-7 text-muted-foreground opacity-60" />
-                <p className="text-[11px] text-muted-foreground leading-relaxed">No conversations yet. Start a new chat.</p>
+        {/* ── Inline Chat History Sidebar (Matching Editor Sidebar in Image 2) ── */}
+        {historyOpen && (
+          <aside className="w-64 shrink-0 h-full border-r border-border/80 bg-card/60 flex flex-col overflow-hidden select-none z-20">
+            <div className="p-3 border-b border-border/80 flex items-center justify-between bg-card/90">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-[13px] font-semibold text-foreground leading-none">NoteZ AI History</h3>
+                  <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{sortedConversations.length} saved chats</p>
+                </div>
               </div>
-            )}
-            {sortedConversations.map(c => {
-              const meta = convMeta[c.id] ?? {};
-              const isMenuOpen = menuOpenId === c.id;
-              return (
-                <div key={c.id} className="relative">
-                  <div
-                    onClick={() => { if (!isMenuOpen) { setActiveId(c.id); } }}
-                    className={`group flex items-center gap-2 px-2 py-2 rounded-xl cursor-pointer transition-colors ${
-                      activeId === c.id
-                        ? 'bg-secondary text-foreground'
-                        : meta.archived
-                        ? 'text-muted-foreground hover:bg-secondary'
-                        : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                    }`}
-                  >
-                    {/* pin indicator */}
-                    {meta.pinned && <Pin className="h-2.5 w-2.5 shrink-0 text-foreground" />}
-                    {meta.archived && !meta.pinned && <Archive className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
-                    {!meta.pinned && !meta.archived && <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-40" />}
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] truncate leading-snug max-w-[120px]" title={c.title}>{c.title}</p>
-                      <p className="text-[9px] font-mono text-muted-foreground mt-0.5 capitalize">{c.mode || 'tutor'}</p>
-                    </div>
-
-                    {/* ··· menu trigger */}
-                    <button
-                      onClick={e => { e.stopPropagation(); setMenuOpenId(isMenuOpen ? null : c.id); }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1 rounded hover:bg-secondary"
-                    >
-                      <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
-                    </button>
-                  </div>
-
-                  {/* Context menu */}
-                  <AnimatePresence>
-                    {isMenuOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                        transition={{ duration: 0.1 }}
-                        className="absolute left-0 top-full mt-0.5 z-50 w-44 rounded-xl border border-border bg-secondary shadow-xl overflow-hidden"
-                      >
-                        <button onClick={() => togglePin(c.id)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-foreground hover:bg-secondary transition-colors"
-                        >
-                          {meta.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-                          {meta.pinned ? 'Unpin' : 'Pin to top'}
-                        </button>
-                        <button onClick={() => toggleArchive(c.id)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-foreground hover:bg-secondary transition-colors"
-                        >
-                          {meta.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-                          {meta.archived ? 'Unarchive' : 'Archive'}
-                        </button>
-                        <div className="border-t border-border" />
-                        <button onClick={() => deleteConv(c.id)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] text-destructive hover:bg-destructive/10 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </aside>
-
-      {/* ══ Main panel ══ */}
-      <div className="flex-1 flex w-full min-w-0 flex-col rounded-2xl border border-border bg-secondary overflow-hidden">
-
-        {/* ── Top bar — scope picker + attachment ── */}
-        <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 border-b border-border min-h-[48px] flex-wrap">
-          {/* Mobile: conversations history sheet */}
-          <div className="lg:hidden">
-            <Sheet>
-              <SheetTrigger asChild>
-                <button className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary text-[12px] text-foreground transition-colors">
-                  <History className="h-3.5 w-3.5" />
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => newConversation()}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 transition-colors shadow-xs"
+                  title="New Chat"
+                >
+                  <MessageSquarePlus className="h-3.5 w-3.5" /> New
                 </button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0 bg-card border-border flex flex-col overflow-hidden">
-                <div className="p-2.5 border-b border-border">
-                  <button onClick={() => { newConversation(); }}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-secondary hover:bg-secondary text-[13px] font-medium text-foreground transition-colors"
-                  >
-                    <MessageSquarePlus className="h-4 w-4 text-foreground" /> New chat
-                  </button>
-                </div>
-                <ScrollArea className="flex-1">
-                  <div className="p-2 space-y-0.5">
-                    {sortedConversations.length === 0 && (
-                      <div className="flex flex-col items-center gap-2 py-10 px-3 text-center">
-                        <MessageSquare className="h-7 w-7 text-muted-foreground opacity-60" />
-                        <p className="text-[11px] text-muted-foreground leading-relaxed">No conversations yet. Start a new chat.</p>
-                      </div>
-                    )}
-                    {sortedConversations.map(c => {
-                      const meta = convMeta[c.id] ?? {};
-                      return (
-                        <div key={c.id}
-                          onClick={() => setActiveId(c.id)}
-                          className={`flex items-center gap-2 px-2 py-2 rounded-xl cursor-pointer transition-colors ${
-                            activeId === c.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                          }`}
-                        >
-                          {meta.pinned && <Pin className="h-2.5 w-2.5 shrink-0 text-foreground" />}
-                          {meta.archived && !meta.pinned && <Archive className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
-                          {!meta.pinned && !meta.archived && <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-40" />}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] truncate leading-snug" title={c.title}>{c.title}</p>
-                            <p className="text-[9px] font-mono text-muted-foreground mt-0.5 capitalize">{c.mode || 'tutor'}</p>
+                <button
+                  onClick={() => setHistoryOpen(false)}
+                  className="p-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                  title="Close History Sidebar"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <ScrollArea className="flex-1 px-2 py-2">
+              <div ref={menuRef} className="space-y-1">
+                {sortedConversations.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 py-12 px-3 text-center">
+                    <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
+                    <p className="text-[12px] text-muted-foreground leading-relaxed">No chat history yet.<br/>Start a new NoteZ AI conversation.</p>
+                  </div>
+                )}
+                {sortedConversations.map(c => {
+                  const meta = convMeta[c.id] ?? {};
+                  const isMenuOpen = menuOpenId === c.id;
+                  const cleanTitle = c.title.replace(/^\[.*?\]\s*/, '') || c.title;
+
+                  return (
+                    <div key={c.id} className="relative">
+                      <div
+                        onClick={() => {
+                          if (!isMenuOpen) setActiveId(c.id);
+                        }}
+                        className={`group flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all ${
+                          activeId === c.id
+                            ? 'bg-primary/10 border border-primary/30 text-foreground font-medium shadow-xs'
+                            : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground border border-transparent'
+                        }`}
+                      >
+                        {meta.pinned ? (
+                          <Pin className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        ) : meta.archived ? (
+                          <Archive className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                        ) : (
+                          <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-80 transition-opacity" />
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] truncate leading-snug font-medium text-foreground/90" title={c.title}>
+                            {cleanTitle}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[9.5px] font-mono text-muted-foreground/80 capitalize">
+                              {c.mode || 'tutor'}
+                            </span>
+                            {c.updated_at && (
+                              <span className="text-[9px] text-muted-foreground/50 ml-auto font-mono">
+                                {format(new Date(c.updated_at), 'MMM d')}
+                              </span>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              </SheetContent>
-            </Sheet>
-          </div>
+
+                        <button
+                          onClick={e => { e.stopPropagation(); setMenuOpenId(isMenuOpen ? null : c.id); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"
+                          title="Options"
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Options menu */}
+                      <AnimatePresence>
+                        {isMenuOpen && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                            transition={{ duration: 0.1 }}
+                            className="absolute right-2 top-full mt-1 z-50 w-44 rounded-xl border border-border bg-card shadow-2xl p-1 overflow-hidden"
+                          >
+                            <button
+                              onClick={() => togglePin(c.id)}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-foreground hover:bg-secondary transition-colors"
+                            >
+                              {meta.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                              {meta.pinned ? 'Unpin' : 'Pin to top'}
+                            </button>
+                            <button
+                              onClick={() => toggleArchive(c.id)}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-foreground hover:bg-secondary transition-colors"
+                            >
+                              {meta.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                              {meta.archived ? 'Unarchive' : 'Archive'}
+                            </button>
+                            <div className="border-t border-border/60 my-1" />
+                            <button
+                              onClick={() => deleteConv(c.id)}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-destructive hover:bg-destructive/10 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </aside>
+        )}
+
+      {/* ══ Main NoteZ AI panel — seamless workspace theme ══ */}
+      <div className="flex-1 flex w-full min-w-0 flex-col overflow-hidden">
+
+        {/* ── Top bar — Chat History button + scope picker + mode selector ── */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60 min-h-[48px] flex-wrap bg-card/40">
+          
+          {/* Chat History toggle button */}
+          {!historyOpen && (
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-border/80 bg-secondary/80 hover:bg-secondary text-[12px] font-medium text-foreground transition-all shadow-xs"
+              title="Open Chat History"
+            >
+              <PanelLeft className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span>Chat History</span>
+            </button>
+          )}
+
           {/* Scope picker */}
           <div ref={scopeRef} className="relative">
             <button onClick={() => setScopeOpen(o => !o)}
@@ -624,7 +747,7 @@ export default function ChatView() {
               {scopeOpen && (
                 <motion.div initial={{ opacity: 0, y: -6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.96 }} transition={{ duration: 0.13 }}
-                  className="absolute top-full mt-2 left-0 z-50 w-64 rounded-2xl border border-border bg-secondary shadow-2xl overflow-hidden"
+                  className="absolute top-full mt-2 left-0 z-50 w-64 rounded-2xl border border-border bg-card shadow-2xl overflow-hidden"
                 >
                   <div className="border-b border-border px-4 py-3">
                     <p className="text-[12px] font-medium text-foreground">Ask this Folder</p>
@@ -651,7 +774,7 @@ export default function ChatView() {
             </AnimatePresence>
           </div>
 
-          {/* Active mode badge — monochrome */}
+          {/* Active mode badge */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-secondary text-[11px] text-muted-foreground">
             <activeMode.icon className="h-3.5 w-3.5 text-foreground" />
             <span className="font-medium text-foreground">{activeMode.label}</span>
@@ -729,7 +852,7 @@ export default function ChatView() {
         <div className="flex-1 overflow-hidden">
           <AnimatePresence mode="wait">
             {!inChat ? (
-              /* ════ HERO — single-view, no scroll ════ */
+              /* ════ HERO ════ */
               <motion.div key="hero" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -8 }}
                 className="h-full flex flex-col items-center justify-center px-3 sm:px-6 py-3 overflow-y-auto"
               >
@@ -750,29 +873,28 @@ export default function ChatView() {
                   </div>
                 </motion.div>
 
-                {/* Headline */}
                 <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
                   className="text-xl md:text-2xl font-bold text-center mb-1.5 tracking-tight shrink-0 text-foreground"
                 >
-                  How can we <span className="text-foreground italic">assist</span> you today?
+                  What can <span className="text-primary font-serif">NoteZ AI</span> help you learn today?
                 </motion.h2>
                 <motion.p initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}
                   className="text-[11px] text-muted-foreground text-center max-w-md mb-4 leading-relaxed shrink-0"
                 >
-                  AI agents for research, summarisation, analysis, mentoring and tutoring — pick a task card to begin.
+                  NoteZ AI intelligence — deep research, summarization, structural analysis, and step-by-step tutoring.
                 </motion.p>
 
-                {/* ── Agent cards — 4 in a row ── */}
+                {/* ── Agent cards ── */}
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }}
                   className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full max-w-3xl mb-4 shrink-0"
                 >
                   {AGENT_CARDS.map((card, i) => (
                     <motion.button key={card.id}
                       initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 + i * 0.05 }}
-                      whileHover={{ y: -2, boxShadow: '0 6px 24px hsl(var(--foreground) / 0.55)' }}
+                      whileHover={{ y: -2, boxShadow: '0 6px 24px hsl(var(--foreground) / 0.15)' }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => pickCard(card)}
-                      className={`group text-left p-3 rounded-xl border border-l-2 ${card.accent} border-border bg-secondary hover:border-border hover:bg-secondary transition-all`}
+                      className={`group text-left p-3 rounded-xl border border-l-2 ${card.accent} border-border bg-card hover:bg-secondary/70 transition-all`}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="w-7 h-7 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0">
@@ -812,7 +934,7 @@ export default function ChatView() {
                 </motion.div>
               </motion.div>
             ) : (
-              /* ════ MESSAGES — scrollable only after chat starts ════ */
+              /* ════ MESSAGES ════ */
               <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="h-full overflow-auto"
               >
@@ -828,8 +950,8 @@ export default function ChatView() {
           </AnimatePresence>
         </div>
 
-        {/* ── Composer — compact single-line ── */}
-        <div className="px-3 pb-3 pt-2 border-t border-border bg-secondary shrink-0">
+        {/* ── Composer — integrated dark UI ── */}
+        <div className="px-3 pb-3 pt-2 border-t border-border/60 bg-background/80 backdrop-blur-md shrink-0">
           <div ref={composerRef} className="max-w-3xl mx-auto relative">
 
             {/* Suggestions dropdown */}
@@ -840,53 +962,38 @@ export default function ChatView() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.97 }}
                   transition={{ duration: 0.14 }}
-                  className="absolute bottom-full mb-2 left-0 right-0 rounded-xl border border-border bg-secondary shadow-2xl overflow-hidden z-50"
+                  className="absolute bottom-full mb-2 left-0 right-0 rounded-2xl border border-border bg-card shadow-2xl overflow-hidden z-50 p-1"
                 >
-                  <div className="px-3 pt-2 pb-0.5 border-b border-border">
+                  <div className="px-3 pt-2 pb-1 border-b border-border/60">
                     <p className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Suggestions</p>
                   </div>
-                  {filteredSuggestions.map((s, i) => (
-                    <motion.button key={s}
-                      initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.025 }}
-                      onMouseDown={() => pickSuggestion(s)}
-                      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-secondary transition-colors group"
-                    >
-                      <Search className="h-3 w-3 text-muted-foreground group-hover:text-foreground shrink-0 transition-colors" />
-                      <span className="text-[11px] text-muted-foreground group-hover:text-foreground flex-1 transition-colors">{s}</span>
-                      <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </motion.button>
-                  ))}
+                  <div className="py-1">
+                    {filteredSuggestions.map((s, i) => (
+                      <motion.button key={s}
+                        initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.025 }}
+                        onMouseDown={() => pickSuggestion(s)}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left hover:bg-secondary transition-colors group"
+                      >
+                        <Search className="h-3 w-3 text-muted-foreground group-hover:text-foreground shrink-0 transition-colors" />
+                        <span className="text-[11px] text-muted-foreground group-hover:text-foreground flex-1 transition-colors">{s}</span>
+                        <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </motion.button>
+                    ))}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* ── Input bar — single row ── */}
-            <motion.div
-              animate={inputFocused
-                ? { scale: 1.008, boxShadow: '0 0 0 1.5px hsl(var(--foreground) / 0.2), 0 0 28px hsl(var(--foreground) / 0.05)' }
-                : { scale: 1, boxShadow: '0 0 0 1px hsl(var(--border))' }
-              }
-              transition={{ duration: 0.2 }}
-              className="relative flex items-center gap-2 px-3 py-2 rounded-xl bg-secondary"
-            >
-              {/* Focus top-line */}
-              <AnimatePresence>
-                {inputFocused && (
-                  <motion.div
-                    initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} exit={{ scaleX: 0 }}
-                    transition={{ duration: 0.28 }}
-                    className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[hsl(var(--foreground)/0.4)] to-transparent origin-left pointer-events-none rounded-t-xl"
-                  />
-                )}
-              </AnimatePresence>
+            {/* ── Input bar ── */}
+            <div className="relative flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-card border border-border/80 shadow-md focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
 
               {/* + Attach button */}
               <input ref={fileRef} type="file" className="hidden" accept={ACCEPT} onChange={e => handleFiles(e.target.files)} />
               <motion.button
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
-                whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 border border-border bg-secondary text-foreground hover:text-[hsl(var(--foreground))] hover:border-border hover:bg-secondary transition-all"
+                whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}
+                className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0 border border-border/80 bg-secondary/80 text-foreground hover:bg-secondary transition-all"
                 aria-label="Attach file — PDF, Word, PPT, PNG, JPEG"
                 title="Attach — PDF · Word · PPT · PNG · JPEG"
               >
@@ -897,13 +1004,13 @@ export default function ChatView() {
               <AnimatePresence>
                 {attached && (
                   <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border bg-secondary text-[10px] max-w-[130px] shrink-0"
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-border/80 bg-secondary/80 text-[10.5px] max-w-[140px] shrink-0"
                   >
-                    {attached.status === 'ready' ? <CheckCircle2 className="h-3 w-3 text-foreground shrink-0" />
+                    {attached.status === 'ready' ? <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
                       : attached.status === 'failed' ? <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
-                      : <Loader2 className="h-3 w-3 animate-spin text-foreground shrink-0" />}
-                    <span className="truncate text-muted-foreground">{attached.title}</span>
-                    <button onClick={() => setAttached(null)} className="hover:text-destructive p-0.5 rounded"><X className="h-2.5 w-2.5" /></button>
+                      : <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />}
+                    <span className="truncate text-foreground/90 font-medium">{attached.title}</span>
+                    <button onClick={() => setAttached(null)} className="hover:text-destructive p-0.5 rounded-md"><X className="h-3 w-3" /></button>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -927,13 +1034,13 @@ export default function ChatView() {
 
                 {/* Typewriter ghost — only show when not focused AND no input */}
                 {!input && !inputFocused && (
-                  <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[13px] text-muted-foreground">
+                  <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[13px] text-muted-foreground/70">
                     <span>{typewriterText}</span>
-                    <span className="inline-block w-[1.5px] h-[13px] bg-[hsl(var(--muted-foreground))] ml-[2px] align-middle animate-pulse" />
+                    <span className="inline-block w-[1.5px] h-[13px] bg-muted-foreground ml-[2px] align-middle animate-pulse" />
                   </div>
                 )}
                 {!input && inputFocused && (
-                  <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[13px] text-muted-foreground">
+                  <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[13px] text-muted-foreground/50">
                     Type your question…
                   </div>
                 )}
@@ -943,12 +1050,12 @@ export default function ChatView() {
               <motion.button
                 onClick={() => send()}
                 disabled={sending || !input.trim()}
-                whileHover={input.trim() && !sending ? { scale: 1.04 } : {}}
-                whileTap={input.trim() && !sending ? { scale: 0.94 } : {}}
-                className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-[12px] font-semibold shrink-0 transition-all select-none ${
+                whileHover={input.trim() && !sending ? { scale: 1.03 } : {}}
+                whileTap={input.trim() && !sending ? { scale: 0.96 } : {}}
+                className={`flex items-center gap-1.5 px-3.5 h-8 rounded-xl text-[12px] font-semibold shrink-0 transition-all select-none ${
                   input.trim() && !sending
-                    ? 'bg-[hsl(var(--foreground))] text-[hsl(var(--accent-foreground))] shadow-[0_1px_10px_hsl(var(--foreground)/0.25)]'
-                    : 'bg-secondary text-muted-foreground cursor-not-allowed'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
+                    : 'bg-secondary/60 text-muted-foreground/60 cursor-not-allowed border border-border/40'
                 }`}
               >
                 {sending
@@ -956,9 +1063,9 @@ export default function ChatView() {
                   : <><span>Send</span><ArrowRight className="h-3 w-3" /></>
                 }
               </motion.button>
-            </motion.div>
+            </div>
 
-            <p className="text-[9px] text-muted-foreground text-center mt-1.5 select-none hidden sm:block">
+            <p className="text-[9.5px] text-muted-foreground/60 text-center mt-2 select-none hidden sm:block font-mono">
               ↵ send · Shift+↵ newline · attach PDF · Word · PPT · PNG · JPEG
             </p>
           </div>
@@ -985,7 +1092,7 @@ function ThinkingIndicator({ stage }: { stage: ThinkingStage }) {
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
       className="flex items-center gap-2 py-1"
     >
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-secondary">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border/80 bg-card shadow-xs">
         {THINKING_STAGES.map((s, i) => {
           const isActive = s.stage === stage;
           const isPast   = THINKING_STAGES.findIndex(x => x.stage === stage) > i;
@@ -995,7 +1102,7 @@ function ThinkingIndicator({ stage }: { stage: ThinkingStage }) {
               transition={{ duration: 0.7, repeat: isActive ? Infinity : 0 }}
               className="flex items-center gap-1"
             >
-              <s.icon className={`h-3.5 w-3.5 transition-colors ${isPast ? 'text-[hsl(var(--notez-success))]' : isActive ? s.color : 'text-muted-foreground'}`} />
+              <s.icon className={`h-3.5 w-3.5 transition-colors ${isPast ? 'text-primary' : isActive ? s.color : 'text-muted-foreground'}`} />
               {isActive && <span className={`text-[10px] font-mono ${s.color}`}>{s.label}</span>}
             </motion.div>
           );
@@ -1005,7 +1112,7 @@ function ThinkingIndicator({ stage }: { stage: ThinkingStage }) {
             <motion.div key={i}
               animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.1, 0.8] }}
               transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.22 }}
-              className="w-1 h-1 rounded-full bg-[hsl(var(--muted-foreground))]"
+              className="w-1 h-1 rounded-full bg-muted-foreground"
             />
           ))}
         </div>
@@ -1028,64 +1135,75 @@ function Bubble({ message, streaming }: { message: ChatMessage; streaming?: bool
   const isUser   = message.role === 'user';
   const sections = parseStructured(message.content);
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}
+    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}
       tabIndex={0}
-      className={`group relative flex outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={`group relative flex w-full outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl ${isUser ? 'justify-end' : 'justify-start'}`}
     >
       {isUser ? (
-        <div className="max-w-[82%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[13px] bg-secondary border border-border text-foreground">
-          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-        </div>
-      ) : sections.hasStructure ? (
-        <div className="max-w-[88%] space-y-2">
-          {sections.answer && (
-            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl rounded-bl-sm px-4 py-3 bg-secondary border border-border"
-            >
-              <div className="flex items-center gap-1.5 mb-2">
-                <BookOpen className="h-3.5 w-3.5 text-foreground" />
-                <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-foreground">Answer</span>
-              </div>
-              <Markdown text={sections.answer + (streaming && !sections.material && !sections.nextActions ? ' ▍' : '')} />
-            </motion.div>
-          )}
-          {sections.material && (
-            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-              className="rounded-xl px-4 py-3 bg-secondary border border-border"
-            >
-              <div className="flex items-center gap-1.5 mb-2">
-                <FileText className="h-3.5 w-3.5 text-foreground" />
-                <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-foreground">Material Used</span>
-              </div>
-              <Markdown text={sections.material + (streaming && !sections.nextActions ? ' ▍' : '')} />
-            </motion.div>
-          )}
-          {sections.nextActions && (
-            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-              className="rounded-xl px-4 py-3 bg-secondary border border-border"
-            >
-              <div className="flex items-center gap-1.5 mb-2">
-                <ArrowRight className="h-3.5 w-3.5 text-foreground" />
-                <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-foreground">Next Actions</span>
-              </div>
-              <Markdown text={sections.nextActions + (streaming ? ' ▍' : '')} />
-            </motion.div>
-          )}
-          {!sections.answer && sections.raw && (
-            <div className="rounded-2xl rounded-bl-sm px-4 py-3 bg-secondary border border-border">
-              <Markdown text={sections.raw + (streaming ? ' ▍' : '')} />
-            </div>
-          )}
+        /* User Message Bubble */
+        <div className="max-w-[80%] rounded-2xl rounded-tr-xs px-4 py-3 bg-secondary/90 border border-border/80 text-foreground text-[13px] leading-relaxed shadow-xs">
+          <div className="flex items-center justify-between gap-2 mb-1 border-b border-border/40 pb-1">
+            <span className="text-[10px] font-mono text-muted-foreground/80 font-semibold uppercase tracking-wider">You</span>
+            {message.created_at && (
+              <span className="text-[9px] font-mono text-muted-foreground/50">
+                {format(new Date(message.created_at), 'h:mm a')}
+              </span>
+            )}
+          </div>
+          <p className="whitespace-pre-wrap">{message.content}</p>
         </div>
       ) : (
-        <div className="max-w-[88%] rounded-2xl rounded-bl-sm px-4 py-3 bg-secondary border border-border">
-          <Markdown text={message.content + (streaming ? ' ▍' : '')} />
+        /* Assistant Message Card */
+        <div className="max-w-[85%] rounded-2xl rounded-tl-xs px-4 py-3.5 bg-card border border-border/80 text-foreground text-[13px] leading-relaxed shadow-xs space-y-3">
+          <div className="flex items-center gap-2 text-[11px] font-semibold text-foreground pb-1 border-b border-border/40">
+            <div className="w-5 h-5 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Sparkles className="h-3 w-3 text-primary" />
+            </div>
+            <span className="font-serif">NoteZ AI</span>
+            {message.created_at && (
+              <span className="text-[9px] font-mono text-muted-foreground/50 font-normal ml-auto">
+                {format(new Date(message.created_at), 'h:mm a')}
+              </span>
+            )}
+          </div>
+
+          {sections.hasStructure ? (
+            <div className="space-y-3">
+              {sections.answer && (
+                <div className="rounded-xl px-3.5 py-2.5 bg-secondary/40 border border-border/60">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <BookOpen className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground font-semibold">Answer</span>
+                  </div>
+                  <Markdown text={sections.answer + (streaming && !sections.material && !sections.nextActions ? ' ▍' : '')} />
+                </div>
+              )}
+              {sections.material && (
+                <div className="rounded-xl px-3.5 py-2.5 bg-secondary/40 border border-border/60">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <FileText className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground font-semibold">Material Used</span>
+                  </div>
+                  <Markdown text={sections.material + (streaming && !sections.nextActions ? ' ▍' : '')} />
+                </div>
+              )}
+              {sections.nextActions && (
+                <div className="rounded-xl px-3.5 py-2.5 bg-secondary/40 border border-border/60">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground font-semibold">Next Actions</span>
+                  </div>
+                  <Markdown text={sections.nextActions + (streaming ? ' ▍' : '')} />
+                </div>
+              )}
+              {!sections.answer && sections.raw && (
+                <Markdown text={sections.raw + (streaming ? ' ▍' : '')} />
+              )}
+            </div>
+          ) : (
+            <Markdown text={message.content + (streaming ? ' ▍' : '')} />
+          )}
         </div>
-      )}
-      {message.created_at && (
-        <span className={`pointer-events-none absolute bottom-0 text-[10px] font-mono text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100 ${isUser ? 'right-full mr-2' : 'left-full ml-2'}`}>
-          {format(new Date(message.created_at), 'h:mm a')}
-        </span>
       )}
     </motion.div>
   );

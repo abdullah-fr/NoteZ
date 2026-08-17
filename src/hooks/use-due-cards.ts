@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchDueCount } from '@/services/flashcard.service';
 
 /**
  * Returns the count of flashcards due right now for the given user.
@@ -13,12 +14,8 @@ export function useDueCardsCount(userId: string | undefined): number {
     if (!userId) return;
 
     async function fetch() {
-      const { count: c } = await supabase
-        .from('flashcards')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId!)
-        .lte('due_at', new Date().toISOString());
-      setCount(c ?? 0);
+      const c = await fetchDueCount(userId!);
+      setCount(c);
     }
 
     fetch();

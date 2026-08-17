@@ -115,6 +115,11 @@ const GEMINI_ACTIVITIES_API_KEY =
   import.meta.env.GEMINI_ACTIVITIES_API_KEY ||
   '';
 
+export function cleanTaskLabel(label: string): string {
+  if (!label) return '';
+  return label.replace(/^(step|task|\d+)\s*\d*[:.-]\s*/i, '').trim();
+}
+
 export async function generateActivitiesFromDoc(
   documentText: string,
   fileName?: string,
@@ -130,8 +135,8 @@ ${documentText.slice(0, 16000)}
 
 CRITICAL INSTRUCTIONS:
 1. Extract and auto-generate structured Activity packages specifically for assignments, projects, concepts, or presentations found in the document.
-2. For EACH activity package, assign detailed, step-by-step checklist tasks covering ALL file content requirements specifically.
-3. Make sure the user can focus on each activity step by step to complete the whole task/project inside the document.
+2. For EACH activity package, assign detailed actionable checklist tasks covering ALL file content requirements specifically.
+3. DO NOT prefix tasks with "Step 1:", "Step 2:", or "Task 1:". Output direct, clear action labels.
 
 Return ONLY a valid JSON array matching this structure with no markdown or wrappers:
 [
@@ -140,9 +145,9 @@ Return ONLY a valid JSON array matching this structure with no markdown or wrapp
     "subject": "Subject Name",
     "description": "Clear overview of requirements from document",
     "tasks": [
-      "Step 1: Specific requirement...",
-      "Step 2: Specific requirement...",
-      "Step 3: Specific requirement..."
+      "Conduct literature review on current state...",
+      "Identify core ethical challenges...",
+      "Analyze case studies..."
     ]
   }
 ]`;
@@ -172,7 +177,7 @@ Return ONLY a valid JSON array matching this structure with no markdown or wrapp
             title: d.title || 'Activity Package',
             subject: d.subject || 'General',
             description: d.description || 'Document requirements breakdown',
-            tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean) : ['Review document requirements'],
+            tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean).map(cleanTaskLabel) : ['Review document requirements'],
           }));
         }
       }
@@ -219,7 +224,7 @@ Return ONLY a valid JSON array matching this structure with no markdown or wrapp
           title: d.title || 'Activity Package',
           subject: d.subject || 'General',
           description: d.description || 'Document requirements breakdown',
-          tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean) : ['Review document requirements'],
+          tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean).map(cleanTaskLabel) : ['Review document requirements'],
         }));
       }
     } catch {

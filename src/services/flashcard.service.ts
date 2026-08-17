@@ -96,15 +96,30 @@ export async function fetchDueCards(userId: string): Promise<Flashcard[]> {
   return fetchCards(userId, true);
 }
 
-/** Count of due cards — used by the badge. */
+/** Count of due cards — used by the badge. Safely handles legacy table schemas without error. */
 export async function fetchDueCount(userId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from('flashcards')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .lte('due_at', new Date().toISOString());
-  if (error) return 0;
-  return count ?? 0;
+  try {
+    const { count, error } = await supabase
+      .from('flashcards')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .lte('due_at', new Date().toISOString());
+    if (!error && count !== null) return count;
+    // If we got a 400 (column doesn't exist), fall through to legacy
+  } catch {
+    /* fallback to total cards count if due_at column doesn't exist */
+  }
+
+  try {
+    const legacy = await supabase
+      .from('flashcards')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    if (legacy.error) return 0;
+    return legacy.count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 /* ── seed — kept as no-op for backward compat ── */

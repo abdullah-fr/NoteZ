@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { generateExamWithGemini, saveExamResult, createActivity, addChecklistItems, type ExamQuestion } from '@/services';
+import { generateExamWithGemini, saveExamResult, type ExamQuestion } from '@/services';
 import { toast } from 'sonner';
 import { useUpgradeModal, parseLimitError } from '@/hooks/use-upgrade-modal';
 import UpgradeModal from '@/components/dashboard/UpgradeModal';
@@ -381,29 +381,6 @@ export default function ExamQuizView() {
           difficulty,
           questions,
         });
-
-        const wrongIndices = answers
-          .map((a, i) => (a && !a.correct ? i : null))
-          .filter((i): i is number => i !== null);
-        if (wrongIndices.length >= 2) {
-          const weakTopics = wrongIndices.slice(0, 5).map(i => {
-            const q = questions[i];
-            return q ? q.question.slice(0, 120) : null;
-          }).filter(Boolean) as string[];
-
-          createActivity(user.id, {
-            title: `Review: ${targetSubject} (Weak Areas)`,
-            subject: targetSubject || null,
-            description: `Auto-generated from exam — ${wrongIndices.length} questions need review`,
-          }).then(act => {
-            addChecklistItems(weakTopics.map((label, idx) => ({
-              activity_id: act.id,
-              user_id: user.id,
-              label: `Review concept: ${label}`,
-              position: idx,
-            })));
-          }).catch(() => {/* silent */});
-        }
       }
     }
   };
@@ -433,19 +410,8 @@ export default function ExamQuizView() {
   /* ────────────────── SETUP SCREEN ────────────────── */
   if (questions.length === 0 && !loading) {
     return (
-      <div className="max-w-3xl mx-auto py-2 flex flex-col justify-center px-1">
-        {/* Top Header matching Image 2 */}
-        <div className="text-center mb-5 shrink-0">
-          <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-secondary/60 border border-border/80 text-foreground mb-3 shadow-xs">
-            <BookOpen className="h-6 w-6 text-foreground" />
-          </div>
-          <h2 className="font-serif text-2xl md:text-3xl font-bold tracking-tight text-foreground">
-            Exam Mode
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto leading-relaxed font-medium">
-            Create personalized practice tests or simulate real exam conditions from your notes and topics.
-          </p>
-        </div>
+      <div className="max-w-3xl mx-auto flex flex-col justify-center px-1 min-h-[calc(100vh-12rem)]">
+
 
         {/* Setup Card Container matching Image 2 */}
         <motion.div

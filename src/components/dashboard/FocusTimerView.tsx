@@ -279,31 +279,31 @@ function PomodoroTimer() {
       </div>
 
       {/* Ring */}
-      <div className="relative shrink-0">
-        <Ring progress={progress} size={200} stroke={10} color={phaseColor} />
+      <div className="relative shrink-0 my-1">
+        <Ring progress={progress} size={150} stroke={8} color={phaseColor} />
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           {isCompleted ? (
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex flex-col items-center gap-1">
               {phase === 'focus' ? (
                 <>
-                  <Check className="h-10 w-10 text-notez-success" />
-                  <span className="text-[13px] font-medium text-notez-success">{t('timer.sessionDone')}</span>
+                  <Check className="h-8 w-8 text-notez-success" />
+                  <span className="text-[12px] font-medium text-notez-success">{t('timer.sessionDone')}</span>
                 </>
               ) : (
                 <>
-                  <Coffee className="h-10 w-10 text-emerald-500" />
-                  <span className="text-[13px] font-medium text-emerald-500">{t('timer.breakTime')}</span>
+                  <Coffee className="h-8 w-8 text-emerald-500" />
+                  <span className="text-[12px] font-medium text-emerald-500">{t('timer.breakTime')}</span>
                 </>
               )}
             </motion.div>
           ) : (
             <>
               <motion.span key={timeLeft} initial={{ scale: 1.08, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                className="text-[42px] font-bold font-mono tracking-tight text-foreground leading-none"
+                className="text-[34px] font-bold font-mono tracking-tight text-foreground leading-none"
               >
                 {fmt(timeLeft)}
               </motion.span>
-              <span className="text-[11px] text-muted-foreground mt-1 font-mono">
+              <span className="text-[10px] text-muted-foreground mt-0.5 font-mono">
                 {isRunning ? (phase === 'focus' ? t('timer.focusing') : '☕ Break…') : phaseLabel}
               </span>
             </>
@@ -312,11 +312,11 @@ function PomodoroTimer() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 my-1">
         {!isRunning ? (
           <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleStart}
-            className="w-14 h-14 rounded-full flex items-center justify-center transition-colors"
-            style={{ backgroundColor: phaseColor, boxShadow: `0 0 20px ${phaseColor}40` }}
+            className="w-11 h-11 rounded-full flex items-center justify-center transition-colors"
+            style={{ backgroundColor: phaseColor, boxShadow: `0 0 16px ${phaseColor}40` }}
           >
             <Play className="h-6 w-6 text-white ml-0.5" fill="white" />
           </motion.button>
@@ -417,6 +417,33 @@ function PomodoroTimer() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Pomodoro Technique Explanation Card ── */}
+      <div className="w-full mt-4 pt-4 border-t border-border/80">
+        <div className="rounded-2xl border border-border bg-background/50 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🍅</span>
+            <div>
+              <h4 className="text-[13px] font-semibold text-foreground">What is the Pomodoro Technique?</h4>
+              <p className="text-[11px] text-muted-foreground">A proven time-management method designed for maximum focus and brain efficiency.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+            <div className="rounded-xl border border-border bg-secondary/60 p-2.5 space-y-1">
+              <span className="font-semibold text-foreground flex items-center gap-1">1. Deep Focus</span>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">Work intensely for 25 minutes on a single task without any phone or tab switching.</p>
+            </div>
+            <div className="rounded-xl border border-border bg-secondary/60 p-2.5 space-y-1">
+              <span className="font-semibold text-emerald-400 flex items-center gap-1">2. Short Break</span>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">Rest for 5 minutes. Stretch, hydrate, and clear your mind before the next sprint.</p>
+            </div>
+            <div className="rounded-xl border border-border bg-secondary/60 p-2.5 space-y-1">
+              <span className="font-semibold text-primary flex items-center gap-1">3. Long Recharge</span>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">After completing 4 focus cycles, take a 15–30 min break to keep your mind sharp.</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -892,7 +919,7 @@ function ExamTimer() {
    MAIN EXPORT — tabbed shell
 ══════════════════════════════════════════════════════════════ */
 const TABS: { id: Tab; label: string; icon: any; color: string; descKey: string }[] = [
-  { id: 'focus', label: 'Pomodoro', icon: Brain, color: 'hsl(var(--timer-purple))', descKey: 'timer.deepLearning' },
+  { id: 'focus', label: 'Pomodoro Focus', icon: Brain, color: 'hsl(var(--timer-purple))', descKey: 'timer.deepLearning' },
   { id: 'task', label: 'Task Timer', icon: ListChecks, color: 'hsl(var(--timer-purple))', descKey: 'timer.shortSprints' },
   { id: 'exam', label: 'Exam Timer', icon: GraduationCap, color: 'hsl(var(--timer-purple))', descKey: 'timer.examCountdown' },
 ];
@@ -903,23 +930,23 @@ export default function FocusTimerView() {
   const activeTab = TABS.find(t => t.id === active)!;
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto space-y-3 min-h-[calc(100vh-12rem)] flex flex-col justify-center">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'hsl(var(--timer-purple) / 0.12)', border: '1px solid hsl(var(--timer-purple) / 0.24)' }}>
-          <activeTab.icon className="h-5 w-5" style={{ color: activeTab.color }} />
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'hsl(var(--timer-purple) / 0.12)', border: '1px solid hsl(var(--timer-purple) / 0.24)' }}>
+          <activeTab.icon className="h-4 w-4" style={{ color: activeTab.color }} />
         </div>
         <div>
-          <h2 className="font-serif text-2xl tracking-tight leading-none">{activeTab.label}</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{t(activeTab.descKey)}</p>
+          <h2 className="font-serif text-xl tracking-tight leading-none">{activeTab.label}</h2>
+          <p className="text-[10.5px] text-muted-foreground mt-0.5">{t(activeTab.descKey)}</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-2xl bg-secondary border border-border mb-6">
+      <div className="flex gap-1 p-1 rounded-2xl bg-secondary border border-border">
         {TABS.map(tab => (
           <motion.button key={tab.id} onClick={() => setActive(tab.id)}
-            className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[12px] font-medium transition-all ${active === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[12px] font-medium transition-all ${active === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             {active === tab.id && (
@@ -928,7 +955,7 @@ export default function FocusTimerView() {
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               />
             )}
-            <tab.icon className="h-4 w-4 relative z-10 shrink-0" style={{ color: active === tab.id ? tab.color : undefined }} />
+            <tab.icon className="h-3.5 w-3.5 relative z-10 shrink-0" style={{ color: active === tab.id ? tab.color : undefined }} />
             <span className="relative z-10 hidden sm:block">{tab.label}</span>
             <span className="relative z-10 sm:hidden text-[11px]">{tab.label.split(' ')[0]}</span>
           </motion.button>
@@ -936,11 +963,11 @@ export default function FocusTimerView() {
       </div>
 
       {/* Tab content */}
-      <div className="rounded-2xl border border-border bg-secondary p-5">
+      <div className="rounded-2xl border border-border bg-secondary p-3.5">
         <AnimatePresence mode="wait">
           <motion.div key={active}
-            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}
+            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}
           >
             {active === 'focus' && <PomodoroTimer />}
             {active === 'task' && <TaskTimer />}
