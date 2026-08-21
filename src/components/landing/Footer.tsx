@@ -27,7 +27,7 @@ export function Footer() {
           <div className="col-span-2">
             <Link to="/" className="inline-flex items-center gap-2.5 mb-4">
               <div className="w-8 h-8 rounded-lg bg-gradient-purple flex items-center justify-center">
-                <Sparkles className="h-4.5 w-4.5 text-primary-foreground" />
+                <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
               <span className="font-display text-xl font-bold tracking-tight">NoteZ</span>
             </Link>

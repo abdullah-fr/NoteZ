@@ -221,13 +221,13 @@ export default function CalendarView() {
                   onClick={() => { setSelected(day); setShowForm(false); setPickerOpen(false); }}
                   className={`h-9 rounded-xl flex flex-col items-center justify-center relative transition-all ${
                     isSel
-                      ? "bg-[hsl(var(--foreground))] text-[hsl(var(--accent-foreground))]"
+                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                       : isNow
-                      ? "bg-secondary border border-[hsl(var(--foreground)/0.5)] text-foreground"
+                      ? "bg-secondary border border-primary/50 text-foreground font-medium"
                       : "hover:bg-secondary text-foreground"
-                  } ${!inMonth ? "opacity-25" : ""}`}
+                  } ${!inMonth ? "opacity-30" : ""}`}
                 >
-                  <span className={`text-[12px] font-medium leading-none ${isSel ? "text-[hsl(var(--accent-foreground))]" : ""}`}>
+                  <span className={`text-[12px] leading-none ${isSel ? "text-primary-foreground font-semibold" : ""}`}>
                     {format(day, "d")}
                   </span>
                   {dots.length > 0 && (

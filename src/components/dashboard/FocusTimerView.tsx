@@ -238,208 +238,230 @@ function PomodoroTimer() {
   const phaseLabel = phase === 'focus' ? t('timer.focus') : phase === 'shortBreak' ? t('timer.shortBreak') : t('timer.longBreak');
 
   return (
-    <div className="flex flex-col items-center gap-5 max-w-sm mx-auto pt-2">
-      {/* Phase selector pills */}
-      <div className="flex gap-1 p-1 rounded-xl bg-background border border-border w-full">
-        {(['focus', 'shortBreak', 'longBreak'] as PomodoroPhase[]).map(p => (
-          <button
-            key={p}
-            onClick={() => { if (!isRunning) startPhase(p); }}
-            disabled={isRunning}
-            className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all disabled:cursor-not-allowed ${
-              phase === p
-                ? 'text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            style={phase === p ? { backgroundColor: PHASE_COLORS[p] } : undefined}
-          >
-            {p === 'focus' ? `🎯 ${t('timer.focus')}` : p === 'shortBreak' ? `☕ ${t('timer.shortBreak')}` : `🌿 ${t('timer.longBreak')}`}
-          </button>
-        ))}
-      </div>
-
-      {/* Cycle indicator */}
-      <div className="flex items-center gap-2">
-        {Array.from({ length: cyclesPerLong }).map((_, i) => (
-          <div
-            key={i}
-            className={`w-2.5 h-2.5 rounded-full transition-all ${
-              i < currentCycle - (phase === 'focus' && !isCompleted ? 1 : 0)
-                ? 'bg-emerald-500'
-                : i === currentCycle - 1 && phase === 'focus'
-                ? `animate-pulse`
-                : 'bg-border'
-            }`}
-            style={i === currentCycle - 1 && phase === 'focus' ? { backgroundColor: phaseColor } : undefined}
-          />
-        ))}
-        <span className="text-[10px] font-mono text-muted-foreground ml-1">
-          {t('timer.cycleOf', { current: currentCycle, total: cyclesPerLong })}
-        </span>
-      </div>
-
-      {/* Ring */}
-      <div className="relative shrink-0 my-1">
-        <Ring progress={progress} size={150} stroke={8} color={phaseColor} />
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          {isCompleted ? (
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex flex-col items-center gap-1">
-              {phase === 'focus' ? (
-                <>
-                  <Check className="h-8 w-8 text-notez-success" />
-                  <span className="text-[12px] font-medium text-notez-success">{t('timer.sessionDone')}</span>
-                </>
-              ) : (
-                <>
-                  <Coffee className="h-8 w-8 text-emerald-500" />
-                  <span className="text-[12px] font-medium text-emerald-500">{t('timer.breakTime')}</span>
-                </>
-              )}
-            </motion.div>
-          ) : (
-            <>
-              <motion.span key={timeLeft} initial={{ scale: 1.08, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                className="text-[34px] font-bold font-mono tracking-tight text-foreground leading-none"
-              >
-                {fmt(timeLeft)}
-              </motion.span>
-              <span className="text-[10px] text-muted-foreground mt-0.5 font-mono">
-                {isRunning ? (phase === 'focus' ? t('timer.focusing') : '☕ Break…') : phaseLabel}
-              </span>
-            </>
-          )}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* ── Left Column: Timer & Controls ── */}
+      <div className="lg:col-span-6 flex flex-col items-center gap-3.5 p-4 sm:p-5 rounded-2xl bg-card/70 border border-border/80 shadow-md">
+        {/* Phase selector pills */}
+        <div className="flex gap-1 p-1 rounded-xl bg-background border border-border w-full">
+          {(['focus', 'shortBreak', 'longBreak'] as PomodoroPhase[]).map(p => (
+            <button
+              key={p}
+              onClick={() => { if (!isRunning) startPhase(p); }}
+              disabled={isRunning}
+              className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all disabled:cursor-not-allowed ${
+                phase === p
+                  ? 'text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              style={phase === p ? { backgroundColor: PHASE_COLORS[p] } : undefined}
+            >
+              {p === 'focus' ? `🎯 ${t('timer.focus')}` : p === 'shortBreak' ? `☕ ${t('timer.shortBreak')}` : `🌿 ${t('timer.longBreak')}`}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-2.5 my-1">
-        {!isRunning ? (
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleStart}
-            className="w-11 h-11 rounded-full flex items-center justify-center transition-colors"
-            style={{ backgroundColor: phaseColor, boxShadow: `0 0 16px ${phaseColor}40` }}
-          >
-            <Play className="h-6 w-6 text-white ml-0.5" fill="white" />
-          </motion.button>
-        ) : (
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handlePause}
-            className="w-14 h-14 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
-          >
-            <Pause className="h-6 w-6 text-foreground" fill="currentColor" />
-          </motion.button>
-        )}
-        <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleReset}
-          className="w-12 h-12 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
-        >
-          <RotateCcw className="text-muted-foreground" style={{ width: 18, height: 18 }} />
-        </motion.button>
-        <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleSkip}
-          title="Skip to next phase"
-          className="w-12 h-12 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
-        >
-          <SkipForward className="text-muted-foreground" style={{ width: 18, height: 18 }} />
-        </motion.button>
-      </div>
-
-      {/* Stats row */}
-      <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <div className={`w-2 h-2 rounded-full ${isRunning ? 'animate-pulse' : 'bg-secondary'}`}
-            style={isRunning ? { backgroundColor: phaseColor } : undefined} />
-          <span>{isRunning ? phaseLabel : isCompleted ? t('timer.sessionDone') : t('timer.ready')}</span>
-        </div>
-        {totalSessions > 0 && (
-          <span className="px-2 py-0.5 rounded-md bg-secondary border border-border" style={{ color: phaseColor }}>
-            {totalSessions} done
+        {/* Cycle indicator */}
+        <div className="flex items-center gap-2">
+          {Array.from({ length: cyclesPerLong }).map((_, i) => (
+            <div
+              key={i}
+              className={`w-2.5 h-2.5 rounded-full transition-all ${
+                i < currentCycle - (phase === 'focus' && !isCompleted ? 1 : 0)
+                  ? 'bg-emerald-500'
+                  : i === currentCycle - 1 && phase === 'focus'
+                  ? `animate-pulse`
+                  : 'bg-border'
+              }`}
+              style={i === currentCycle - 1 && phase === 'focus' ? { backgroundColor: phaseColor } : undefined}
+            />
+          ))}
+          <span className="text-[10.5px] font-mono text-muted-foreground ml-1">
+            {t('timer.cycleOf', { current: currentCycle, total: cyclesPerLong })}
           </span>
-        )}
+        </div>
+
+        {/* Ring Timer */}
+        <div className="relative shrink-0 my-0.5">
+          <Ring progress={progress} size={156} stroke={8} color={phaseColor} />
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            {isCompleted ? (
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex flex-col items-center gap-1">
+                {phase === 'focus' ? (
+                  <>
+                    <Check className="h-8 w-8 text-notez-success" />
+                    <span className="text-[12px] font-medium text-notez-success">{t('timer.sessionDone')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Coffee className="h-8 w-8 text-emerald-500" />
+                    <span className="text-[12px] font-medium text-emerald-500">{t('timer.breakTime')}</span>
+                  </>
+                )}
+              </motion.div>
+            ) : (
+              <>
+                <motion.span key={timeLeft} initial={{ scale: 1.08, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                  className="text-[34px] font-bold font-mono tracking-tight text-foreground leading-none"
+                >
+                  {fmt(timeLeft)}
+                </motion.span>
+                <span className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+                  {isRunning ? (phase === 'focus' ? t('timer.focusing') : '☕ Break…') : phaseLabel}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center gap-2.5 my-0.5">
+          {!isRunning ? (
+            <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleStart}
+              className="w-12 h-12 rounded-full flex items-center justify-center transition-colors"
+              style={{ backgroundColor: phaseColor, boxShadow: `0 0 16px ${phaseColor}40` }}
+            >
+              <Play className="h-5 w-5 text-white ml-0.5" fill="white" />
+            </motion.button>
+          ) : (
+            <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handlePause}
+              className="w-12 h-12 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
+            >
+              <Pause className="h-5 w-5 text-foreground" fill="currentColor" />
+            </motion.button>
+          )}
+          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleReset}
+            className="w-10 h-10 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
+          >
+            <RotateCcw className="text-muted-foreground" style={{ width: 16, height: 16 }} />
+          </motion.button>
+          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={handleSkip}
+            title="Skip to next phase"
+            className="w-10 h-10 rounded-full border border-border bg-secondary flex items-center justify-center hover:bg-secondary transition-colors"
+          >
+            <SkipForward className="text-muted-foreground" style={{ width: 16, height: 16 }} />
+          </motion.button>
+        </div>
+
+        {/* Status & Settings Toggle */}
+        <div className="flex items-center justify-between w-full pt-2 border-t border-border/70 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${isRunning ? 'animate-pulse' : 'bg-secondary'}`}
+              style={isRunning ? { backgroundColor: phaseColor } : undefined} />
+            <span>{isRunning ? phaseLabel : isCompleted ? t('timer.sessionDone') : t('timer.ready')}</span>
+          </div>
+
+          <button
+            onClick={() => setShowSettings(s => !s)}
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors font-medium"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            <span>{showSettings ? 'Hide Settings' : 'Settings'}</span>
+          </button>
+        </div>
+
+        {/* Collapsible Settings */}
+        <AnimatePresence>
+          {showSettings && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="w-full overflow-hidden"
+            >
+              <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl border border-border bg-background mt-2">
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-mono text-muted-foreground uppercase tracking-wider">Focus (min)</label>
+                  <input type="number" min={1} max={120} value={focusMins}
+                    onChange={e => setFocusMins(Math.max(1, +e.target.value))}
+                    disabled={isRunning}
+                    className="w-full bg-secondary border border-border rounded-lg px-2 py-1 text-[11.5px] text-foreground text-center outline-none disabled:opacity-40"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-mono text-muted-foreground uppercase tracking-wider">Short Break</label>
+                  <input type="number" min={1} max={30} value={shortBreakMins}
+                    onChange={e => setShortBreakMins(Math.max(1, +e.target.value))}
+                    disabled={isRunning}
+                    className="w-full bg-secondary border border-border rounded-lg px-2 py-1 text-[11.5px] text-foreground text-center outline-none disabled:opacity-40"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-mono text-muted-foreground uppercase tracking-wider">Long Break</label>
+                  <input type="number" min={1} max={60} value={longBreakMins}
+                    onChange={e => setLongBreakMins(Math.max(1, +e.target.value))}
+                    disabled={isRunning}
+                    className="w-full bg-secondary border border-border rounded-lg px-2 py-1 text-[11.5px] text-foreground text-center outline-none disabled:opacity-40"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-mono text-muted-foreground uppercase tracking-wider">Cycles</label>
+                  <input type="number" min={1} max={10} value={cyclesPerLong}
+                    onChange={e => setCyclesPerLong(Math.max(1, +e.target.value))}
+                    disabled={isRunning}
+                    className="w-full bg-secondary border border-border rounded-lg px-2 py-1 text-[11.5px] text-foreground text-center outline-none disabled:opacity-40"
+                  />
+                </div>
+                <div className="col-span-2 flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => setAutoTransition(a => !a)}
+                    className={`relative w-8 h-4 rounded-full transition-colors ${autoTransition ? 'bg-emerald-500' : 'bg-border'}`}
+                  >
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${autoTransition ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </button>
+                  <span className="text-[10.5px] text-muted-foreground">Auto-transition to next phase</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Settings toggle */}
-      <button
-        onClick={() => setShowSettings(s => !s)}
-        className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <Settings2 className="h-3.5 w-3.5" />
-        Settings
-      </button>
+      {/* ── Right Column: Session Overview & Technique Guide ── */}
+      <div className="lg:col-span-6 space-y-3.5">
+        {/* Session Stats Card */}
+        <div className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-3 shadow-sm">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Zap className="h-3.5 w-3.5 text-primary" /> Session Performance
+          </h4>
 
-      <AnimatePresence>
-        {showSettings && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="w-full overflow-hidden"
-          >
-            <div className="grid grid-cols-2 gap-3 p-4 rounded-xl border border-border bg-background">
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Focus (min)</label>
-                <input type="number" min={1} max={120} value={focusMins}
-                  onChange={e => setFocusMins(Math.max(1, +e.target.value))}
-                  disabled={isRunning}
-                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Short Break</label>
-                <input type="number" min={1} max={30} value={shortBreakMins}
-                  onChange={e => setShortBreakMins(Math.max(1, +e.target.value))}
-                  disabled={isRunning}
-                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Long Break</label>
-                <input type="number" min={1} max={60} value={longBreakMins}
-                  onChange={e => setLongBreakMins(Math.max(1, +e.target.value))}
-                  disabled={isRunning}
-                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Cycles</label>
-                <input type="number" min={1} max={10} value={cyclesPerLong}
-                  onChange={e => setCyclesPerLong(Math.max(1, +e.target.value))}
-                  disabled={isRunning}
-                  className="w-full bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-foreground text-center outline-none disabled:opacity-40"
-                />
-              </div>
-              <div className="col-span-2 flex items-center gap-2">
-                <button
-                  onClick={() => setAutoTransition(a => !a)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${autoTransition ? 'bg-emerald-500' : 'bg-border'}`}
-                >
-                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${autoTransition ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                </button>
-                <span className="text-[11px] text-muted-foreground">Auto-transition to next phase</span>
-              </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2.5 rounded-xl border border-border/70 bg-secondary/40">
+              <p className="text-[10px] font-mono text-muted-foreground uppercase">Current Target</p>
+              <p className="text-xs font-semibold text-foreground mt-0.5">
+                {focusMins}m Focus · {shortBreakMins}m Break
+              </p>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="p-2.5 rounded-xl border border-border/70 bg-secondary/40">
+              <p className="text-[10px] font-mono text-muted-foreground uppercase">Completed Sprints</p>
+              <p className="text-xs font-bold text-foreground font-mono mt-0.5" style={{ color: phaseColor }}>
+                {totalSessions} {totalSessions === 1 ? 'Session' : 'Sessions'}
+              </p>
+            </div>
+          </div>
+        </div>
 
-      {/* ── Pomodoro Technique Explanation Card ── */}
-      <div className="w-full mt-4 pt-4 border-t border-border/80">
-        <div className="rounded-2xl border border-border bg-background/50 p-4 space-y-3">
+        {/* ── Pomodoro Technique Explanation Card ── */}
+        <div className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-2.5 shadow-sm">
           <div className="flex items-center gap-2">
             <span className="text-base">🍅</span>
             <div>
-              <h4 className="text-[13px] font-semibold text-foreground">What is the Pomodoro Technique?</h4>
-              <p className="text-[11px] text-muted-foreground">A proven time-management method designed for maximum focus and brain efficiency.</p>
+              <h4 className="text-[12.5px] font-semibold text-foreground">The Pomodoro Method</h4>
+              <p className="text-[10.5px] text-muted-foreground">Maximize deep retention while preventing cognitive burnout.</p>
             </div>
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
-            <div className="rounded-xl border border-border bg-secondary/60 p-2.5 space-y-1">
-              <span className="font-semibold text-foreground flex items-center gap-1">1. Deep Focus</span>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">Work intensely for 25 minutes on a single task without any phone or tab switching.</p>
+            <div className="rounded-xl border border-border/70 bg-secondary/50 p-2.5 space-y-1">
+              <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">1. Deep Focus</span>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">Work intensely for 25 mins on a single topic without multitasking.</p>
             </div>
-            <div className="rounded-xl border border-border bg-secondary/60 p-2.5 space-y-1">
-              <span className="font-semibold text-emerald-400 flex items-center gap-1">2. Short Break</span>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">Rest for 5 minutes. Stretch, hydrate, and clear your mind before the next sprint.</p>
+            <div className="rounded-xl border border-border/70 bg-secondary/50 p-2.5 space-y-1">
+              <span className="font-semibold text-emerald-400 flex items-center gap-1 text-[11px]">2. Short Rest</span>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">Take 5 minutes to stretch, drink water, and clear mental fatigue.</p>
             </div>
-            <div className="rounded-xl border border-border bg-secondary/60 p-2.5 space-y-1">
-              <span className="font-semibold text-primary flex items-center gap-1">3. Long Recharge</span>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">After completing 4 focus cycles, take a 15–30 min break to keep your mind sharp.</p>
+            <div className="rounded-xl border border-border/70 bg-secondary/50 p-2.5 space-y-1">
+              <span className="font-semibold text-primary flex items-center gap-1 text-[11px]">3. Recharge</span>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">After 4 cycles, take a 15–30 min deep rest to consolidate learning.</p>
             </div>
           </div>
         </div>
@@ -930,9 +952,9 @@ export default function FocusTimerView() {
   const activeTab = TABS.find(t => t.id === active)!;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-3 min-h-[calc(100vh-12rem)] flex flex-col justify-center">
+    <div className="w-full max-w-5xl mx-auto space-y-4 pb-4">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pt-1">
         <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'hsl(var(--timer-purple) / 0.12)', border: '1px solid hsl(var(--timer-purple) / 0.24)' }}>
           <activeTab.icon className="h-4 w-4" style={{ color: activeTab.color }} />
         </div>

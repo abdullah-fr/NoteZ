@@ -158,18 +158,6 @@ export default function Dashboard() {
       setSelectedFolderId(null);
       setFolderResetKey(key => key + 1);
     }
-    // Auto-collapse main sidebar & open chat history when entering chat
-    if (view === 'chat' && activeView !== 'chat') {
-      setPreChatSidebarOpen(sidebarOpen);
-      setSidebarOpen(false);
-      // Open chat history sidebar after a tick so ChatView is mounted
-      setTimeout(() => window.dispatchEvent(new CustomEvent('notez:open-chat-history')), 80);
-    }
-    // Restore sidebar when leaving chat
-    if (view !== 'chat' && activeView === 'chat' && preChatSidebarOpen !== null) {
-      setSidebarOpen(preChatSidebarOpen);
-      setPreChatSidebarOpen(null);
-    }
     setActiveView(view);
   };
 
@@ -190,7 +178,7 @@ export default function Dashboard() {
           />
         );
       case "chat":
-        return <ChatView sidebarOpen={sidebarOpen} onToggleSidebar={() => window.dispatchEvent(new CustomEvent('notez:open-chat-history'))} />;
+        return <ChatView />;
       case "folder":
         return (
           <FolderView
@@ -553,7 +541,7 @@ export default function Dashboard() {
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden paper-texture min-w-0">
-          <div className={activeView === 'folder' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
+          <div className={activeView === 'folder' || activeView === 'chat' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
             <motion.div
               key={activeView}
               initial={{ opacity: 0, y: 4 }}
