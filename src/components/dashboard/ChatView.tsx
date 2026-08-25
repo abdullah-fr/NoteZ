@@ -12,6 +12,7 @@ import {
 } from '@/services';
 import { toast } from '@/hooks/use-toast';
 import { useUpgradeModal } from '@/hooks/use-upgrade-modal';
+import UpgradeModal from '@/components/dashboard/UpgradeModal';
 import { format } from 'date-fns';
 import { htmlToPlainText } from './note-utils';
 import { useCalendar, dayLabel, type CalendarEvent } from '@/lib/calendar';
