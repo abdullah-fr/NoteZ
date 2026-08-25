@@ -1,12 +1,13 @@
 import { motion } from 'framer-motion';
-import { Play, Pause, RotateCcw, X, Clock } from 'lucide-react';
+import { Play, Pause, RotateCcw, X, Clock, SkipForward } from 'lucide-react';
 import { useTimer } from '@/lib/timer';
 
 export default function FloatingTimer({ onClose }: { onClose: () => void }) {
   const {
     // focus
-    timeLeft: focusTimeLeft, isRunning: focusRunning, start: focusStart, pause: focusPause, reset: focusReset,
-    hasActiveSession,
+    timeLeft: focusTimeLeft, isRunning: focusRunning,
+    start: focusStart, pause: focusPause, reset: focusReset,
+    hasActiveSession, focusMode, skip: focusSkip,
     // task
     taskTimeLeft, taskRunning, startTask, pauseTask, resetTask,
     activeTaskIdx, tasks,
@@ -20,27 +21,30 @@ export default function FloatingTimer({ onClose }: { onClose: () => void }) {
 
   const activeTask = activeTaskIdx !== null ? tasks[activeTaskIdx] : null;
 
-  let modeLabel = 'Focus Session';
-  let timeLeft = focusTimeLeft;
-  let running = focusRunning;
-  let onStart = focusStart;
-  let onPause = focusPause;
-  let onReset = () => focusReset();
+  let modeLabel = focusMode === 'break' ? 'Break' : 'Focus Session';
+  let timeLeft  = focusTimeLeft;
+  let running   = focusRunning;
+  let onStart   = focusStart;
+  let onPause   = focusPause;
+  let onReset   = () => focusReset();
+  let onSkip: (() => void) | null = focusSkip;
 
   if (hasTaskSession) {
     modeLabel = activeTask ? activeTask.label : 'Task Timer';
-    timeLeft = taskTimeLeft;
-    running = taskRunning;
-    onStart = startTask;
-    onPause = pauseTask;
-    onReset = () => resetTask();
+    timeLeft  = taskTimeLeft;
+    running   = taskRunning;
+    onStart   = startTask;
+    onPause   = pauseTask;
+    onReset   = () => resetTask();
+    onSkip    = null;
   } else if (hasExamSession) {
     modeLabel = 'Exam Timer';
-    timeLeft = examTimeLeft;
-    running = examRunning;
-    onStart = startExam;
-    onPause = pauseExam;
-    onReset = () => resetExam();
+    timeLeft  = examTimeLeft;
+    running   = examRunning;
+    onStart   = startExam;
+    onPause   = pauseExam;
+    onReset   = () => resetExam();
+    onSkip    = null;
   }
 
   function fmt(s: number) {
@@ -81,6 +85,16 @@ export default function FloatingTimer({ onClose }: { onClose: () => void }) {
         >
           {running ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 ml-0.5" />}
         </button>
+
+        {onSkip && (
+          <button
+            onClick={onSkip}
+            className="h-7 w-7 rounded-lg bg-secondary hover:bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Skip"
+          >
+            <SkipForward className="h-3.5 w-3.5" />
+          </button>
+        )}
 
         <button
           onClick={onReset}

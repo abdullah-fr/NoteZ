@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { generateExamWithGemini, saveExamResult, type ExamQuestion } from '@/services';
+import { generateExamWithGemini, saveExamResult, deleteExamResult, type ExamQuestion } from '@/services';
 import { toast } from 'sonner';
 import { useUpgradeModal, parseLimitError } from '@/hooks/use-upgrade-modal';
 import UpgradeModal from '@/components/dashboard/UpgradeModal';
@@ -9,8 +9,10 @@ import { useTimer } from '@/lib/timer';
 import {
   BookOpen, Zap, Pencil, Loader2, Check, X, Lightbulb, ArrowRight,
   RotateCcw, Trophy, Target, ChevronDown, ChevronUp, Brain,
-  Folder, FileText, CheckSquare, Square, Clock, Award
+  Folder, FileText, CheckSquare, Square, Clock, Award,
+  Edit2, AlertTriangle, TrendingUp, ChevronRight, Trash2,
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 /* Custom Exam Paper with Pencil Icon */
 function ExamPaperPencilIcon({ className = "h-5 w-5" }: { className?: string }) {
@@ -36,11 +38,6 @@ function ExamPaperPencilIcon({ className = "h-5 w-5" }: { className?: string }) 
     </svg>
   );
 }
-
-const examModes = [
-  { id: 'practice', label: 'Practice Mode', tag: 'Get instant answers and detailed explanations as you progress.' },
-  { id: 'mock', label: 'Mock Exam', tag: 'Simulate real test conditions and get feedback at the end.' },
-];
 
 const difficulties = [
   { id: 'easy', label: 'Easy' },
@@ -78,6 +75,15 @@ interface LocalFolderData {
   notes: FolderNote[];
 }
 
+interface RecentExam {
+  id: string;
+  subject: string;
+  score: number;
+  total_questions: number;
+  difficulty: string;
+  created_at: string;
+}
+
 function cleanNoteText(html: string): string {
   if (!html) return '';
   return html
@@ -90,6 +96,27 @@ function cleanNoteText(html: string): string {
     .replace(/&gt;/g, '>')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/* ─────────────────────────────────────────────────────────────
+   HELPER: format time from ISO date string
+───────────────────────────────────────────────────────────── */
+function fmtTime(iso: string) {
+  const d = new Date(iso);
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function fmtRelativeDate(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default function ExamQuizView() {
@@ -126,6 +153,26 @@ export default function ExamQuizView() {
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [studyDropdownOpen, setStudyDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Recent exam results
+  const [recentExams, setRecentExams] = useState<RecentExam[]>([]);
+
+  // Load recent exam results
+  useEffect(() => {
+    if (!user) return;
+    const loadRecent = async () => {
+      const { data, error } = await supabase
+        .from('exam_results')
+        .select('id, subject, score, total_questions, difficulty, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(6);
+      if (!error && data) {
+        setRecentExams(data as RecentExam[]);
+      }
+    };
+    loadRecent();
+  }, [user, examCompleted]);
 
   // Load folders and notes from localStorage
   const localFoldersData: LocalFolderData[] = (() => {
@@ -332,7 +379,11 @@ export default function ExamQuizView() {
       console.error(e);
       const limitErr = parseLimitError(e);
       if (limitErr) {
-        handleLimitError(limitErr.field, limitErr.limit);
+        handleLimitError(limitErr.field, limitErr.limit, {
+          balance: limitErr.balance,
+          required: limitErr.required,
+          resetDate: limitErr.resetDate,
+        });
       } else {
         toast.error(e.message || 'The exam service encountered an issue. Please try again.');
       }
@@ -408,281 +459,314 @@ export default function ExamQuizView() {
     setIsCustomTimer(false);
   };
 
-  /* ────────────────── SETUP SCREEN ────────────────── */
+  const handleDeleteRecentExam = async (e: React.MouseEvent, examId: string) => {
+    e.stopPropagation();
+    try {
+      setRecentExams(prev => prev.filter(ex => ex.id !== examId));
+      await deleteExamResult(examId);
+      toast.success('Exam removed from history');
+    } catch {
+      toast.error('Failed to delete exam');
+    }
+  };
+
+  /* ── Weak Areas derived from recent exams ── */
+  const weakAreas = useMemo(() => {
+    if (recentExams.length === 0) return [];
+    const subjectMap = new Map<string, { total: number; correct: number; count: number }>();
+    for (const ex of recentExams) {
+      const existing = subjectMap.get(ex.subject) || { total: 0, correct: 0, count: 0 };
+      existing.total += ex.total_questions;
+      existing.correct += ex.score;
+      existing.count += 1;
+      subjectMap.set(ex.subject, existing);
+    }
+    return Array.from(subjectMap.entries())
+      .map(([name, data]) => ({
+        name,
+        percent: Math.round((data.correct / data.total) * 100),
+      }))
+      .sort((a, b) => a.percent - b.percent)
+      .slice(0, 3);
+  }, [recentExams]);
+
+  /* ────────────────── SETUP SCREEN (Clean, Fit-to-screen on Desktop) ────────────────── */
   if (questions.length === 0 && !loading) {
     return (
-      <div className="w-full max-w-6xl mx-auto space-y-5 pb-8">
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          <div>
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                <ExamPaperPencilIcon className="h-5 w-5 text-primary" />
-              </div>
-              Exam & Quiz Studio
-            </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              Create personalized practice quizzes and timed mock exams from your notes or any topic.
-            </p>
-          </div>
+      <div className="w-full h-full flex flex-col bg-background text-foreground overflow-y-auto lg:overflow-hidden p-3 sm:p-4 select-none justify-center">
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="px-3 py-1.5 rounded-xl border border-border bg-secondary/80 text-xs font-medium text-foreground flex items-center gap-1.5 shadow-2xs">
-              <Zap className="h-3.5 w-3.5 text-primary" /> AI Generator
-            </span>
-            <span className="px-3 py-1.5 rounded-xl border border-border bg-secondary/80 text-xs font-medium text-foreground flex items-center gap-1.5 shadow-2xs">
-              <Clock className="h-3.5 w-3.5 text-primary" /> Timer Synced
-            </span>
-          </div>
-        </div>
+        {/* ══════════════════════════════════════════════════════════════
+            MAIN BODY (2-COLUMN GRID FIT ON DESKTOP)
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="w-full h-full min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(300px,34%)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,33%)] gap-3 sm:gap-3.5 overflow-y-visible lg:overflow-hidden">
 
-        {/* 2-Column Main Layout: Setup Configuration on Left, Live Preview & Tips on Right */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          {/* Left / Main Config Card (8 cols) */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="lg:col-span-8 rounded-2xl border border-border/80 bg-card p-5 md:p-6 space-y-5 shadow-xl"
-          >
-            {/* Row 1: Subject & Custom Study Material Dropdown */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
-                  <span>Subject or Topic</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">Letters only</span>
+          {/* ── LEFT COLUMN: Configuration Panel ── */}
+          <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 sm:p-4.5 shadow-xs flex flex-col justify-between h-full min-h-0 overflow-y-auto gap-3">
+
+            {/* Step 1: Subject or Folder Source */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider font-mono text-foreground flex items-center gap-1.5">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold">1</span>
+                  Select Study Material or Topic
                 </label>
-                <div className="relative">
-                  <input
-                    ref={subjectInputRef}
-                    value={subject}
-                    onChange={(e) => handleSubjectChange(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleGenerateExam()}
-                    placeholder="e.g., Data Structures, Operating Systems..."
-                    className="w-full h-11 px-4 rounded-xl bg-secondary/60 border border-border/80 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all font-medium shadow-2xs"
-                  />
-                </div>
+                <span className="text-[10px] text-muted-foreground font-mono">Topic or Folder Source</span>
               </div>
 
-              {/* Custom Optimized Dropdown for Study Material */}
-              <div ref={dropdownRef} className="relative">
-                <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
-                  <span>Study Material</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">Optional source folder</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setStudyDropdownOpen(open => !open)}
-                  className="w-full h-11 px-4 rounded-xl bg-secondary/60 border border-border/80 text-xs text-foreground flex items-center justify-between font-medium hover:bg-secondary transition-colors outline-none focus:border-primary shadow-2xs"
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="truncate">
-                      {currentFolder ? `${currentFolder.name} (${currentFolder.notes.length} notes)` : 'Topic Only (Generic)'}
-                    </span>
-                  </span>
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ${studyDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {/* Sleek Custom Dropdown Menu */}
-                <AnimatePresence>
-                  {studyDropdownOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 4 }}
-                      className="absolute right-0 left-0 top-full mt-1 z-30 rounded-xl border border-border bg-card p-1.5 shadow-xl max-h-48 overflow-y-auto space-y-0.5"
-                    >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {/* Subject Topic Input */}
+                <div>
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                    Subject / Topic Name
+                  </label>
+                  <div className="relative">
+                    <Folder className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      ref={subjectInputRef}
+                      value={subject}
+                      onChange={(e) => handleSubjectChange(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleGenerateExam()}
+                      placeholder="e.g., Operating Systems"
+                      className="w-full h-9 pl-8 pr-8 rounded-xl bg-secondary/50 border border-border text-xs text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary transition-colors font-medium"
+                    />
+                    {subject && (
                       <button
                         type="button"
-                        onClick={() => handleFolderSelect(null)}
-                        className={`flex w-full items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
-                          selectedFolderId === null
-                            ? 'bg-primary text-primary-foreground font-semibold'
-                            : 'text-foreground hover:bg-secondary'
-                        }`}
+                        onClick={() => setSubject('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
-                        <span className="flex items-center gap-2">
-                          <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-                          Topic Only (Generic)
-                        </span>
-                        {selectedFolderId === null && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
+                        <X className="h-3.5 w-3.5" />
                       </button>
+                    )}
+                  </div>
+                </div>
 
-                      {localFoldersData.map(f => (
+                {/* Folder Source Dropdown */}
+                <div ref={dropdownRef} className="relative">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                    Folder Source (Optional)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setStudyDropdownOpen(open => !open)}
+                    className="w-full h-9 px-3 rounded-xl bg-secondary/50 border border-border text-xs text-foreground flex items-center justify-between font-medium hover:bg-secondary transition-colors outline-none focus:border-primary cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Folder className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="truncate">
+                        {currentFolder ? currentFolder.name : 'Topic Only (AI Generator)'}
+                      </span>
+                    </span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0 ${studyDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Custom Dropdown Menu */}
+                  <AnimatePresence>
+                    {studyDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        className="absolute right-0 left-0 top-full mt-1.5 z-30 rounded-xl border border-border bg-card p-1.5 shadow-2xl max-h-52 overflow-y-auto space-y-0.5"
+                      >
                         <button
-                          key={f.id}
                           type="button"
-                          onClick={() => handleFolderSelect(f.id)}
-                          className={`flex w-full items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
-                            selectedFolderId === f.id
+                          onClick={() => handleFolderSelect(null)}
+                          className={`flex w-full items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                            selectedFolderId === null
                               ? 'bg-primary text-primary-foreground font-semibold'
                               : 'text-foreground hover:bg-secondary'
                           }`}
                         >
-                          <span className="flex items-center gap-2 truncate pr-2">
-                            <Folder className="h-3.5 w-3.5 text-primary-foreground shrink-0" />
-                            <span className="truncate">{f.name}</span>
+                          <span className="flex items-center gap-2">
+                            <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                            Topic Only (AI Generator)
                           </span>
-                          <span className="font-mono text-[10px] opacity-80 shrink-0">
-                            {f.notes.length} notes
-                          </span>
+                          {selectedFolderId === null && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
                         </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+
+                        {localFoldersData.map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => handleFolderSelect(f.id)}
+                            className={`flex w-full items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                              selectedFolderId === f.id
+                                ? 'bg-primary text-primary-foreground font-semibold'
+                                : 'text-foreground hover:bg-secondary'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2 truncate pr-2">
+                              <Folder className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{f.name}</span>
+                            </span>
+                            <span className="font-mono text-[10px] opacity-80 shrink-0">
+                              {f.notes.length} notes
+                            </span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
+
+              {/* Note Selection Checklist */}
+              {currentFolder && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="rounded-xl border border-border bg-secondary/30 p-2.5 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-foreground flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-primary" />
+                      Source Notes ({selectedNoteIds.size}/{currentFolder.notes.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={toggleSelectAllNotes}
+                      className="text-xs text-primary font-semibold hover:underline cursor-pointer"
+                    >
+                      {selectedNoteIds.size === currentFolder.notes.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+
+                  {currentFolder.notes.length === 0 ? (
+                    <p className="text-xs text-destructive font-medium py-1">
+                      ⚠️ No notes found in this folder.
+                    </p>
+                  ) : (
+                    <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+                      {currentFolder.notes.map(note => {
+                        const isChecked = selectedNoteIds.has(note.id);
+                        return (
+                          <div
+                            key={note.id}
+                            onClick={() => toggleNoteSelection(note.id)}
+                            className={`flex items-center justify-between p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                              isChecked
+                                ? 'border-primary/50 bg-primary/10 text-foreground font-medium'
+                                : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-secondary hover:text-foreground'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 pr-2">
+                              {isChecked ? (
+                                <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
+                              ) : (
+                                <Square className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              )}
+                              <span className="truncate">{note.title}</span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground shrink-0 px-1.5 py-0.2 rounded bg-secondary font-mono">
+                              {note.categoryName}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </motion.div>
+              )}
             </div>
 
-            {/* Compact Note Checklist when Folder is selected */}
-            {currentFolder && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="rounded-xl border border-border bg-secondary/30 p-2.5 space-y-1.5"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-primary" />
-                    Notes in {currentFolder.name} ({selectedNoteIds.size}/{currentFolder.notes.length} selected)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={toggleSelectAllNotes}
-                    className="text-[11px] text-primary font-semibold hover:underline"
-                  >
-                    {selectedNoteIds.size === currentFolder.notes.length ? 'Clear all' : 'Select all'}
-                  </button>
-                </div>
-
-                {currentFolder.notes.length === 0 ? (
-                  <p className="text-[11px] text-destructive font-medium py-0.5">
-                    ⚠️ No notes available in this folder.
-                  </p>
-                ) : (
-                  <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
-                    {currentFolder.notes.map(note => {
-                      const isChecked = selectedNoteIds.has(note.id);
-                      return (
-                        <div
-                          key={note.id}
-                          onClick={() => toggleNoteSelection(note.id)}
-                          className={`flex items-center justify-between p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${
-                            isChecked
-                              ? 'border-primary/50 bg-primary/10 text-foreground font-medium'
-                              : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                            {isChecked ? (
-                              <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
-                            ) : (
-                              <Square className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            )}
-                            <span className="truncate">{note.title}</span>
-                          </div>
-                          <span className="text-[9px] text-muted-foreground shrink-0 px-1.5 py-0.5 rounded bg-secondary">
-                            {note.categoryName}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </motion.div>
-            )}
-
-            {/* Row 2: Exam Mode */}
-            <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">
-                Exam Mode
+            {/* Step 2: Exam Mode Selection */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold uppercase tracking-wider font-mono text-foreground flex items-center gap-1.5">
+                <span className="w-4.5 h-4.5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold">2</span>
+                Choose Mode
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {/* Practice Mode Card */}
                 <button
                   type="button"
                   onClick={() => setExamMode('practice')}
-                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start justify-between ${
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
                     examMode === 'practice'
-                      ? 'border-2 border-primary/80 bg-primary/80 text-primary-foreground font-bold shadow-sm'
-                      : 'border-border/80 bg-secondary/70 text-foreground/90 hover:bg-secondary hover:text-foreground'
+                      ? 'border-foreground/60 bg-secondary font-medium shadow-md ring-1 ring-foreground/20'
+                      : 'border-border/60 bg-secondary/30 text-muted-foreground hover:border-border hover:bg-secondary/50 hover:text-foreground'
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg border shrink-0 mt-0.5 ${
-                      examMode === 'practice'
-                        ? 'bg-primary-foreground/15 border-primary-foreground/30 text-primary-foreground'
-                        : 'bg-secondary border-border/80 text-foreground'
-                    }`}>
-                      <Zap className="h-4 w-4" />
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
+                        examMode === 'practice' ? 'bg-foreground text-background' : 'bg-secondary border border-border text-foreground'
+                      }`}>
+                        <Zap className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-foreground leading-tight">Practice Mode</h4>
+                        <span className="text-[9.5px] font-mono uppercase tracking-wider text-muted-foreground">
+                          Instant Explanations
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <p className={`text-xs font-bold ${examMode === 'practice' ? 'text-primary-foreground' : 'text-foreground'}`}>
-                        Practice Mode
-                      </p>
-                      <p className={`text-[11px] leading-snug mt-1 ${examMode === 'practice' ? 'text-primary-foreground/80 font-medium' : 'text-muted-foreground font-medium'}`}>
-                        Get instant answers and detailed step-by-step explanations as you progress.
-                      </p>
-                    </div>
+                    {examMode === 'practice' && (
+                      <div className="w-4.5 h-4.5 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
+                        <Check className="h-2.5 w-2.5" />
+                      </div>
+                    )}
                   </div>
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    examMode === 'practice' ? 'border-primary-foreground bg-primary-foreground/20' : 'border-muted-foreground/50'
-                  }`}>
-                    {examMode === 'practice' && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
-                  </div>
+                  <p className="text-[10.5px] text-muted-foreground leading-relaxed mt-2">
+                    Step-by-step guidance with instant answer validation & deep explanations.
+                  </p>
                 </button>
 
+                {/* Mock Exam Card */}
                 <button
                   type="button"
                   onClick={() => setExamMode('mock')}
-                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start justify-between ${
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
                     examMode === 'mock'
-                      ? 'border-2 border-primary/80 bg-primary/80 text-primary-foreground font-bold shadow-sm'
-                      : 'border-border/80 bg-secondary/70 text-foreground/90 hover:bg-secondary hover:text-foreground'
+                      ? 'border-foreground/60 bg-secondary font-medium shadow-md ring-1 ring-foreground/20'
+                      : 'border-border/60 bg-secondary/30 text-muted-foreground hover:border-border hover:bg-secondary/50 hover:text-foreground'
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg border shrink-0 mt-0.5 ${
-                      examMode === 'mock'
-                        ? 'bg-primary-foreground/15 border-primary-foreground/30 text-primary-foreground'
-                        : 'bg-secondary border-border/80 text-foreground'
-                    }`}>
-                      <FileText className="h-4 w-4" />
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
+                        examMode === 'mock' ? 'bg-foreground text-background' : 'bg-secondary border border-border text-foreground'
+                      }`}>
+                        <FileText className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-foreground leading-tight">Mock Exam</h4>
+                        <span className="text-[9.5px] font-mono uppercase tracking-wider text-muted-foreground">
+                          Timed Simulation
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <p className={`text-xs font-bold ${examMode === 'mock' ? 'text-primary-foreground' : 'text-foreground'}`}>
-                        Mock Exam
-                      </p>
-                      <p className={`text-[11px] leading-snug mt-1 ${examMode === 'mock' ? 'text-primary-foreground/80 font-medium' : 'text-muted-foreground font-medium'}`}>
-                        Simulate real timed test conditions and review full score breakdown at the end.
-                      </p>
-                    </div>
+                    {examMode === 'mock' && (
+                      <div className="w-4.5 h-4.5 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
+                        <Check className="h-2.5 w-2.5" />
+                      </div>
+                    )}
                   </div>
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    examMode === 'mock' ? 'border-primary-foreground bg-primary-foreground/20' : 'border-muted-foreground/50'
-                  }`}>
-                    {examMode === 'mock' && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
-                  </div>
+                  <p className="text-[10.5px] text-muted-foreground leading-relaxed mt-2">
+                    Simulate real exam pressure with no hints and a final score breakdown.
+                  </p>
                 </button>
               </div>
             </div>
 
-            {/* Row 3: Difficulty & Questions (2 Columns) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Step 3 & 4: Difficulty + Questions on same row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Difficulty */}
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider font-mono text-foreground flex items-center gap-1.5">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold">3</span>
                   Difficulty
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   {difficulties.map(d => (
                     <button
                       key={d.id}
                       type="button"
                       onClick={() => setDifficulty(d.id)}
-                      className={`py-2 px-3 rounded-xl text-center text-xs transition-all ${
+                      className={`py-1.5 px-2 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
                         difficulty === d.id
-                          ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
-                          : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                          ? 'border-foreground/60 bg-secondary font-bold text-foreground shadow-xs'
+                          : 'border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                       }`}
                     >
                       {d.label}
@@ -691,13 +775,13 @@ export default function ExamQuizView() {
                 </div>
               </div>
 
-              {/* Number of Questions */}
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
-                  <span>Number of Questions</span>
-                  {isCustomQuestions && <span className="text-[10px] text-muted-foreground font-normal">Max 30</span>}
+              {/* Question Count */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider font-mono text-foreground flex items-center gap-1.5">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold">4</span>
+                  Questions
                 </label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-4 gap-1.5">
                   {questionCounts.map(count => (
                     <button
                       key={count}
@@ -706,13 +790,13 @@ export default function ExamQuizView() {
                         setIsCustomQuestions(false);
                         setQuestionCount(count);
                       }}
-                      className={`py-2 px-1 rounded-xl text-center text-xs transition-all ${
+                      className={`py-1.5 px-1 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
                         !isCustomQuestions && questionCount === count
-                          ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
-                          : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                          ? 'border-foreground/60 bg-secondary font-bold text-foreground shadow-xs'
+                          : 'border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                       }`}
                     >
-                      {count}
+                      {count} Qs
                     </button>
                   ))}
                   <button
@@ -722,24 +806,23 @@ export default function ExamQuizView() {
                       const qty = Math.min(30, Math.max(1, parseInt(customQuestionsInput) || 20));
                       setQuestionCount(qty);
                     }}
-                    className={`py-2 px-1 rounded-xl text-center text-xs transition-all ${
+                    className={`py-1.5 px-1 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
                       isCustomQuestions
-                        ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
-                        : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                        ? 'border-foreground/60 bg-secondary font-bold text-foreground shadow-xs'
+                        : 'border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                     }`}
                   >
                     Custom
                   </button>
                 </div>
 
-                {/* Custom Questions Input Box */}
                 {isCustomQuestions && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="mt-2 flex items-center gap-2"
+                    className="mt-1 flex items-center gap-2"
                   >
-                    <span className="text-xs text-muted-foreground font-medium">Questions:</span>
+                    <span className="text-[11px] text-muted-foreground">Count:</span>
                     <input
                       type="number"
                       min={1}
@@ -755,24 +838,26 @@ export default function ExamQuizView() {
                         }
                         setQuestionCount(qty);
                       }}
-                      className="w-20 h-8 px-2.5 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
+                      className="w-16 h-6 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
                     />
-                    <span className="text-[10px] text-muted-foreground font-medium">(1-30)</span>
+                    <span className="text-[10px] text-muted-foreground">(1-30)</span>
                   </motion.div>
                 )}
               </div>
             </div>
 
-            {/* Row 4: Exam Timer (Full Width across card with 6 spacious buttons) */}
-            <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-primary" />
-                  Exam Timer
+            {/* Step 5: Timer Duration */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider font-mono text-foreground flex items-center gap-1.5">
+                  <span className="w-4.5 h-4.5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold">5</span>
+                  Timer Duration
+                </label>
+                <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                  <Zap className="h-3 w-3 text-amber-400" /> Synced with Focus Timer
                 </span>
-                <span className="text-[10px] text-muted-foreground font-normal">Synced with Pomodoro</span>
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                 {defaultTimerOptions.map(tOpt => (
                   <button
                     key={tOpt.minutes}
@@ -781,10 +866,10 @@ export default function ExamQuizView() {
                       setIsCustomTimer(false);
                       setTimerMinutes(tOpt.minutes);
                     }}
-                    className={`py-2 px-2 rounded-xl text-center text-xs transition-all ${
+                    className={`py-1.5 px-2 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
                       !isCustomTimer && timerMinutes === tOpt.minutes
-                        ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
-                        : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                        ? 'border-foreground/60 bg-secondary font-bold text-foreground shadow-xs'
+                        : 'border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                     }`}
                   >
                     {tOpt.label}
@@ -797,24 +882,23 @@ export default function ExamQuizView() {
                     const mins = parseInt(customTimerInput) || 20;
                     setTimerMinutes(mins);
                   }}
-                  className={`py-2 px-2 rounded-xl text-center text-xs transition-all ${
+                  className={`py-1.5 px-2 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
                     isCustomTimer
-                      ? 'bg-primary/80 text-primary-foreground font-bold border border-primary/80 shadow-sm'
-                      : 'bg-secondary/70 border border-border/80 text-foreground/90 font-medium hover:bg-secondary hover:text-foreground'
+                      ? 'border-foreground/60 bg-secondary font-bold text-foreground shadow-xs'
+                      : 'border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                   }`}
                 >
                   Custom
                 </button>
               </div>
 
-              {/* Custom Timer Input Box */}
               {isCustomTimer && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-2 flex items-center gap-2"
+                  className="mt-1 flex items-center gap-2"
                 >
-                  <span className="text-xs text-muted-foreground font-medium">Duration:</span>
+                  <span className="text-[11px] text-muted-foreground">Duration:</span>
                   <input
                     type="number"
                     min={1}
@@ -826,109 +910,188 @@ export default function ExamQuizView() {
                       const mins = parseInt(val) || 0;
                       setTimerMinutes(mins);
                     }}
-                    className="w-20 h-8 px-2.5 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
+                    className="w-16 h-6 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
                   />
                   <span className="text-xs text-foreground font-medium">Minutes</span>
                 </motion.div>
               )}
             </div>
 
-            {/* Action Button: Exam Paper with Pencil Icon */}
-            <button
+            {/* Generate Exam Button */}
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.005 }}
+              whileTap={{ scale: 0.995 }}
               onClick={handleGenerateExam}
               disabled={!subject.trim() && !selectedFolderId}
-              className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed shrink-0 mt-3"
+              className="w-full h-10 sm:h-11 rounded-xl bg-primary text-primary-foreground text-xs sm:text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 mt-1"
             >
-              <ExamPaperPencilIcon className="h-5 w-5 text-primary shrink-0" />
-              <span>Generate Exam</span>
-            </button>
-          </motion.div>
+              <ExamPaperPencilIcon className="h-4.5 w-4.5 text-primary-foreground shrink-0" />
+              <span>Generate Personalized Exam</span>
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </motion.button>
+          </div>{/* End left column */}
 
-          {/* Right Column: Live Configuration Overview & Study Tips (4 cols) */}
-          <div className="lg:col-span-4 space-y-4">
-            {/* Live Preview Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="rounded-2xl border border-border/80 bg-card p-5 space-y-3.5 shadow-md"
-            >
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Target className="h-4 w-4 text-primary" /> Exam Configuration Summary
-              </h3>
+          {/* ── RIGHT COLUMN: Weak Areas, Study Tips, Recent Exams ── */}
+          <div className="flex flex-col min-h-0 gap-3 lg:overflow-hidden h-full">
 
-              <div className="space-y-2.5 text-xs">
-                <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                  <span className="text-muted-foreground">Topic / Scope</span>
-                  <span className="font-semibold text-foreground truncate max-w-[140px]">
-                    {subject.trim() || (currentFolder ? currentFolder.name : 'General Topic')}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                  <span className="text-muted-foreground">Study Material</span>
-                  <span className="font-medium text-foreground">
-                    {currentFolder ? `${selectedNoteIds.size} notes selected` : 'Topic (AI Generator)'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                  <span className="text-muted-foreground">Exam Mode</span>
-                  <span className="font-semibold text-foreground flex items-center gap-1 capitalize">
-                    {examMode === 'practice' ? '⚡ Practice Mode' : '📝 Mock Exam'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                  <span className="text-muted-foreground">Total Questions</span>
-                  <span className="font-mono font-bold text-foreground">
-                    {isCustomQuestions ? customQuestionsInput || 20 : questionCount} Qs
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1.5 border-b border-border/60">
-                  <span className="text-muted-foreground">Difficulty</span>
-                  <span className="font-semibold capitalize text-foreground">
-                    {difficulty}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1.5">
-                  <span className="text-muted-foreground">Time Limit</span>
-                  <span className="font-mono font-semibold text-foreground">
-                    {timerMinutes === 0 ? 'Untimed (Self-paced)' : `${timerMinutes} Minutes`}
-                  </span>
-                </div>
+            {/* 1. Weak Areas (Needs Review) */}
+            <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs space-y-2">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
+                  Weak Areas
+                </p>
+                <span className="text-[10px] font-mono text-muted-foreground/60 ml-auto">(Needs Review)</span>
               </div>
-            </motion.div>
 
-            {/* Study Mode Tips Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="rounded-2xl border border-border/70 bg-secondary/35 p-5 space-y-2.5 shadow-2xs"
-            >
-              <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Lightbulb className="h-4 w-4 text-primary" /> Study Pro-Tips
+              {weakAreas.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground py-1">
+                  Complete exams to discover your weak areas and track improvement.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {weakAreas.map((area) => (
+                    <div key={area.name} className="flex items-center gap-2.5">
+                      <span className="text-[11px] font-semibold text-foreground truncate min-w-0 flex-1">{area.name}</span>
+                      <span className="text-[10px] font-mono font-bold text-muted-foreground shrink-0 w-8 text-right">{area.percent}%</span>
+                      <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden shrink-0">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            area.percent < 50 ? 'bg-rose-500' : area.percent < 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${area.percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {weakAreas.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (weakAreas.length > 0) {
+                      setSubject(weakAreas[0].name);
+                      subjectInputRef.current?.focus();
+                    }
+                  }}
+                  className="w-full mt-1 text-xs font-semibold text-foreground hover:text-primary flex items-center justify-end gap-1 transition-colors"
+                >
+                  Practice Weak Areas <ArrowRight className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {/* 2. Study Pro-Tips */}
+            <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs space-y-1.5">
+              <h4 className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold flex items-center gap-1.5">
+                <Lightbulb className="h-3.5 w-3.5 text-primary" /> Study Pro-Tips
               </h4>
-              <ul className="text-[11.5px] text-muted-foreground space-y-2 leading-relaxed">
+              <ul className="text-[11px] text-muted-foreground space-y-1 leading-relaxed">
                 <li className="flex items-start gap-2">
-                  <span className="text-primary font-bold">•</span>
-                  <span><strong>Practice Mode</strong> is best for active learning with instant feedback and concept explanations.</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                  <span>Practice mode helps you identify and fix weak concepts.</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-primary font-bold">•</span>
-                  <span><strong>Mock Exam</strong> simulates real exam pressure with a score breakdown and study roadmap.</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                  <span>Mix easy and hard questions for better retention.</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-primary font-bold">•</span>
-                  <span>Attach your folders to generate targeted questions directly from your class notes.</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                  <span>Review incorrect answers immediately.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                  <span>Space your practice for long-term memory.</span>
                 </li>
               </ul>
-            </motion.div>
-          </div>
-        </div>
+            </div>
+
+            {/* 3. Recent Exams (With Delete Functionality) */}
+            <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 flex-1 min-h-0 flex flex-col shadow-xs overflow-hidden">
+              <div className="flex items-center justify-between mb-2 shrink-0">
+                <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
+                  Recent Exams
+                </p>
+                <span className="text-[10px] font-mono text-muted-foreground/60">
+                  {recentExams.length} {recentExams.length === 1 ? 'exam' : 'exams'}
+                </span>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5">
+                {recentExams.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center py-6 text-center">
+                    <Trophy className="h-6 w-6 text-muted-foreground/30 mb-1.5" />
+                    <p className="text-xs font-semibold text-foreground">No exams yet</p>
+                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                      Generate your first exam to see history
+                    </p>
+                  </div>
+                ) : (
+                  recentExams.map(ex => {
+                    const pct = Math.round((ex.score / ex.total_questions) * 100);
+                    const dur = Math.round(ex.total_questions * 0.8);
+                    return (
+                      <div
+                        key={ex.id}
+                        className="flex items-center gap-2 py-1.5 px-2 rounded-xl hover:bg-secondary/50 transition-colors group"
+                      >
+                        {/* Score icon */}
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                          pct >= 80
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : pct >= 50
+                            ? 'bg-amber-500/15 text-amber-400'
+                            : 'bg-rose-500/15 text-rose-400'
+                        }`}>
+                          {pct >= 80 ? <Check className="h-3 w-3" /> : pct >= 50 ? <TrendingUp className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                        </div>
+
+                        {/* Details */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                            {ex.subject}
+                          </p>
+                          <p className="text-[9.5px] font-mono text-muted-foreground">
+                            {ex.total_questions} Qs • {dur}m • {pct}%
+                          </p>
+                        </div>
+
+                        {/* Date / Time */}
+                        <div className="text-right shrink-0">
+                          <p className="text-[9.5px] font-mono text-muted-foreground">{fmtRelativeDate(ex.created_at)}</p>
+                          <p className="text-[9px] font-mono text-muted-foreground/60">{fmtTime(ex.created_at)}</p>
+                        </div>
+
+                        {/* Delete action button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteRecentExam(e, ex.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity rounded-md hover:bg-secondary shrink-0"
+                          title="Delete exam result"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+          </div>{/* End right column */}
+
+        </div>{/* End main body */}
+
+        {/* Upgrade Modal */}
+        <UpgradeModal
+          open={upgradeModal.open}
+          field={upgradeModal.field}
+          limit={upgradeModal.limit}
+          onClose={closeUpgradeModal}
+        />
       </div>
     );
   }

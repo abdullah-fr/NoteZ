@@ -1,181 +1,333 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Check, Sparkles, ArrowRight } from 'lucide-react';
+import {
+  Check,
+  Sparkles,
+  ArrowRight,
+  Zap,
+  HelpCircle,
+  ShieldCheck,
+  RotateCcw,
+  Layers,
+  MessageSquare,
+  GraduationCap,
+  FileText,
+  Clock,
+  ListChecks,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/landing/Navbar';
 import { Footer } from '@/components/landing/Footer';
-import { useState } from 'react';
+import { PLANS, CREDIT_COSTS, ACTION_METADATA, type MeteredAction } from '@/lib/credits';
 
-type Tier = {
-  name: string;
-  tagline: string;
-  monthly: number;
-  yearly: number;
-  cta: string;
-  href: string;
-  highlighted?: boolean;
-  features: string[];
+const ACTION_ICONS: Record<MeteredAction, any> = {
+  ai_chat: MessageSquare,
+  ai_audio_transcription: Clock,
+  generate_exam: GraduationCap,
+  generate_flashcards: Layers,
+  editor_ai_assist: FileText,
+  activities_breakdown: ListChecks,
+  source_processing: FileText,
+  coach_advice: Sparkles,
 };
 
-const tiers: Tier[] = [
+const FAQS = [
   {
-    name: 'Free',
-    tagline: 'Everything you need to get started.',
-    monthly: 0,
-    yearly: 0,
-    cta: 'Start free',
-    href: '/signup',
-    features: [
-      'Unlimited notes & flashcards',
-      'Daily quiz & focus timer',
-      '1 active subject',
-      'Streaks, XP & basic progress',
-    ],
+    q: 'What are AI Credits and how do they work?',
+    a: 'Credits power all AI and processing features in NoteZ (such as generating exams, AI chat explanations, and flashcard creation). Every time you run an AI action, a small, fixed number of credits is deducted from your balance.',
   },
   {
-    name: 'Pro Student',
-    tagline: 'For students who want to win the semester.',
-    monthly: 8,
-    yearly: 6,
-    cta: 'Start 7-day trial',
-    href: '/signup',
-    highlighted: true,
-    features: [
-      'Unlimited subjects & specializations',
-      'AI-generated exams & explanations',
-      'Spaced repetition flashcards',
-      'Smart study planner',
-      'Full progress analytics',
-      'Priority AI responses',
-    ],
+    q: 'When do my credits reset?',
+    a: 'Credits refill automatically at the beginning of each 30-day billing cycle. Free accounts receive 500 credits every month; Pro Student receives 5,000 credits; Pro Scholar receives 15,000 credits.',
   },
   {
-    name: 'Pro Scholar',
-    tagline: 'For researchers and grad students.',
-    monthly: 18,
-    yearly: 14,
-    cta: 'Upgrade to Scholar',
-    href: '/signup',
-    features: [
-      'Everything in Pro Student',
-      'Document upload & summarization',
-      'Multi-source research mode',
-      'Citation export (BibTeX, APA)',
-      'Long-context AI conversations',
-      'Lecture audio transcription',
-    ],
+    q: 'What happens if an AI request fails or encounters an error?',
+    a: 'NoteZ includes an automatic refund guarantee. If any AI generation or API operation fails, your credits are immediately refunded back to your balance automatically.',
+  },
+  {
+    q: 'Can I use all major NoteZ features on the Free tier?',
+    a: 'Yes! Unlike other platforms that lock essential tools behind paywalls, NoteZ Free tier users have access to exams, chat, flashcards, focus timers, notes, and calendar features with a generous 500 credit allowance every month.',
+  },
+  {
+    q: 'Can I cancel or switch my plan anytime?',
+    a: 'Absolutely. You can upgrade, downgrade, or cancel your subscription at any time directly from your Account Settings with zero cancellation fees.',
   },
 ];
 
 export default function Pricing() {
   const [yearly, setYearly] = useState(true);
 
+  const tierList = [PLANS.free, PLANS.pro_student, PLANS.pro_scholar];
+
   return (
-    <div className="min-h-screen bg-background animated-bg overflow-x-hidden">
+    <div className="min-h-screen bg-background animated-bg overflow-x-hidden text-foreground">
       <Navbar />
 
-      <section className="pt-20 pb-6 md:pt-24 md:pb-8">
+      {/* Hero Header */}
+      <section className="pt-24 pb-8 md:pt-28 md:pb-12">
         <div className="container mx-auto px-4 text-center max-w-3xl">
           <motion.span
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full glass text-xs font-medium text-muted-foreground mb-5"
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-xs font-semibold text-primary mb-5"
           >
-            <Sparkles className="h-3 w-3 text-primary" /> Simple, honest pricing
+            <Sparkles className="h-3.5 w-3.5" /> 100% Transparent Credits & Pricing
           </motion.span>
           <motion.h1
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
-            className="font-display text-4xl md:text-5xl font-bold tracking-tight leading-[1.05] mb-3"
+            className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-[1.1] mb-3 text-foreground"
           >
-            Pricing that <span className="gradient-text">scales with you.</span>
+            Predictable plans. <span className="text-primary">No hidden limits.</span>
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-base md:text-lg text-muted-foreground leading-relaxed mb-5"
+            className="text-sm sm:text-base text-muted-foreground leading-relaxed mb-6 max-w-2xl mx-auto font-medium"
           >
-            Start free. Upgrade when NoteZ starts saving you real hours. Cancel anytime.
+            Start free with full feature access and monthly credits. Upgrade when you need higher allowances for intensive study sessions and finals.
           </motion.p>
 
-          {/* Billing toggle */}
-          <div className="inline-flex items-center gap-1 p-1 rounded-full border border-border/60 bg-card/40 backdrop-blur-sm">
+          {/* Billing Interval Toggle */}
+          <div className="inline-flex items-center gap-1 p-1 rounded-full border border-border/80 bg-card/60 backdrop-blur-sm shadow-xs">
             <button
+              type="button"
               onClick={() => setYearly(false)}
-              className={`px-4 py-1.5 text-sm rounded-full transition-all ${!yearly ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
+              className={`px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer ${
+                !yearly ? 'bg-primary text-primary-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              Monthly
+              Monthly billing
             </button>
             <button
+              type="button"
               onClick={() => setYearly(true)}
-              className={`px-4 py-1.5 text-sm rounded-full transition-all flex items-center gap-2 ${yearly ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
+              className={`px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all flex items-center gap-2 cursor-pointer ${
+                yearly ? 'bg-primary text-primary-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              Yearly
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${yearly ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-primary/15 text-primary'
-                }`}>−25%</span>
+              Yearly billing
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                yearly ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+              }`}>
+                Save 25%
+              </span>
             </button>
           </div>
         </div>
       </section>
 
-      {/* Pricing grid */}
-      <section className="pb-20 md:pb-28">
+      {/* Pricing Cards Grid */}
+      <section className="pb-16 md:pb-20">
         <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
-            {tiers.map((tier, i) => {
-              const price = yearly ? tier.yearly : tier.monthly;
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
+            {tierList.map((tier, i) => {
+              const price = yearly ? tier.yearlyPrice : tier.monthlyPrice;
+              const isPopular = tier.highlighted;
+
               return (
                 <motion.div
-                  key={tier.name}
+                  key={tier.id}
                   initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ duration: 0.4, delay: i * 0.05 }}
-                  className={`relative rounded-2xl p-6 md:p-7 border backdrop-blur-sm transition-all ${tier.highlighted
-                      ? 'border-primary/40 bg-card/60 shadow-glow-lg'
-                      : 'border-border/60 bg-card/30 hover:border-border'
-                    }`}
+                  transition={{ duration: 0.35, delay: i * 0.05 }}
+                  className={`relative rounded-2xl p-6 sm:p-7 border flex flex-col justify-between transition-all ${
+                    isPopular
+                      ? 'border-primary bg-card/90 shadow-xl ring-1 ring-primary/40'
+                      : 'border-border/80 bg-card/50 hover:border-border'
+                  }`}
                 >
-                  {tier.highlighted && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-medium">
-                      Most popular
+                  {isPopular && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.8 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tracking-wider uppercase shadow-sm">
+                      {tier.badge || 'Most Popular'}
                     </span>
                   )}
-                  <div className="mb-5">
-                    <h3 className="font-display text-lg font-semibold tracking-tight mb-1">{tier.name}</h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed min-h-[2.5em]">{tier.tagline}</p>
-                  </div>
-                  <div className="mb-6">
-                    <div className="flex items-baseline gap-1">
-                      <span className="font-display text-4xl font-bold tracking-tight">${price}</span>
-                      <span className="text-sm text-muted-foreground">{price === 0 ? 'forever' : '/mo'}</span>
+
+                  <div>
+                    {/* Header */}
+                    <div className="mb-4">
+                      <h3 className="font-serif text-xl font-bold tracking-tight text-foreground mb-1">
+                        {tier.name}
+                      </h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed min-h-[2.5em]">
+                        {tier.tagline}
+                      </p>
+                    </div>
+
+                    {/* Price */}
+                    <div className="mb-5 pb-5 border-b border-border/50">
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-serif text-4xl font-bold tracking-tight text-foreground">
+                          ${price}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {price === 0 ? 'forever' : yearly ? '/month (billed yearly)' : '/month'}
+                        </span>
+                      </div>
+
+                      {/* Monthly Credits Pill */}
+                      <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/80 border border-border text-xs font-mono font-bold text-foreground">
+                        <Zap className="h-3.5 w-3.5 text-primary" />
+                        <span>{tier.monthlyCredits.toLocaleString()} AI Credits / mo</span>
+                      </div>
+                    </div>
+
+                    {/* CTA Button */}
+                    <Button
+                      asChild
+                      variant={isPopular ? 'default' : 'outline'}
+                      className={`w-full mb-6 font-bold text-xs h-10 ${
+                        isPopular ? 'bg-primary text-primary-foreground shadow-md' : 'border-border'
+                      }`}
+                    >
+                      <Link to="/signup">
+                        {tier.id === 'free' ? 'Get Started Free' : `Upgrade to ${tier.name}`}
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
+
+                    {/* Features list */}
+                    <div className="space-y-2.5">
+                      <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-bold">
+                        What's included:
+                      </p>
+                      <ul className="space-y-2">
+                        {tier.features.map(f => (
+                          <li key={f} className="flex items-start gap-2 text-xs">
+                            <Check className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                            <span className="text-foreground/90 leading-snug">{f}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
-                  <Button
-                    asChild
-                    variant={tier.highlighted ? 'default' : 'outline'}
-                    className={`w-full mb-6 ${tier.highlighted ? 'glow-purple' : 'border-border/60'}`}
-                  >
-                    <Link to={tier.href}>
-                      {tier.cta}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <ul className="space-y-2.5">
-                    {tier.features.map(f => (
-                      <li key={f} className="flex items-start gap-2.5 text-sm">
-                        <Check className={`h-4 w-4 mt-0.5 flex-shrink-0 ${tier.highlighted ? 'text-primary' : 'text-muted-foreground'}`} />
-                        <span className="text-foreground/90 leading-snug">{f}</span>
-                      </li>
-                    ))}
-                  </ul>
                 </motion.div>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* Credit Cost Reference Guide Table (ImageToText style transparency) */}
+      <section className="py-12 md:py-16 border-t border-border/40 bg-secondary/20">
+        <div className="container mx-auto px-4 max-w-4xl">
+          <div className="text-center mb-8">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary border border-border text-xs font-mono font-semibold text-muted-foreground mb-3">
+              <Zap className="h-3.5 w-3.5 text-primary" /> Transparent Pricing
+            </span>
+            <h2 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              What Does Each Action Cost?
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 max-w-xl mx-auto">
+              Every metered AI feature has a fixed credit rate. No hidden multipliers or confusing formulas.
+            </p>
+          </div>
+
+          {/* Cost Table Card */}
+          <div className="rounded-2xl border border-border/80 bg-card overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border/60 bg-secondary/50 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <th className="py-3 px-4 font-bold">Feature / Action</th>
+                    <th className="py-3 px-4 font-bold">Category</th>
+                    <th className="py-3 px-4 font-bold text-center">Credit Cost</th>
+                    <th className="py-3 px-4 font-bold">Free Plan Capacity</th>
+                    <th className="py-3 px-4 font-bold">Pro Student Capacity</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40 font-medium">
+                  {(Object.keys(CREDIT_COSTS) as MeteredAction[]).map(actionKey => {
+                    const meta = ACTION_METADATA[actionKey];
+                    const cost = CREDIT_COSTS[actionKey];
+                    const Icon = ACTION_ICONS[actionKey] || Sparkles;
+                    const freeCapacity = Math.floor(500 / cost);
+                    const proCapacity = Math.floor(5000 / cost);
+
+                    return (
+                      <tr key={actionKey} className="hover:bg-secondary/30 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-secondary border border-border/60 flex items-center justify-center shrink-0">
+                              <Icon className="h-3.5 w-3.5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-foreground">{meta.label}</p>
+                              <p className="text-[10px] text-muted-foreground">{meta.shortDesc}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">
+                          {meta.category}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 font-mono font-bold text-primary">
+                            {cost} credits
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-foreground">
+                          ~{freeCapacity} / mo
+                        </td>
+                        <td className="py-3 px-4 font-mono text-foreground font-semibold">
+                          ~{proCapacity} / mo
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom Guarantee Banner */}
+            <div className="p-4 bg-secondary/40 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                <span>
+                  <strong>Zero-Risk Guarantee:</strong> If an API call fails or encounters an error, your credits are refunded automatically.
+                </span>
+              </div>
+              <Link
+                to="/signup"
+                className="text-primary hover:underline font-bold text-xs shrink-0 flex items-center gap-1"
+              >
+                Try Free Now <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQs Section */}
+      <section className="py-16 md:py-20">
+        <div className="container mx-auto px-4 max-w-3xl">
+          <div className="text-center mb-10">
+            <h2 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-2">
+              Frequently Asked Questions
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Everything you need to know about NoteZ plans, credit refills, and subscriptions.
+            </p>
+          </div>
+
+          <div className="space-y-3.5">
+            {FAQS.map(faq => (
+              <div
+                key={faq.q}
+                className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-1.5 shadow-2xs"
+              >
+                <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-primary shrink-0" />
+                  {faq.q}
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+                  {faq.a}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </section>

@@ -5,20 +5,13 @@ interface UpgradeModalState {
   open: boolean;
   field: LimitField;
   limit: number;
+  balance?: number;
+  required?: number;
+  resetDate?: string;
 }
 
 /**
- * Hook that manages UpgradeModal state with per-session rate-limiting so the
- * modal fires at most once per limit-type per session, not once per API call.
- *
- * Usage:
- *   const { upgradeModal, handleLimitError, closeUpgradeModal } = useUpgradeModal();
- *
- *   // In your API call catch block:
- *   if (err?.error === 'USAGE_LIMIT_REACHED') handleLimitError(err.field, err.limit);
- *
- *   // In JSX:
- *   <UpgradeModal {...upgradeModal} onClose={closeUpgradeModal} />
+ * Hook that manages UpgradeModal state with per-session rate-limiting.
  */
 export function useUpgradeModal() {
   const [upgradeModal, setUpgradeModal] = useState<UpgradeModalState>({
@@ -27,14 +20,19 @@ export function useUpgradeModal() {
     limit: 20,
   });
 
-  // Track which fields have already shown a modal this session so we never
-  // fire repeatedly for the same limit in one sitting.
-  const shownThisSession = useRef<Set<LimitField>>(new Set());
+  const shownThisSession = useRef<Set<string>>(new Set());
 
-  const handleLimitError = useCallback((field: LimitField, limit: number) => {
+  const handleLimitError = useCallback((field: LimitField, limit: number, extra?: { balance?: number; required?: number; resetDate?: string }) => {
     if (shownThisSession.current.has(field)) return;
     shownThisSession.current.add(field);
-    setUpgradeModal({ open: true, field, limit });
+    setUpgradeModal({
+      open: true,
+      field,
+      limit,
+      balance: extra?.balance,
+      required: extra?.required,
+      resetDate: extra?.resetDate,
+    });
   }, []);
 
   const closeUpgradeModal = useCallback(() => {
@@ -45,15 +43,28 @@ export function useUpgradeModal() {
 }
 
 /**
- * Parses a Supabase edge-function error response and returns structured
- * limit data if it's a USAGE_LIMIT_REACHED error, or null otherwise.
+ * Parses a Supabase edge-function or RPC error response and returns structured
+ * limit data for credit or usage errors.
  */
 export function parseLimitError(
   err: unknown,
-): { field: LimitField; limit: number } | null {
+): { field: LimitField; limit: number; balance?: number; required?: number; resetDate?: string } | null {
   if (!err || typeof err !== 'object') return null;
-  const e = err as Record<string, unknown>;
-  if (e.error !== 'USAGE_LIMIT_REACHED') return null;
-  if (typeof e.field !== 'string' || typeof e.limit !== 'number') return null;
-  return { field: e.field as LimitField, limit: e.limit };
+  const e = err as Record<string, any>;
+
+  // Check structured credit error
+  if (e.error === 'INSUFFICIENT_CREDITS' || e.code === 'INSUFFICIENT_CREDITS' || e.error === 'USAGE_LIMIT_REACHED') {
+    const field = (e.action || e.field || 'generate_exam') as LimitField;
+    const required = Number(e.cost || e.required || e.limit || 25);
+    const balance = typeof e.balance === 'number' ? e.balance : undefined;
+    return {
+      field,
+      limit: required,
+      required,
+      balance,
+      resetDate: e.resetDate || e.reset_date,
+    };
+  }
+
+  return null;
 }

@@ -209,25 +209,34 @@ export default function ActivitiesView() {
     setItems(prev => prev.filter(i => i.activity_id !== id));
   };
 
+  /* Filter out 100% completed activities completely from the UI & section */
+  const activeActivities = useMemo(() => {
+    return activities.filter(a => {
+      const pct = computeProgress(a.id);
+      return pct < 100 && (a.progress ?? 0) < 100;
+    });
+  }, [activities, itemsByActivity]);
+
   const overall = useMemo(() => {
-    if (!activities.length) return 0;
-    return Math.round(activities.reduce((s, a) => s + (a.progress || 0), 0) / activities.length);
-  }, [activities]);
+    if (!activeActivities.length) return 0;
+    return Math.round(activeActivities.reduce((s, a) => s + (computeProgress(a.id) || a.progress || 0), 0) / activeActivities.length);
+  }, [activeActivities, itemsByActivity]);
 
   const bySubject = useMemo(() => {
     const m: Record<string, { total: number; count: number }> = {};
-    activities.forEach(a => {
+    activeActivities.forEach(a => {
       const k = a.subject || 'General';
+      const pct = computeProgress(a.id) || a.progress || 0;
       m[k] ||= { total: 0, count: 0 };
-      m[k].total += a.progress || 0;
+      m[k].total += pct;
       m[k].count += 1;
     });
-    return Object.entries(m).map(([s, v]) => ({ subject: s, progress: Math.round(v.total / v.count) }));
-  }, [activities]);
+    return Object.entries(m)
+      .map(([s, v]) => ({ subject: s, progress: Math.round(v.total / v.count) }))
+      .filter(s => s.progress < 100);
+  }, [activeActivities, itemsByActivity]);
 
-  const filteredActivities = useMemo(() => {
-    return activities.filter(a => computeProgress(a.id) < 100);
-  }, [activities, itemsByActivity]);
+  const filteredActivities = activeActivities;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -312,44 +321,46 @@ export default function ActivitiesView() {
         )}
       </AnimatePresence>
 
-      {/* Overall progress banner */}
-      <div className="rounded-2xl border border-border bg-secondary p-5">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Overall Subject Progress</span>
-          <span className="text-[12px] font-mono text-foreground">{overall}%</span>
-        </div>
-        <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
-          <div className="h-full bg-[hsl(var(--foreground))] transition-all duration-300" style={{ width: `${overall}%` }} />
-        </div>
-
-        {bySubject.length > 0 && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {bySubject.map(s => {
-              const subjectColor = getSubjectColor(s.subject);
-              return (
-                <div key={s.subject} className="rounded-xl border border-border bg-secondary p-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: subjectColor }}
-                      />
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{s.subject}</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-foreground">{s.progress}%</span>
-                  </div>
-                  <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full transition-all duration-300"
-                      style={{ width: `${s.progress}%`, backgroundColor: subjectColor, opacity: 0.75 }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+      {/* Overall progress banner — only show if active activities exist */}
+      {activeActivities.length > 0 && (
+        <div className="rounded-2xl border border-border bg-secondary p-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Active Task Package Progress</span>
+            <span className="text-[12px] font-mono text-foreground">{overall}%</span>
           </div>
-        )}
-      </div>
+          <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
+            <div className="h-full bg-foreground transition-all duration-300" style={{ width: `${overall}%` }} />
+          </div>
+
+          {bySubject.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {bySubject.map(s => {
+                const subjectColor = getSubjectColor(s.subject);
+                return (
+                  <div key={s.subject} className="rounded-xl border border-border bg-background/50 p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: subjectColor }}
+                        />
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{s.subject}</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-foreground">{s.progress}%</span>
+                    </div>
+                    <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{ width: `${s.progress}%`, backgroundColor: subjectColor, opacity: 0.75 }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* New Activity form */}
       <AnimatePresence>

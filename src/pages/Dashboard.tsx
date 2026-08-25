@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
-import { useTimer } from "@/lib/timer";
+import { useTimer, type FocusGoal } from "@/lib/timer";
+import type { CalendarEvent } from "@/lib/calendar";
 
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -83,7 +84,7 @@ const LANGUAGES = [
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
-  const { hasActiveSession, hasTaskSession, hasExamSession, selectMinutes, start: startFocusTimer } = useTimer();
+  const { hasActiveSession, hasTaskSession, hasExamSession, selectMinutes, setActiveGoal, start: startFocusTimer } = useTimer();
 
   const { t, i18n } = useTranslation();
   const [activeView, setActiveView] = useState<View>("dashboard");
@@ -92,6 +93,7 @@ export default function Dashboard() {
   const [timerWidgetClosed, setTimerWidgetClosed] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('notez_sidebar') !== 'closed');
   const [folderResetKey, setFolderResetKey] = useState(0);
+  const [chatResetKey, setChatResetKey] = useState(0);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [isInsideEditor, setIsInsideEditor] = useState(false);
@@ -158,8 +160,23 @@ export default function Dashboard() {
       setSelectedFolderId(null);
       setFolderResetKey(key => key + 1);
     }
+    if (view === 'chat') {
+      setChatResetKey(key => key + 1);
+    }
     setActiveView(view);
   };
+
+  function startCalendarFocus(event: CalendarEvent) {
+    const goal: FocusGoal = {
+      id: `calendar-${event.id}`,
+      calendarEventId: event.id,
+      label: event.title,
+      subject: event.note?.trim() || undefined,
+    };
+    setActiveGoal(goal);
+    selectMinutes(event.focusDurationMins ?? 25);
+    handleNavigate("timer");
+  }
 
   const renderContent = () => {
     switch (activeView) {
@@ -178,7 +195,7 @@ export default function Dashboard() {
           />
         );
       case "chat":
-        return <ChatView />;
+        return <ChatView key={chatResetKey} />;
       case "folder":
         return (
           <FolderView
@@ -208,7 +225,7 @@ export default function Dashboard() {
       case "activities":
         return <ActivitiesView />;
       case "calendar":
-        return <CalendarView />;
+        return <CalendarView onStartFocus={startCalendarFocus} />;
       case "timer":
         return <FocusTimerView />;
       case "feedback":
@@ -370,34 +387,8 @@ export default function Dashboard() {
                 <SideNavList />
               </nav>
 
-              {/* Language switcher + account footer */}
-              <div className="border-t border-border p-1.5 space-y-1">
-                {/* Language switcher */}
-                <div className="relative">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setLangMenuOpen(o => !o); }}
-                    className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-secondary/70 hover:text-foreground transition-colors"
-                  >
-                    <Globe className="h-3 w-3 shrink-0" />
-                    <span>{LANGUAGES.find(l => l.code === i18n.language)?.flag || '🌐'} {LANGUAGES.find(l => l.code === i18n.language)?.label || 'English'}</span>
-                  </button>
-                  {langMenuOpen && (
-                    <div className="absolute bottom-full left-0 mb-1 w-full bg-card border border-border rounded-lg shadow-lg py-1 z-50">
-                      {LANGUAGES.map(lang => (
-                        <button
-                          key={lang.code}
-                          onClick={(e) => { e.stopPropagation(); i18n.changeLanguage(lang.code); setLangMenuOpen(false); }}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors ${
-                            i18n.language === lang.code ? 'bg-secondary text-foreground font-medium' : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground'
-                          }`}
-                        >
-                          <span>{lang.flag}</span>
-                          <span>{lang.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {/* Account footer */}
+              <div className="border-t border-border p-1.5">
 
                 {/* Account */}
                 <div className="flex items-center gap-1.5">
@@ -541,7 +532,7 @@ export default function Dashboard() {
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden paper-texture min-w-0">
-          <div className={activeView === 'folder' || activeView === 'chat' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
+          <div className={activeView === 'folder' || activeView === 'chat' || activeView === 'calendar' || activeView === 'timer' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
             <motion.div
               key={activeView}
               initial={{ opacity: 0, y: 4 }}

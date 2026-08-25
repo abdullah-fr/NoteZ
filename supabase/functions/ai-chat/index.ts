@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { checkAndIncrement, limitReachedResponse } from "../_shared/usage.ts";
+import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,6 +9,23 @@ const corsHeaders = {
 
 const DYNAMIC_GUIDELINES = `
 CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
+- FOLLOW-UP PROMPTS (MANDATORY AT THE END):
+  * At the very end of EVERY response, add a section containing exactly 3 highly specific, relevant follow-up questions or next study choices tailored to the content just generated.
+  * Format them strictly at the end of your response like this:
+    ---
+    NEXT_FOLLOW_UPS:
+    - [Specific follow-up question 1 based on topic]
+    - [Specific follow-up question 2 based on topic]
+    - [Specific follow-up question 3 based on topic]
+- DYNAMIC BRAND MODERATION & DELETION OF CANNED RESPONSES:
+  * You are NoteZ AI — an intelligent, friendly study and academic assistant built for the NoteZ workspace.
+  * Your primary focus is helping students learn: class notes, academic concepts, exam prep, flashcards, study schedules, and workspace tasks.
+  * IF THE USER ASKS AN OFF-TOPIC, EXPLICIT, OFFENSIVE, OR COMPLETELY NON-EDUCATIONAL QUESTION (e.g., explicit/adult content, profanity, cooking, gaming, sports, general trivia, personal chat):
+    - DO NOT use any fixed, hardcoded, or repetitive canned responses. NEVER repeat the exact same sentence multiple times.
+    - Instead, dynamically write a natural, polite, unique 1-2 sentence response tailored specifically to what the user asked.
+    - Acknowledge their message naturally, explain politely that as NoteZ AI you're tailored for academic and study help, and suggest a creative study query or workspace feature they can try next.
+    - Keep every refusal unique, fresh, friendly, and contextual.
+  * Casual greetings ("hi", "hello", "hey", "how are you") ARE allowed — greet them warmly in 1 short sentence and ask what they're studying today.
 - FORMATTING & LAYOUT (Crucial):
   * For study guides, explanations, and summaries, always use structured Markdown with clear hierarchy:
     - Main numbered section headers: "### 1. Section Title", "### 2. Section Title"
@@ -23,11 +40,9 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
 `;
 
 const MODE_PROMPTS: Record<string, string> = {
-  tutor: `You are NoteZ AI Tutor — a brilliant, patient academic teacher. Explain concepts clearly with intuitive analogies, structured step-by-step reasoning, and clear examples. ${DYNAMIC_GUIDELINES}`,
-  researcher: `You are NoteZ AI Researcher — an analytical research assistant. Provide thorough, evidence-backed breakdowns with structured sections. ${DYNAMIC_GUIDELINES}`,
+  researcher: `You are NoteZ AI Researcher — an analytical, deep research assistant. Provide thorough, evidence-backed breakdowns with structured sections. ${DYNAMIC_GUIDELINES}`,
   summarizer: `You are NoteZ AI Summarizer — distill content into beautifully structured summaries with numbered sections, bold bullet points, and an impactful key takeaway. ${DYNAMIC_GUIDELINES}`,
   analyst: `You are NoteZ AI Analyst — evaluate arguments, trade-offs, pros/cons, and critical frameworks with structured tables or bullet comparisons. ${DYNAMIC_GUIDELINES}`,
-  mentor: `You are NoteZ AI Mentor — a supportive academic and study coach focused on actionable student roadmap and growth. ${DYNAMIC_GUIDELINES}`,
 };
 
 serve(async (req) => {
@@ -57,19 +72,19 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
-    // ── Usage metering ────────────────────────────────────────────────────────
-    const usageResult = await checkAndIncrement(
+    // ── Credit Metering ──────────────────────────────────────────────────────
+    const creditResult = await checkAndDeductServer(
       user.id,
-      "ai_chat_messages_count",
+      "ai_chat",
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    if (!usageResult.allowed) {
-      return limitReachedResponse("ai_chat_messages_count", usageResult.limit!, corsHeaders);
+    if (!creditResult.allowed) {
+      return creditLimitResponse("ai_chat", creditResult, corsHeaders);
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    const { conversationId, message, mode = "tutor", sourceId, scope = "general" } = await req.json();
+    const { conversationId, message, mode = "researcher", sourceId, scope = "general" } = await req.json();
     if (!conversationId || !message) {
       return new Response(JSON.stringify({ error: "Missing conversationId or message" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -111,7 +126,7 @@ serve(async (req) => {
       ? `\n\n[STUDY CONTEXT SCOPE: "${scope}". The user is focusing on this specific context. If notes or source excerpts are provided in the conversation, use and summarize them directly to answer the user's prompt without asking them to re-upload or re-paste.]`
       : "";
 
-    const systemPrompt = (MODE_PROMPTS[mode] || MODE_PROMPTS.tutor) + sourceContext + scopeNote;
+    const systemPrompt = (MODE_PROMPTS[mode] || MODE_PROMPTS.researcher) + sourceContext + scopeNote;
 
     // Build conversation turns for Gemini
     const turns = (history || []).map((m: any) => ({
@@ -119,32 +134,52 @@ serve(async (req) => {
       parts: [{ text: m.content }],
     }));
 
-    // Gemini streaming via SSE
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [
-            ...turns,
-            { role: "user", parts: [{ text: message }] },
-          ],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
-        }),
-      },
-    );
+    // Gemini streaming via SSE — Try valid model endpoints
+    const CANDIDATE_MODELS = [
+      "gemini-2.5-flash",
+      "gemini-1.5-flash",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+    ];
 
-    if (geminiRes.status === 429) {
-      return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let geminiRes: Response | null = null;
+    let lastErrDetail = "";
+
+    for (const modelName of CANDIDATE_MODELS) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [
+                ...turns,
+                { role: "user", parts: [{ text: message }] },
+              ],
+              generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+            }),
+          },
+        );
+        if (res.status === 429) {
+          return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
+            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (res.ok && res.body) {
+          geminiRes = res;
+          break;
+        } else {
+          lastErrDetail = await res.text();
+        }
+      } catch (err: any) {
+        lastErrDetail = err.message;
+      }
     }
-    if (!geminiRes.ok || !geminiRes.body) {
-      const detail = await geminiRes.text();
-      if (geminiRes.status === 403) throw new Error("GEMINI_ACCESS_DENIED");
-      throw new Error(`Gemini error ${geminiRes.status}: ${detail.slice(0, 300)}`);
+
+    if (!geminiRes || !geminiRes.body) {
+      throw new Error(`Gemini streaming error: ${lastErrDetail.slice(0, 300)}`);
     }
 
     let fullText = "";

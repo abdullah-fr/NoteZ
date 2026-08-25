@@ -3,13 +3,18 @@ import { isSameDay, isToday, isTomorrow, differenceInCalendarDays, format } from
 
 export type EventType = 'task' | 'deadline' | 'event';
 
+export type EventPriority = 'low' | 'medium' | 'high';
+
 export interface CalendarEvent {
   id: string;
   date: Date;
   type: EventType;
   title: string;
+  subject?: string;
+  priority?: EventPriority;
   note?: string;
   link?: string;
+  focusDurationMins?: number;
   hour: number;
   minute: number;
   ampm: 'AM' | 'PM';
@@ -19,6 +24,7 @@ export interface CalendarEvent {
 interface CalendarContextType {
   events: CalendarEvent[];
   addEvent: (e: CalendarEvent) => void;
+  updateEvent: (id: string, partial: Partial<CalendarEvent>) => void;
   removeEvent: (id: string) => void;
   toggleEvent: (id: string) => void;
   getEventsForDate: (date: Date) => CalendarEvent[];
@@ -45,28 +51,78 @@ function loadInitialEvents(): CalendarEvent[] {
 
   // Default sample events if none exist
   const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const d1 = new Date(today);
+  d1.setDate(d1.getDate() + 2);
+  const d2 = new Date(today);
+  d2.setDate(d2.getDate() + 3);
+  const d3 = new Date(today);
+  d3.setDate(d3.getDate() + 5);
 
   return [
     {
       id: 'sample-1',
       date: today,
       type: 'task',
-      title: 'Review Chapter 4 Algorithms',
-      hour: 3,
+      title: 'Physics — Chapter 4 Revision',
+      subject: 'Physics Notes',
+      priority: 'high',
+      focusDurationMins: 60,
+      hour: 7,
       minute: 0,
+      ampm: 'PM',
+      completed: true,
+    },
+    {
+      id: 'sample-2',
+      date: today,
+      type: 'deadline',
+      title: 'Math Assignment Problems',
+      subject: 'Maths Folder',
+      priority: 'medium',
+      focusDurationMins: 45,
+      hour: 11,
+      minute: 59,
       ampm: 'PM',
       completed: false,
     },
     {
-      id: 'sample-2',
-      date: tomorrow,
+      id: 'sample-3',
+      date: d1,
       type: 'deadline',
-      title: 'Linear Algebra Problem Set Due',
-      hour: 11,
-      minute: 59,
+      title: 'Physics Midterm Exam',
+      subject: 'Physics Notes',
+      priority: 'high',
+      focusDurationMins: 90,
+      hour: 9,
+      minute: 0,
+      ampm: 'AM',
+      completed: false,
+    },
+    {
+      id: 'sample-4',
+      date: d2,
+      type: 'task',
+      title: 'Chemistry Lab Report',
+      subject: 'Chemistry',
+      priority: 'medium',
+      focusDurationMins: 60,
+      hour: 2,
+      minute: 30,
       ampm: 'PM',
+      completed: false,
+    },
+    {
+      id: 'sample-5',
+      date: d3,
+      type: 'event',
+      title: 'Group Study & Project Sync',
+      subject: 'Computer Science',
+      priority: 'low',
+      focusDurationMins: 45,
+      hour: 4,
+      minute: 0,
+      ampm: 'PM',
+      link: 'https://meet.google.com/abc-defg-hij',
       completed: false,
     },
   ];
@@ -88,6 +144,10 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
 
   const addEvent = useCallback((e: CalendarEvent) => {
     setEvents(prev => [...prev, e]);
+  }, []);
+
+  const updateEvent = useCallback((id: string, partial: Partial<CalendarEvent>) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...partial } : e));
   }, []);
 
   const removeEvent = useCallback((id: string) => {
@@ -129,7 +189,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
   }, [events]);
 
   return (
-    <CalendarContext.Provider value={{ events, addEvent, removeEvent, toggleEvent, getEventsForDate, getUpcoming }}>
+    <CalendarContext.Provider value={{ events, addEvent, updateEvent, removeEvent, toggleEvent, getEventsForDate, getUpcoming }}>
       {children}
     </CalendarContext.Provider>
   );

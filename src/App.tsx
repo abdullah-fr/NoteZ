@@ -7,6 +7,8 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import { TimerProvider } from "@/lib/timer";
 import { CalendarProvider } from "@/lib/calendar";
+import { CreditsProvider } from "@/contexts/CreditsContext";
+import LimitModal from "@/components/credits/LimitModal";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useEffect } from "react";
 import Index from "./pages/Index";
@@ -44,11 +46,13 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeInitializer />
     <AuthProvider>
-      <TimerProvider>
+      <CreditsProvider>
+        <TimerProvider>
           <CalendarProvider>
             <TooltipProvider>
               <Toaster />
               <Sonner />
+              <LimitModal />
               <BrowserRouter>
                 <RouteScrollReset />
                 <Routes>
@@ -69,9 +73,11 @@ const App = () => (
               </BrowserRouter>
             </TooltipProvider>
           </CalendarProvider>
-      </TimerProvider>
+        </TimerProvider>
+      </CreditsProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
 
 export default App;
+

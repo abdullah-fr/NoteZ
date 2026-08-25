@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkAndDeductServer, creditLimitResponse, MeteredAction } from "../_shared/credits.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,6 +89,24 @@ serve(async (req) => {
     const { sourceId, mode, count } = await req.json() as { sourceId: string; mode: Mode; count?: number };
     if (!sourceId || !mode) throw new Error("sourceId and mode required");
     const n = Math.min(Math.max(count || 10, 3), 25);
+
+    const actionMap: Record<Mode, MeteredAction> = {
+      flashcards: "generate_flashcards",
+      quiz: "generate_exam",
+      activities: "activities_breakdown",
+      notes: "source_processing",
+    };
+    const creditAction = actionMap[mode] || "source_processing";
+
+    const creditResult = await checkAndDeductServer(
+      userId,
+      creditAction,
+      SUPABASE_URL,
+      SERVICE_KEY,
+    );
+    if (!creditResult.allowed) {
+      return creditLimitResponse(creditAction, creditResult, corsHeaders);
+    }
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
     const { data: source } = await admin

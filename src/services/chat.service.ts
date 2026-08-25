@@ -52,13 +52,13 @@ export async function fetchSourceById(sourceId: string): Promise<AttachedSource 
 
 export async function createConversation(
   userId: string,
-  mode: string,
+  mode: string | null,
   title: string,
   sourceId?: string | null,
 ): Promise<Conversation> {
   const { data, error } = await supabase
     .from('chat_conversations')
-    .insert({ user_id: userId, mode, title, source_id: sourceId ?? null })
+    .insert({ user_id: userId, mode: mode || 'researcher', title, source_id: sourceId ?? null })
     .select()
     .single();
   if (error) throw error;
@@ -67,11 +67,15 @@ export async function createConversation(
 
 export async function updateConversation(
   conversationId: string,
-  patch: { mode?: string; source_id?: string | null },
+  patch: { mode?: string | null; source_id?: string | null },
 ): Promise<void> {
+  const patchData: Record<string, any> = {};
+  if (patch.mode) patchData.mode = patch.mode;
+  if ('source_id' in patch) patchData.source_id = patch.source_id;
+
   const { error } = await supabase
     .from('chat_conversations')
-    .update(patch)
+    .update(patchData)
     .eq('id', conversationId);
   if (error) throw error;
 }

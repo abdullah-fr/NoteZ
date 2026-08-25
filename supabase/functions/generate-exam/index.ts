@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { checkAndIncrement, limitReachedResponse } from "../_shared/usage.ts";
+import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,15 +51,15 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
-    // ── Usage metering ────────────────────────────────────────────────────────
-    const usageResult = await checkAndIncrement(
+    // ── Credit Metering ──────────────────────────────────────────────────────
+    const creditResult = await checkAndDeductServer(
       userData.user.id,
-      "exam_generations_count",
+      "generate_exam",
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    if (!usageResult.allowed) {
-      return limitReachedResponse("exam_generations_count", usageResult.limit!, corsHeaders);
+    if (!creditResult.allowed) {
+      return creditLimitResponse("generate_exam", creditResult, corsHeaders);
     }
     // ─────────────────────────────────────────────────────────────────────────
 

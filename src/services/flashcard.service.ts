@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
 import {
   createEmptyCard,
   fsrs,
@@ -228,8 +229,35 @@ const GEMINI_FLASHCARDS_API_KEY =
 
 export async function generateFlashcardsFromNotes(
   payload: GenerateFlashcardsPayload,
+  userId?: string,
 ): Promise<{ question: string; answer: string }[]> {
   const cardCount = payload.count || 10;
+
+  // Credit check & deduction
+  const { data: authData } = await supabase.auth.getUser();
+  const effectiveUserId = userId || authData?.user?.id;
+
+  const creditRes = await checkAndDeductCredits(
+    effectiveUserId,
+    'generate_flashcards',
+    20,
+    `Flashcard Deck: ${payload.subject} (${cardCount} cards)`,
+    { subject: payload.subject, count: cardCount },
+  );
+
+  if (!creditRes.success) {
+    const err: any = new Error(
+      `You need 20 credits to generate flashcards, but you currently have ${creditRes.balanceAfter ?? 0} credits.`,
+    );
+    err.error = creditRes.code || 'INSUFFICIENT_CREDITS';
+    err.field = 'generate_flashcards';
+    err.action = 'generate_flashcards';
+    err.limit = 20;
+    err.required = 20;
+    err.balance = creditRes.balanceAfter;
+    err.resetDate = creditRes.resetDate;
+    throw err;
+  }
   const prompt = `You are a study-aid flashcard creator. Given the study material below, generate ${cardCount} high-quality flashcards.
 
 Study Material:
@@ -328,6 +356,8 @@ Return ONLY a valid JSON array with no markdown wrappers:
     }
   }
 
+  // Safe automatic refund if all models fail
+  await refundCredits(effectiveUserId, 20, 'generate_flashcards', 'Flashcard generation failed');
   throw new Error('Unable to generate flashcards. Please try again in a moment.');
 }
 

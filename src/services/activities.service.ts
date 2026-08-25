@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
 
 export interface Activity {
   id: string;
@@ -123,7 +124,31 @@ export function cleanTaskLabel(label: string): string {
 export async function generateActivitiesFromDoc(
   documentText: string,
   fileName?: string,
+  userId?: string,
 ): Promise<GeneratedActivityDraft[]> {
+  // 1. Credit Check & Reservation
+  const { data: authData } = await supabase.auth.getUser();
+  const effectiveUserId = userId || authData?.user?.id;
+
+  const creditRes = await checkAndDeductCredits(
+    effectiveUserId,
+    'activities_breakdown',
+    20,
+    `Syllabus Breakdown: ${fileName || 'Document'}`,
+    { fileName },
+  );
+
+  if (!creditRes.success) {
+    const err: any = new Error(`You need 20 credits to break down a syllabus, but you currently have ${creditRes.balanceAfter ?? 0} credits.`);
+    err.error = creditRes.code || 'INSUFFICIENT_CREDITS';
+    err.field = 'activities_breakdown';
+    err.action = 'activities_breakdown';
+    err.limit = 20;
+    err.required = 20;
+    err.balance = creditRes.balanceAfter;
+    err.resetDate = creditRes.resetDate;
+    throw err;
+  }
   const prompt = `You are an expert academic project and task breakdown assistant.
 Analyze the following document (syllabus, assignment rubric, project requirements, concept document, or presentation guidelines):
 
@@ -232,5 +257,7 @@ Return ONLY a valid JSON array matching this structure with no markdown or wrapp
     }
   }
 
+  // Safe automatic refund if all models fail
+  await refundCredits(effectiveUserId, 20, 'activities_breakdown', 'Syllabus breakdown failed');
   throw new Error('Unable to analyze document and generate activities. Please try again.');
 }

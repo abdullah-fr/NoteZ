@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,21 +12,59 @@ import {
 } from '@/services';
 import { toast } from '@/hooks/use-toast';
 import { useUpgradeModal } from '@/hooks/use-upgrade-modal';
-import UpgradeModal from '@/components/dashboard/UpgradeModal';
 import { format } from 'date-fns';
 import { htmlToPlainText } from './note-utils';
+import { useCalendar, dayLabel, type CalendarEvent } from '@/lib/calendar';
+import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
 import {
   Sparkles, GraduationCap, FlaskConical, ScrollText,
   Loader2, Plus, FileText, X, BarChart3, HeartHandshake,
   CheckCircle2, AlertCircle, BookOpen, Folder, ClipboardCheck,
-  Brain, Layers, ArrowRight, ChevronDown, ArrowUpRight,
-  Search, Terminal, Code2, Compass, Check,
+  Brain, Calendar, ArrowRight, ChevronDown, ArrowUpRight,
+  Search, Terminal, Code2, Compass, Check, Copy, CheckCheck,
+  Mic, MicOff,
 } from 'lucide-react';
+import React from 'react';
 
 /* ─── types ─── */
-type Mode          = 'researcher' | 'summarizer' | 'analyst' | 'mentor' | 'tutor';
+type Mode          = 'researcher' | 'summarizer' | 'analyst';
 type ThinkingStage = 'initializing' | 'thinking' | 'evaluating' | 'displaying' | null;
 type ThinkingLevel = 'low' | 'high' | 'max';
+
+/* ─── Error Boundary to prevent black screen crashes ─── */
+class ChatErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ChatView ErrorBoundary]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full w-full p-8 text-center">
+          <div className="space-y-3">
+            <p className="text-foreground text-sm font-medium">Something went wrong rendering the chat.</p>
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-all"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const THINKING_LEVELS: { id: ThinkingLevel; label: string; desc: string }[] = [
   { id: 'low',  label: 'Low',  desc: 'Fast & direct response' },
@@ -40,11 +78,9 @@ interface LocalFolder { id: string; name: string; color: string; notes: LocalNot
 
 /* ─── constants ─── */
 const MODES: { id: Mode; label: string; icon: any; tag: string }[] = [
-  { id: 'tutor',      label: 'Tutor',     icon: GraduationCap,  tag: 'Explain & teach clearly'      },
-  { id: 'researcher', label: 'Research',  icon: FlaskConical,   tag: 'Deep analysis & evidence'     },
-  { id: 'summarizer', label: 'Summarize', icon: ScrollText,     tag: 'TL;DR & key bullets'          },
+  { id: 'researcher', label: 'Research',  icon: FlaskConical,   tag: 'Deep analysis & evidence' },
+  { id: 'summarizer', label: 'Summarize', icon: ScrollText,     tag: 'TL;DR & key bullets' },
   { id: 'analyst',    label: 'Analyst',   icon: BarChart3,      tag: 'Trade-offs, risks, decisions' },
-  { id: 'mentor',     label: 'Mentor',    icon: HeartHandshake, tag: 'Coach & encourage growth'     },
 ];
 
 const FOLDER_SCOPE = { label: 'Ask this Folder', desc: 'Context from your notes' };
@@ -52,7 +88,7 @@ const FOLDER_SCOPE = { label: 'Ask this Folder', desc: 'Context from your notes'
 const AGENT_CARDS: QuickTask[] = [
   { id: 'explain',    label: 'Explain Simpler',          icon: BookOpen,       desc: 'Break down complex topics with analogies.',             prompt: 'Explain this concept in simpler language with an analogy I can relate to.', accent: 'border-l-notez-violet' },
   { id: 'summarize',  label: 'Summarize Folder / Notes', icon: Folder,         desc: 'Condense folders or individual notes into clear structured summaries.', prompt: 'Summarize the key points from my notes in bullet points.', accent: 'border-l-notez-indigo' },
-  { id: 'flashcards', label: 'Generate Flashcards',      icon: Layers,         desc: 'Turn your notes into Q&A flashcard pairs instantly.',   prompt: 'Generate 10 flashcard Q&A pairs from my notes on this topic.', accent: 'border-l-notez-success' },
+  { id: 'calendar',   label: 'Analyze Calendar',         icon: Calendar,       desc: 'Review upcoming tasks, deadlines & events from your calendar.', prompt: 'Analyze my upcoming calendar events and help me prioritize my tasks.', accent: 'border-l-notez-success' },
   { id: 'studyplan',  label: 'Study Plan from Quiz',     icon: ClipboardCheck, desc: 'Convert weak quiz answers into an actionable roadmap.', prompt: 'Based on my weak quiz answers, generate a focused study plan with specific actions.', accent: 'border-l-notez-warning' },
 ];
 
@@ -66,16 +102,7 @@ const TYPEWRITER_HINTS = [
   'What are the key points of this exam?',
 ];
 
-const SUGGESTIONS = [
-  'Explain Bayes theorem simply',
-  'Summarize my Data Structures folder',
-  'Generate flashcards on neural networks',
-  'Compare REST and GraphQL',
-  'Build a study plan from last quiz',
-  'Explain recursion with a real example',
-  'Summarize Chapter 5 key points',
-  'What should I review before my exam?',
-];
+/* Suggestions removed — user preference */
 
 const ACCEPT    = '.pdf,.doc,.docx,.pptx,.png,.jpg,.jpeg';
 const ACCEPT_RE = /\.(pdf|docx?|pptx?|png|jpe?g)$/i;
@@ -131,16 +158,17 @@ function isSimpleMessage(msg: string): boolean {
 }
 
 /* ─── main component ─── */
-export default function ChatView() {
+function ChatViewInner() {
   const { user } = useAuth();
   const { upgradeModal, closeUpgradeModal } = useUpgradeModal();
+  const { getUpcoming } = useCalendar();
   const [activeId, setActiveId]           = useState<string | null>(null);
   const [messages, setMessages]           = useState<ChatMessage[]>([]);
   const [streaming, setStreaming]         = useState('');
   const [sending, setSending]             = useState(false);
   const [thinkingStage, setThinkingStage] = useState<ThinkingStage>(null);
   const [input, setInput]                 = useState('');
-  const [mode, setMode]                   = useState<Mode>('tutor');
+  const [mode, setMode]                   = useState<Mode | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('high');
   const [thinkingOpen, setThinkingOpen]   = useState(false);
   const [selectedFolderId, setSelectedFolderId]   = useState<string | null>(null);
@@ -150,8 +178,7 @@ export default function ChatView() {
   const [attached, setAttached]           = useState<AttachedSource | null>(null);
   const [uploading, setUploading]         = useState(false);
   const [inputFocused, setInputFocused]   = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggFilter, setSuggFilter]       = useState('');
+  const [activeCardId, setActiveCardId]   = useState<string | null>(null);
   const [lastSentMsg, setLastSentMsg]     = useState('');
 
   function readLocalFolders(): LocalFolder[] {
@@ -184,6 +211,291 @@ export default function ChatView() {
     } catch { return []; }
   }
 
+  const isListeningRef = useRef(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [volumeBars, setVolumeBars] = useState<number[]>([0.3, 0.5, 0.4, 0.7, 0.5, 0.8, 0.6, 0.4, 0.7, 0.5, 0.8, 0.4]);
+  
+  const recognitionRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const preListeningInputRef = useRef('');
+
+  /* ── Clean teardown of all audio resources ── */
+  const stopAudioTracks = useCallback(() => {
+    isListeningRef.current = false;
+    setIsListening(false);
+    
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch {}
+      audioCtxRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch {}
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+  }, []);
+
+  /* ── Cancel: discard spoken text & audio, restore original input ── */
+  const cancelListening = useCallback(() => {
+    stopAudioTracks();
+    setIsTranscribing(false);
+    setInput(preListeningInputRef.current);
+  }, [stopAudioTracks]);
+
+  /* ── Transcribe audio blob using Gemini 3.1 Flash Lite (Universal for Brave/Firefox/Chrome) ── */
+  const transcribeAudioBlob = useCallback(async (blob: Blob): Promise<string> => {
+    const chatApiKey = import.meta.env.VITE_GEMINI_CHAT_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!chatApiKey) {
+      console.warn('No Gemini API key available for audio transcription');
+      return '';
+    }
+
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        try {
+          const base64Data = (reader.result as string).split(',')[1];
+          if (!base64Data) {
+            resolve('');
+            return;
+          }
+
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${chatApiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType: blob.type || 'audio/webm',
+                        data: base64Data,
+                      },
+                    },
+                    {
+                      text: 'Transcribe this spoken audio verbatim into plain text. Output ONLY the transcribed words. Do NOT add any preamble, quotes, formatting, or explanations.',
+                    },
+                  ],
+                }],
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            console.error('Gemini audio transcription API error:', response.statusText);
+            resolve('');
+            return;
+          }
+
+          const data = await response.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          resolve(text);
+        } catch (err) {
+          console.error('Failed to transcribe audio with Gemini:', err);
+          resolve('');
+        }
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    });
+  }, []);
+
+  /* ── Confirm / Done: process recorded audio & finish ── */
+  const confirmListening = useCallback(async () => {
+    const currentInput = input;
+    const initialText = preListeningInputRef.current;
+    const liveTextAdded = currentInput.length > initialText.length;
+
+    // If Web Speech API already gave us live text preview, we're done!
+    if (liveTextAdded && currentInput.trim()) {
+      stopAudioTracks();
+      setTimeout(() => textareaRef.current?.focus(), 50);
+      return;
+    }
+
+    // Otherwise (e.g. Brave/Firefox where Web Speech API is blocked), use MediaRecorder audio + Gemini API
+    setIsTranscribing(true);
+
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        stopAudioTracks();
+
+        if (audioBlob.size > 0) {
+          const transcribedText = await transcribeAudioBlob(audioBlob);
+          if (transcribedText) {
+            setInput(prev => {
+              const separator = prev && !prev.endsWith(' ') ? ' ' : '';
+              return prev + separator + transcribedText;
+            });
+          } else {
+            toast({
+              title: 'No Speech Detected',
+              description: 'Could not hear any spoken words. Please check your mic and try speaking louder.',
+            });
+          }
+        }
+        setIsTranscribing(false);
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      };
+      recorder.stop();
+    } else {
+      stopAudioTracks();
+      setIsTranscribing(false);
+    }
+  }, [input, stopAudioTracks, transcribeAudioBlob]);
+
+  /* ── Start Voice Dictation (MediaRecorder + AudioContext + SpeechRecognition) ── */
+  const startListening = useCallback(async () => {
+    if (isListeningRef.current) return;
+
+    preListeningInputRef.current = input;
+    audioChunksRef.current = [];
+
+    try {
+      // 1. Acquire mic media stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      // 2. Set up MediaRecorder (Universal across Chrome, Brave, Firefox, Safari)
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+        mimeType = 'audio/ogg';
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+      recorder.start(250); // Slice audio every 250ms
+      mediaRecorderRef.current = recorder;
+
+      // 3. Set up AudioContext real live volume equalizer bars
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          audioCtxRef.current = audioCtx;
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 32;
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateVolumeBars = () => {
+            if (!isListeningRef.current) return;
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Generate 12 normalized bar heights (0.2 to 1.0)
+            const newBars: number[] = [];
+            for (let i = 0; i < 12; i++) {
+              const val = dataArray[i % dataArray.length] || 0;
+              const norm = Math.max(0.2, Math.min(1.0, val / 140));
+              newBars.push(norm);
+            }
+            setVolumeBars(newBars);
+            animFrameRef.current = requestAnimationFrame(updateVolumeBars);
+          };
+          updateVolumeBars();
+        }
+      } catch (e) {
+        console.warn('AudioContext visualization setup note:', e);
+      }
+
+      // 4. Try native Web Speech API as live streaming preview if available (Chrome/Safari)
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+
+          let committedText = input;
+
+          recognition.onresult = (event: any) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const trans = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                finalTranscript += trans;
+              } else {
+                interimTranscript += trans;
+              }
+            }
+
+            if (finalTranscript) {
+              const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
+              committedText = committedText + separator + finalTranscript.trim();
+              setInput(committedText);
+            } else if (interimTranscript) {
+              const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
+              setInput(committedText + separator + interimTranscript.trim());
+            }
+          };
+
+          recognition.onerror = () => {
+            // Ignore errors — MediaRecorder + Gemini fallback handles non-Chrome / Brave
+          };
+
+          recognition.onend = () => {
+            if (isListeningRef.current && recognitionRef.current) {
+              try { recognition.start(); } catch {}
+            }
+          };
+
+          recognitionRef.current = recognition;
+          recognition.start();
+        } catch (recErr) {
+          console.warn('Native SpeechRecognition init notice:', recErr);
+        }
+      }
+
+      isListeningRef.current = true;
+      setIsListening(true);
+    } catch (micErr) {
+      console.error('Microphone access error:', micErr);
+      toast({
+        title: 'Microphone Access Blocked',
+        description: 'Please grant microphone permissions in your browser address bar to use voice dictation.',
+        variant: 'destructive',
+      });
+      stopAudioTracks();
+    }
+  }, [input, stopAudioTracks]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      stopAudioTracks();
+    };
+  }, [stopAudioTracks]);
+
   const [localFolders, setLocalFolders] = useState<LocalFolder[]>(readLocalFolders);
   const selectedFolder = localFolders.find(f => f.id === selectedFolderId) ?? null;
   const selectedNote = selectedFolder?.notes.find(n => n.id === selectedNoteId) ?? null;
@@ -194,14 +506,20 @@ export default function ChatView() {
   const composerRef = useRef<HTMLDivElement>(null);
   const scopeRef    = useRef<HTMLDivElement>(null);
   const thinkingRef = useRef<HTMLDivElement>(null);
+  const bottomRef   = useRef<HTMLDivElement>(null);
 
+  const activeCard  = AGENT_CARDS.find(c => c.id === activeCardId) ?? null;
   const typewriterText = useTypewriter(TYPEWRITER_HINTS);
-  const activeMode  = MODES.find(m => m.id === mode)!;
+  const activeMode  = mode ? (MODES.find(m => m.id === mode) ?? null) : null;
   const inChat      = messages.length > 0 || !!streaming;
-  const filteredSuggestions = SUGGESTIONS.filter(s => s.toLowerCase().includes(suggFilter.toLowerCase())).slice(0, 6);
   const scopeLabel  = selectedNote
     ? `${selectedFolder?.name} / ${selectedNote.title}`
     : (selectedFolder?.name ?? 'Ask this Folder / Note');
+
+  /* ── Auto-scroll to bottom like ChatGPT ── */
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   useEffect(() => {
     const refreshFolders = () => setLocalFolders(readLocalFolders());
@@ -214,8 +532,8 @@ export default function ChatView() {
   }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, streaming]);
+    scrollToBottom();
+  }, [messages, streaming, scrollToBottom]);
 
   useEffect(() => {
     if (!attached?.id) return;
@@ -267,7 +585,6 @@ export default function ChatView() {
   // Click outside handling for all popups
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (composerRef.current && !composerRef.current.contains(e.target as Node)) setShowSuggestions(false);
       if (scopeRef.current && !scopeRef.current.contains(e.target as Node)) setScopeOpen(false);
       if (thinkingRef.current && !thinkingRef.current.contains(e.target as Node)) setThinkingOpen(false);
     };
@@ -287,10 +604,12 @@ export default function ChatView() {
 
   /* ── "New Chat" resets all messages and state ── */
   function newConversation() {
+    stopListening();
     setActiveId(null);
     setMessages([]);
     setStreaming('');
     setAttached(null);
+    setMode(null);
     setInput('');
     setTimeout(() => textareaRef.current?.focus(), 50);
   }
@@ -328,12 +647,44 @@ export default function ChatView() {
   }
 
   async function send(overrideMsg?: string) {
-    const msg = (overrideMsg ?? input).trim();
+    const rawInput = (overrideMsg ?? input).trim();
+    let msg = rawInput;
+
+    if (activeCard) {
+      if (rawInput) {
+        msg = `[ACTIVE FEATURE: ${activeCard.label}]\nUser Prompt: ${rawInput}\n(Please apply feature "${activeCard.label}" logic to answer the user prompt above)`;
+      } else {
+        if (activeCard.id === 'summarize' && selectedFolder) {
+          msg = selectedNote
+            ? `Summarize the key points from my "${selectedNote.title}" note in bullet points.`
+            : `Summarize the key points and concepts in my "${selectedFolder.name}" folder.`;
+        } else if (activeCard.id === 'calendar') {
+          const upcoming = getUpcoming(14);
+          if (upcoming.length > 0) {
+            const eventLines = upcoming.map((ev: CalendarEvent) => {
+              const d = ev.date instanceof Date ? ev.date : new Date(ev.date);
+              return `- [${ev.type.toUpperCase()}] "${ev.title}" on ${dayLabel(d)} (${format(d, 'MMM d')}) at ${ev.hour}:${String(ev.minute).padStart(2, '0')} ${ev.ampm}${ev.completed ? ' ✅ Done' : ''}`;
+            }).join('\n');
+            msg = `Here are my upcoming calendar events for the next 2 weeks:\n${eventLines}\n\nAnalyze these events and help me prioritize my tasks. What should I focus on first?`;
+          } else {
+            msg = 'I have no upcoming calendar events in the next 2 weeks. Can you help me plan my study schedule?';
+          }
+        } else {
+          msg = activeCard.prompt;
+        }
+      }
+    }
+
     if (!msg || !user || sending) return;
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    }
     setLastSentMsg(msg);
-    setInput(''); setSending(true); setStreaming(''); setShowSuggestions(false);
+    setInput(''); setSending(true); setStreaming(''); setActiveCardId(null);
 
     try {
+      const effectiveMode = mode || 'researcher';
       let convId = activeId;
       if (!convId) {
         const prefix = selectedNote
@@ -341,12 +692,31 @@ export default function ChatView() {
           : selectedFolder
           ? `[Folder: ${selectedFolder.name}] `
           : '';
-        const data = await createConversation(user.id, mode, prefix + msg.slice(0, 60), attached?.id);
+        const data = await createConversation(user.id, effectiveMode, prefix + msg.slice(0, 60), attached?.id);
         convId = data.id;
         setActiveId(convId);
       } else {
-        await updateConversation(convId, { mode, source_id: attached?.id ?? null });
+        await updateConversation(convId, { mode: effectiveMode, source_id: attached?.id ?? null });
       }
+
+      // ── Credit Check & Reservation ──────────────────────────────────
+      const creditRes = await checkAndDeductCredits(
+        user?.id,
+        'ai_chat',
+        5,
+        `AI Chat: ${msg.slice(0, 40)}`,
+        { mode: effectiveMode },
+      );
+
+      if (!creditRes.success) {
+        handleLimitError('ai_chat', 5, {
+          balance: creditRes.balanceAfter,
+          required: 5,
+          resetDate: creditRes.resetDate,
+        });
+        return;
+      }
+      // ────────────────────────────────────────────────────────────────
 
       const userMsgObj: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: msg, created_at: new Date().toISOString() };
       setMessages(prev => [...prev, userMsgObj]);
@@ -397,51 +767,30 @@ export default function ChatView() {
         ? `\n\n[CONTEXT SCOPE: ${scopeTitle}]${folderContext}`
         : '';
 
-      const token = await getStreamingToken();
-      let streamSuccess = false;
-
-      // ── Edge Function call with SSE streaming ──
-      if (token) {
-        try {
-          const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              conversationId: convId,
-              message: msg + scopeHint,
-              mode,
-              sourceId: attached?.status === 'ready' ? attached.id : null,
-              scope: scopeTitle,
-            }),
-          });
-
-          if (resp.ok && resp.body) {
-            const reader = resp.body.getReader();
-            const decoder = new TextDecoder();
-            let acc = '';
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              acc += decoder.decode(value, { stream: true });
-              setStreaming(acc);
-            }
-            if (acc.trim()) {
-              setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: acc, created_at: new Date().toISOString() }]);
-              setStreaming('');
-              streamSuccess = true;
-            }
-          }
-        } catch {
-          /* Edge function failed — proceed to Gemini direct proxy fallback */
-        }
-      }
-
-      // ── Direct Gemini Fallback (/api/ai-chat-proxy & direct API) ──
-      if (!streamSuccess) {
-        const systemPrompt = `You are NoteZ AI, an advanced, intelligent academic tutor and study assistant.
-Mode: ${mode}. Thinking level: ${thinkingLevel}.
+      const systemPrompt = `You are NoteZ AI, an advanced, intelligent academic tutor and study assistant.
+Mode: ${effectiveMode}. Thinking level: ${thinkingLevel}.
 
 CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
+- MANDATORY USER FOLLOW-UP PROMPTS (CRITICAL):
+  * The follow-ups are the NEXT PROMPTS/COMMANDS that the USER will click to send to NoteZ AI to continue the conversation.
+  * Therefore, each follow-up MUST be written from the USER'S PERSPECTIVE as an action, prompt, or question TO the AI (e.g., "Create a...", "Explain how...", "Show me step-by-step...", "Compare X with Y...", "Give me 3 practice problems on...", "Walk me through...").
+  * NEVER write feedback questions asking the user what they want or prefer (NEVER write "Would you like...", "Do you prefer...", "Are you looking for...", "Should we...").
+  * Format strictly at the very end of your response as:
+---
+NEXT_FOLLOW_UPS:
+- [Next user prompt 1]
+- [Next user prompt 2]
+- [Next user prompt 3]
+
+- DYNAMIC BRAND MODERATION & DELETION OF CANNED RESPONSES:
+  * You are NoteZ AI — an intelligent, friendly study and academic assistant built for the NoteZ workspace.
+  * Your primary focus is helping students learn: class notes, academic concepts, exam prep, flashcards, study schedules, and workspace tasks.
+  * IF THE USER ASKS AN OFF-TOPIC, EXPLICIT, OFFENSIVE, OR COMPLETELY NON-EDUCATIONAL QUESTION (e.g., explicit/adult content, profanity, cooking, gaming, sports, general trivia, personal chat):
+    - DO NOT use any fixed, hardcoded, or repetitive canned responses. NEVER repeat the exact same sentence multiple times.
+    - Instead, dynamically write a natural, polite, unique 1-2 sentence response tailored specifically to what the user asked.
+    - Acknowledge their message naturally, explain politely that as NoteZ AI you're tailored for academic and study help, and suggest a creative study query or workspace feature they can try next.
+    - Keep every refusal unique, fresh, friendly, and contextual.
+  * Casual greetings ("hi", "hello", "hey", "how are you") ARE allowed — greet them warmly in 1 short sentence and ask what they're studying today.
 - FORMATTING & LAYOUT (Crucial):
   * For study guides, explanations, and summaries, always use structured Markdown with clear hierarchy:
     - Main numbered section headers: "### 1. Section Title", "### 2. Section Title"
@@ -454,79 +803,89 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
 - DIRECT ANSWERS: Answer questions directly without generic opening filler ("Sure, I can help with that", "Hello, I am NoteZ AI").
 - DIRECT CITATION: When study context, folders, or notes are provided in the prompt, base your responses directly on them. DO NOT tell the user to upload or paste notes.`;
 
-        // Format conversational turns so follow-ups work naturally
-        const turns = messages.slice(-8).map(m => ({
-          role: m.role === 'user' ? 'user' : 'model',
-          parts: [{ text: m.content }],
-        }));
+      // Format conversational turns so follow-ups work naturally
+      const turns = messages.slice(-8).map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content }],
+      }));
 
-        const currentTurn = {
-          role: 'user',
-          parts: [{ text: msg + scopeHint }],
-        };
+      const currentTurn = {
+        role: 'user',
+        parts: [{ text: msg + scopeHint }],
+      };
 
-        const payload = {
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [...turns, currentTurn],
-          generationConfig: {
-            temperature: thinkingLevel === 'low' ? 0.3 : thinkingLevel === 'high' ? 0.7 : 0.9,
-          },
-        };
+      const payload = {
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [...turns, currentTurn],
+        generationConfig: {
+          temperature: thinkingLevel === 'low' ? 0.3 : thinkingLevel === 'high' ? 0.7 : 0.9,
+        },
+      };
 
-        let rawText = '';
-        let fallbackOk = false;
+      let rawText = '';
+      let apiSuccess = false;
 
-        // 1. Try Vite proxy endpoint first
+      // 1. Direct call to Gemini 3.1 Flash Lite
+      const chatApiKey = import.meta.env.VITE_GEMINI_CHAT_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
+      if (chatApiKey) {
         try {
-          const fallbackRes = await fetch('/api/ai-chat-proxy', {
+          const directRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${chatApiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }
+          );
+
+          if (directRes.ok) {
+            const data = await directRes.json();
+            rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (rawText) apiSuccess = true;
+          }
+        } catch {
+          /* direct fetch failed, try proxy */
+        }
+      }
+
+      // 2. Vite Proxy endpoint fallback (/api/ai-chat-proxy)
+      if (!apiSuccess) {
+        try {
+          const proxyRes = await fetch('/api/ai-chat-proxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
 
-          if (fallbackRes.ok) {
-            const data = await fallbackRes.json();
+          if (proxyRes.ok) {
+            const data = await proxyRes.json();
             rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (rawText) fallbackOk = true;
+            if (rawText) apiSuccess = true;
           }
         } catch {
           /* proxy call failed */
         }
-
-        // 2. Direct fetch to Gemini API as secondary fallback
-        if (!fallbackOk) {
-          const chatApiKey = import.meta.env.VITE_GEMINI_CHAT_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
-          if (chatApiKey) {
-            const directRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${chatApiKey}`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-              }
-            );
-
-            if (directRes.ok) {
-              const data = await directRes.json();
-              rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              if (rawText) fallbackOk = true;
-            }
-          }
-        }
-
-        if (fallbackOk && rawText) {
-          setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: rawText, created_at: new Date().toISOString() }]);
-          // Save assistant message to DB
-          try {
-            await supabase.from('chat_messages').insert({
-              conversation_id: convId,
-              user_id: user.id,
-              role: 'assistant',
-              content: rawText,
-            });
-          } catch { /* silent */ }
-        }
       }
+
+      if (!apiSuccess || !rawText) {
+        // Safe automatic refund
+        await refundCredits(user?.id, 5, 'ai_chat', 'AI chat generation failed');
+      }
+
+      // Add assistant message (with guaranteed string fallback)
+      const responseContent = (apiSuccess && rawText)
+        ? rawText
+        : "I'm sorry, I couldn't generate a response right now. Please try asking again!";
+
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: responseContent, created_at: new Date().toISOString() }]);
+      try {
+        await supabase.from('chat_messages').insert({
+          conversation_id: convId,
+          user_id: user.id,
+          role: 'assistant',
+          content: responseContent,
+        });
+      } catch { /* silent */ }
     } catch (e: any) {
       toast({ title: 'Error sending message', description: e.message, variant: 'destructive' });
     } finally {
@@ -536,31 +895,23 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
     }
   }
 
-  /* ── Clicking quick cards populates the input without auto-sending ── */
+  /* ── Clicking quick cards attaches feature pill badge to input bar ── */
   function pickCard(c: QuickTask) {
-    let promptText = c.prompt;
-    if (c.id === 'summarize' && selectedFolder) {
-      if (selectedNote) {
-        promptText = `Summarize the key points from my "${selectedNote.title}" note in bullet points.`;
-      } else {
-        promptText = `Summarize the key points and concepts in my "${selectedFolder.name}" folder.`;
-      }
-    }
-    setInput(promptText);
+    setActiveCardId(prev => (prev === c.id ? null : c.id));
     setTimeout(() => {
       textareaRef.current?.focus();
-      if (textareaRef.current) {
-        textareaRef.current.selectionStart = promptText.length;
-        textareaRef.current.selectionEnd = promptText.length;
-      }
     }, 50);
   }
 
-  function pickSuggestion(s: string) {
-    setInput(s);
-    setShowSuggestions(false);
+  /* ── Clicking follow-up fills the search/composer box for user to edit & send ── */
+  function handleSelectFollowUp(prompt: string) {
+    setInput(prompt);
     setTimeout(() => {
-      textareaRef.current?.focus();
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const len = prompt.length;
+        textareaRef.current.setSelectionRange(len, len);
+      }
     }, 50);
   }
 
@@ -837,7 +1188,7 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
         </header>
 
         {/* ── Chat Messages & Hero Area ── */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 w-full">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 w-full">
           <AnimatePresence mode="wait">
             {!inChat ? (
               /* ════ HERO — Responsive Empty State ════ */
@@ -876,36 +1227,45 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
                     Deep research, concise summarization, structural analysis, and step-by-step tutoring.
                   </motion.p>
 
-                  {/* ── Quick Agent Cards — 2 cols on mobile, 4 on desktop ── */}
+                    {/* ── Quick Agent Cards — 2 cols on mobile, 4 on desktop ── */}
                   <motion.div
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.17 }}
                     className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 w-full mb-6 sm:mb-8 shrink-0 text-left"
                   >
-                    {AGENT_CARDS.map((card, i) => (
-                      <motion.button
-                        key={card.id}
-                        initial={{ opacity: 0, y: 14 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.19 + i * 0.05 }}
-                        whileHover={{ y: -2, boxShadow: '0 8px 28px hsl(var(--foreground) / 0.12)' }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => pickCard(card)}
-                        className={`group text-left p-3 sm:p-4 rounded-xl border border-l-2 ${card.accent} border-border bg-card/60 hover:bg-secondary/70 transition-all flex flex-col justify-between`}
-                      >
-                        <div>
-                          <div className="flex items-start justify-between mb-2 sm:mb-3">
-                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-secondary border border-border flex items-center justify-center shrink-0">
-                              <card.icon className="text-foreground" style={{ width: 14, height: 14 }} />
+                    {AGENT_CARDS.map((card, i) => {
+                      const isSelected = activeCardId === card.id;
+                      return (
+                        <motion.button
+                          key={card.id}
+                          initial={{ opacity: 0, y: 14 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.19 + i * 0.05 }}
+                          whileHover={{ y: -2 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => pickCard(card)}
+                          className={`group text-left p-3 sm:p-4 rounded-xl border border-l-2 ${card.accent} transition-all flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-primary bg-primary/10 shadow-sm'
+                              : 'border-border bg-card/60 hover:bg-secondary/70'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between mb-2 sm:mb-3">
+                              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl border flex items-center justify-center shrink-0 ${
+                                isSelected ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary border-border text-foreground'
+                              }`}>
+                                <card.icon style={{ width: 14, height: 14 }} />
+                              </div>
+                              <ArrowUpRight className={`h-3.5 w-3.5 transition-colors ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
                             </div>
-                            <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                            <p className="text-[11.5px] sm:text-[13px] font-semibold text-foreground leading-snug mb-0.5 sm:mb-1">{card.label}</p>
+                            <p className="text-[10px] sm:text-[11.5px] text-muted-foreground leading-relaxed line-clamp-2">{card.desc}</p>
                           </div>
-                          <p className="text-[11.5px] sm:text-[13px] font-semibold text-foreground leading-snug mb-0.5 sm:mb-1">{card.label}</p>
-                          <p className="text-[10px] sm:text-[11.5px] text-muted-foreground leading-relaxed line-clamp-2">{card.desc}</p>
-                        </div>
-                      </motion.button>
-                    ))}
+                        </motion.button>
+                      );
+                    })}
                   </motion.div>
 
                   {/* ── AI Modes Row ── */}
@@ -917,26 +1277,29 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
                   >
                     <p className="text-[9px] sm:text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-2.5 sm:mb-3 text-center">AI MODES</p>
                     <div className="flex gap-1.5 sm:gap-2.5 justify-center flex-wrap">
-                      {MODES.map((m, i) => (
-                        <motion.button
-                          key={m.id}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: 0.34 + i * 0.04 }}
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => setMode(m.id)}
-                          className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border text-[10.5px] sm:text-[12px] font-medium transition-all ${
-                            mode === m.id
-                              ? 'border-border/90 bg-secondary text-foreground shadow-xs'
-                              : 'border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary/70 hover:text-foreground'
-                          }`}
-                        >
-                          <m.icon className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0 text-foreground" />
-                          <span>{m.label}</span>
-                          {mode === m.id && <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-primary" />}
-                        </motion.button>
-                      ))}
+                      {MODES.map((m, i) => {
+                        const isSelected = mode === m.id;
+                        return (
+                          <motion.button
+                            key={m.id}
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.34 + i * 0.04 }}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => setMode(prev => prev === m.id ? null : m.id)}
+                            className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border text-[10.5px] sm:text-[12px] font-medium transition-all ${
+                              isSelected
+                                ? 'border-foreground/40 bg-card text-white font-bold shadow-xs'
+                                : 'border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary/70 hover:text-foreground'
+                            }`}
+                          >
+                            <m.icon className={`h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-foreground'}`} />
+                            <span>{m.label}</span>
+                            {isSelected && <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-white" />}
+                          </motion.button>
+                        );
+                      })}
                     </div>
                   </motion.div>
                 </div>
@@ -944,12 +1307,21 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
             ) : (
               /* ════ ACTIVE MESSAGES — Optimized chat bubble area ════ */
               <motion.div key="messages" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full w-full">
-                <div ref={scrollRef} className="max-w-3xl lg:max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5">
+                <div className="max-w-3xl lg:max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5">
                   <AnimatePresence initial={false}>
-                    {messages.map(m => <Bubble key={m.id} message={m} />)}
+                    {messages.map(m => (
+                      <ChatErrorBoundary key={m.id}>
+                        <Bubble message={m} onSelectFollowUp={handleSelectFollowUp} />
+                      </ChatErrorBoundary>
+                    ))}
                   </AnimatePresence>
-                  {streaming && <Bubble message={{ id: 'stream', role: 'assistant', content: streaming, created_at: '' }} streaming />}
+                  {streaming && (
+                    <ChatErrorBoundary>
+                      <Bubble message={{ id: 'stream', role: 'assistant', content: streaming, created_at: '' }} streaming />
+                    </ChatErrorBoundary>
+                  )}
                   {sending && <NoteZThinkingIndicator stage={thinkingStage} simple={isSimpleMessage(lastSentMsg)} folderName={selectedFolder?.name} attachedTitle={attached?.title} />}
+                  <div ref={bottomRef} />
                 </div>
               </motion.div>
             )}
@@ -957,125 +1329,241 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
         </div>
 
         {/* ── Composer — Responsive, focus zoom effect ── */}
-        <div className="px-3 sm:px-6 pb-3 sm:pb-4 pt-2 border-t border-border/50 bg-background/90 backdrop-blur-md shrink-0 w-full">
+        <div className="px-3 sm:px-6 pb-3 sm:pb-4 pt-2 bg-background/90 backdrop-blur-md shrink-0 w-full">
           <div ref={composerRef} className="max-w-3xl lg:max-w-4xl mx-auto relative w-full">
 
-            {/* Suggestions dropdown */}
-            <AnimatePresence>
-              {showSuggestions && filteredSuggestions.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                  transition={{ duration: 0.14 }}
-                  className="absolute bottom-full mb-2 left-0 right-0 rounded-xl border border-border bg-card shadow-2xl overflow-hidden z-50 p-1.5 backdrop-blur-md"
-                >
-                  <div className="px-3 pt-1.5 pb-1 border-b border-border/60">
-                    <p className="text-[9px] sm:text-[9.5px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Suggestions</p>
-                  </div>
-                  <div className="py-0.5">
-                    {filteredSuggestions.map((s, i) => (
-                      <motion.button
-                        key={s}
-                        initial={{ opacity: 0, x: -5 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.025 }}
-                        onMouseDown={() => pickSuggestion(s)}
-                        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-left hover:bg-secondary transition-colors group"
-                      >
-                        <Search className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-muted-foreground group-hover:text-foreground shrink-0 transition-colors" />
-                        <span className="text-[11px] sm:text-[12px] text-muted-foreground group-hover:text-foreground flex-1 transition-colors">{s}</span>
-                        <ArrowRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </motion.button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* ── Input bar — Seamless, no border box ── */}
+            <div className="relative flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-card shadow-xs transition-all duration-200 ease-out">
 
-            {/* ── Input bar with Zoom-in / Focus Effect ── */}
-            <div className="relative flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-card border border-border/80 shadow-xs focus-within:scale-[1.005] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/15 focus-within:shadow-lg transition-all duration-200 ease-out">
-
-              {/* + Attach button */}
-              <input ref={fileRef} type="file" className="hidden" accept={ACCEPT} onChange={e => handleFiles(e.target.files)} />
-              <motion.button
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                whileHover={{ scale: 1.06 }}
-                whileTap={{ scale: 0.94 }}
-                className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg flex items-center justify-center shrink-0 border border-border/60 bg-secondary/60 text-foreground hover:bg-secondary transition-all"
-                aria-label="Attach file (Premium feature)"
-                title="Attach — Premium feature"
-              >
-                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              </motion.button>
-
-              {/* Attached chip — inline */}
-              <AnimatePresence>
-                {attached && (
+              <AnimatePresence mode="wait">
+                {isListening ? (
+                  /* ═══════ LISTENING OVERLAY — ChatGPT-style ✕ Cancel / ✓ Done ═══════ */
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
+                    key="listening-overlay"
+                    initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-border/80 bg-secondary/80 text-[10px] sm:text-[11px] max-w-[120px] sm:max-w-[180px] shrink-0"
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-3 w-full"
                   >
-                    {attached.status === 'ready' ? <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
-                      : attached.status === 'failed' ? <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
-                      : <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />}
-                    <span className="truncate text-foreground/90 font-medium">{attached.title}</span>
-                    <button onClick={() => setAttached(null)} className="hover:text-destructive p-0.5 rounded-md"><X className="h-2.5 w-2.5" /></button>
+                    {/* ✕ Cancel — discard spoken text */}
+                    <motion.button
+                      type="button"
+                      onClick={cancelListening}
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.92 }}
+                      className="h-8 w-8 sm:h-9 sm:w-9 rounded-full flex items-center justify-center shrink-0 border border-foreground/20 bg-secondary/60 text-foreground/70 hover:text-foreground hover:bg-secondary transition-all cursor-pointer"
+                      aria-label="Cancel voice input"
+                      title="Cancel — discard spoken text"
+                    >
+                      <X className="h-4 w-4" />
+                    </motion.button>
+
+                    {/* Sound Wave Visualizer — center, fills remaining space */}
+                    <div className="flex-1 flex items-center justify-center gap-1 min-w-0">
+                      {/* Pulsing mic icon */}
+                      <motion.div
+                        animate={{ scale: [1, 1.15, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                        className="relative mr-2 shrink-0"
+                      >
+                        <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-foreground/10 border border-foreground/20 flex items-center justify-center">
+                          <Mic className="h-4 w-4 text-foreground/80" />
+                        </div>
+                        <span className="absolute inset-0 rounded-full bg-foreground/8 animate-ping pointer-events-none" />
+                      </motion.div>
+
+                      {/* Real live audio volume equalizer bars */}
+                      <div className="flex items-center gap-[3px] h-8">
+                        {volumeBars.map((vol, i) => (
+                          <motion.span
+                            key={i}
+                            className="w-[2.5px] rounded-full bg-gradient-to-t from-foreground/50 to-foreground/90"
+                            animate={{
+                              height: [`${Math.max(4, vol * 22)}px`],
+                            }}
+                            transition={{
+                              duration: 0.1,
+                              ease: 'easeOut',
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      {/* "Listening..." or "Transcribing..." label */}
+                      <span className="ml-2.5 text-[11px] sm:text-[12px] font-medium text-foreground/60 tracking-wide select-none shrink-0">
+                        {isTranscribing ? 'Transcribing audio…' : 'Listening…'}
+                      </span>
+                    </div>
+
+                    {/* ✓ Done — keep text & transcribe audio */}
+                    <motion.button
+                      type="button"
+                      onClick={confirmListening}
+                      disabled={isTranscribing}
+                      whileHover={!isTranscribing ? { scale: 1.08 } : {}}
+                      whileTap={!isTranscribing ? { scale: 0.92 } : {}}
+                      className="h-8 w-8 sm:h-9 sm:w-9 rounded-full flex items-center justify-center shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                      aria-label="Done — keep spoken text"
+                      title="Done — keep spoken text"
+                    >
+                      {isTranscribing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
+                    </motion.button>
+                  </motion.div>
+                ) : (
+                  /* ═══════ NORMAL INPUT BAR ═══════ */
+                  <motion.div
+                    key="normal-input"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="flex items-center gap-2 w-full"
+                  >
+                    {/* + Attach button */}
+                    <input ref={fileRef} type="file" className="hidden" accept={ACCEPT} onChange={e => handleFiles(e.target.files)} />
+                    <motion.button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading}
+                      whileHover={{ scale: 1.06 }}
+                      whileTap={{ scale: 0.94 }}
+                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg flex items-center justify-center shrink-0 border border-border/60 bg-secondary/60 text-foreground hover:bg-secondary transition-all cursor-pointer"
+                      aria-label="Attach file (Premium feature)"
+                      title="Attach — Premium feature"
+                    >
+                      {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    </motion.button>
+
+                    {/* Attached chip — inline */}
+                    <AnimatePresence>
+                      {attached && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-border/80 bg-secondary/80 text-[10px] sm:text-[11px] max-w-[120px] sm:max-w-[180px] shrink-0"
+                        >
+                          {attached.status === 'ready' ? <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
+                            : attached.status === 'failed' ? <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
+                            : <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />}
+                          <span className="truncate text-foreground/90 font-medium">{attached.title}</span>
+                          <button onClick={() => setAttached(null)} className="hover:text-destructive p-0.5 rounded-md"><X className="h-2.5 w-2.5" /></button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Active Feature Card Tag Pill (like ChatGPT Web Search) */}
+                    <AnimatePresence>
+                      {activeCard && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-primary/15 border border-primary/35 text-primary text-[11.5px] sm:text-[12px] font-semibold shrink-0 select-none"
+                        >
+                          <activeCard.icon className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <span className="truncate max-w-[130px] sm:max-w-[190px]">{activeCard.label}</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveCardId(null)}
+                            className="p-0.5 rounded-md hover:bg-primary/20 text-primary/70 hover:text-primary transition-colors"
+                            title="Remove feature"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Active AI Mode Tag Pill (Bold White Text Effect) */}
+                    <AnimatePresence>
+                      {activeMode && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-card border border-foreground/40 text-white font-bold text-[12px] shadow-sm shrink-0 select-none backdrop-blur-md"
+                        >
+                          <activeMode.icon className="h-3.5 w-3.5 text-white shrink-0" />
+                          <span className="truncate max-w-[120px] sm:max-w-[170px] text-white font-bold">{activeMode.label} Mode</span>
+                          <button
+                            type="button"
+                            onClick={() => setMode(null)}
+                            className="p-0.5 rounded-md hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                            title="Remove AI mode"
+                          >
+                            <X className="h-3 w-3 text-white" />
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Textarea + typewriter overlay */}
+                    <div className="relative flex-1 min-w-0 flex items-center">
+                      <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={e => {
+                          setInput(e.target.value);
+                        }}
+                        onKeyDown={onKey}
+                        onFocus={() => setInputFocused(true)}
+                        onBlur={() => setInputFocused(false)}
+                        rows={1}
+                        className="w-full bg-transparent text-[12.5px] sm:text-[13.5px] text-foreground placeholder-transparent resize-none focus:outline-none leading-relaxed py-0.5 sm:py-1"
+                      />
+
+                      {/* Typewriter ghost — only show when not focused AND no input */}
+                      {!input && !inputFocused && (
+                        <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/60">
+                          <span className="truncate">{typewriterText}</span>
+                          <span className="inline-block w-[1.5px] h-[13px] bg-muted-foreground ml-[2px] align-middle animate-pulse shrink-0" />
+                        </div>
+                      )}
+                      {!input && inputFocused && (
+                        <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/40">
+                          Type your question…
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 🎤 Mic button — right side */}
+                    <motion.button
+                      type="button"
+                      onClick={startListening}
+                      whileHover={{ scale: 1.06 }}
+                      whileTap={{ scale: 0.94 }}
+                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 border border-border/60 bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-all cursor-pointer"
+                      aria-label="Voice dictation"
+                      title="Voice dictation (Speech to Text)"
+                    >
+                      <Mic className="h-3.5 w-3.5" />
+                    </motion.button>
+
+                    {/* Send button */}
+                    <motion.button
+                      onClick={() => send()}
+                      disabled={sending || (!input.trim() && !activeCardId)}
+                      whileHover={(input.trim() || activeCardId) && !sending ? { scale: 1.02 } : {}}
+                      whileTap={(input.trim() || activeCardId) && !sending ? { scale: 0.96 } : {}}
+                      className={`flex items-center gap-1 px-3 sm:px-4 h-7 sm:h-8 rounded-lg sm:rounded-xl text-[11px] sm:text-[12.5px] font-semibold shrink-0 transition-all select-none ${
+                        (input.trim() || activeCardId) && !sending
+                          ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
+                          : 'bg-secondary/60 text-muted-foreground/50 cursor-not-allowed border border-border/40'
+                      }`}
+                    >
+                      {sending
+                        ? <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 animate-spin" />
+                        : <><span>Send</span><ArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" /></>
+                      }
+                    </motion.button>
                   </motion.div>
                 )}
               </AnimatePresence>
-
-              {/* Textarea + typewriter overlay */}
-              <div className="relative flex-1 min-w-0 flex items-center">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={e => {
-                    setInput(e.target.value);
-                    setSuggFilter(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onKeyDown={onKey}
-                  onFocus={() => { setInputFocused(true); setShowSuggestions(true); }}
-                  onBlur={() => setInputFocused(false)}
-                  rows={1}
-                  className="w-full bg-transparent text-[12.5px] sm:text-[13.5px] text-foreground placeholder-transparent resize-none focus:outline-none leading-relaxed py-0.5 sm:py-1"
-                />
-
-                {/* Typewriter ghost — only show when not focused AND no input */}
-                {!input && !inputFocused && (
-                  <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/60">
-                    <span className="truncate">{typewriterText}</span>
-                    <span className="inline-block w-[1.5px] h-[13px] bg-muted-foreground ml-[2px] align-middle animate-pulse shrink-0" />
-                  </div>
-                )}
-                {!input && inputFocused && (
-                  <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/40">
-                    Type your question…
-                  </div>
-                )}
-              </div>
-
-              {/* Send button */}
-              <motion.button
-                onClick={() => send()}
-                disabled={sending || !input.trim()}
-                whileHover={input.trim() && !sending ? { scale: 1.02 } : {}}
-                whileTap={input.trim() && !sending ? { scale: 0.96 } : {}}
-                className={`flex items-center gap-1 px-3 sm:px-4 h-7 sm:h-8 rounded-lg sm:rounded-xl text-[11px] sm:text-[12.5px] font-semibold shrink-0 transition-all select-none ${
-                  input.trim() && !sending
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
-                    : 'bg-secondary/60 text-muted-foreground/50 cursor-not-allowed border border-border/40'
-                }`}
-              >
-                {sending
-                  ? <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 animate-spin" />
-                  : <><span>Send</span><ArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" /></>
-                }
-              </motion.button>
             </div>
 
             <p className="text-[9px] sm:text-[10px] text-muted-foreground/60 text-center mt-1.5 select-none hidden sm:block font-mono">
@@ -1094,6 +1582,14 @@ CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
         onClose={closeUpgradeModal}
       />
     </>
+  );
+}
+
+export default function ChatView() {
+  return (
+    <ChatErrorBoundary>
+      <ChatViewInner />
+    </ChatErrorBoundary>
   );
 }
 
@@ -1217,9 +1713,147 @@ function NoteZThinkingIndicator({
   );
 }
 
-/* ─────────────────────── Clean Message Bubble — Optimized Layout ────────────────────────────── */
-function Bubble({ message, streaming }: { message: ChatMessage; streaming?: boolean }) {
+/* ─── helper to parse follow-ups from response text ─── */
+function parseFollowUps(rawContent?: string): { cleanText: string; followUps: string[] } {
+  if (!rawContent || typeof rawContent !== 'string') {
+    return { cleanText: '', followUps: [] };
+  }
+
+  // Support multiple marker variants
+  const markers = [
+    'NEXT_FOLLOW_UPS:',
+    '**NEXT_FOLLOW_UPS:**',
+    'Follow-ups:',
+    '**Follow-ups:**',
+    'Follow-up Questions:',
+    '**Follow-up Questions:**',
+    'Suggested Follow-ups:',
+    '**Suggested Follow-ups:**',
+  ];
+
+  let markerFound: string | null = null;
+  let idx = -1;
+
+  for (const m of markers) {
+    const pos = rawContent.lastIndexOf(m);
+    if (pos !== -1 && (idx === -1 || pos > idx)) {
+      idx = pos;
+      markerFound = m;
+    }
+  }
+
+  if (idx === -1 || !markerFound) {
+    return { cleanText: rawContent, followUps: [] };
+  }
+
+  let cleanText = rawContent.slice(0, idx).trim();
+  if (cleanText.endsWith('---')) {
+    cleanText = cleanText.slice(0, -3).trim();
+  }
+
+  const followUpBlock = rawContent.slice(idx + markerFound.length);
+  const lines = followUpBlock
+    .split('\n')
+    .map(l => l.trim().replace(/^[-*•\d.)\]]+\s*/, '').replace(/^\[|\]$/g, '').trim())
+    .filter(l => l.length > 5 && !l.startsWith('---'));
+
+  return {
+    cleanText: cleanText || rawContent,
+    followUps: lines.slice(0, 3),
+  };
+}
+
+/* ─────────────────────── Clean Message Bubble ────────────────────────────── */
+function Bubble({
+  message,
+  streaming,
+  onSelectFollowUp,
+}: {
+  message: ChatMessage;
+  streaming?: boolean;
+  onSelectFollowUp?: (prompt: string) => void;
+}) {
   const isUser = message.role === 'user';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    const textToCopy = message?.content || '';
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = textToCopy;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [message?.content]);
+
+  const { cleanText, followUps } = useMemo(() => parseFollowUps(message.content), [message.content]);
+
+  // Dynamic contextual follow-ups generated specifically from the message topic
+  const displayFollowUps = useMemo(() => {
+    if (followUps.length > 0) return followUps;
+
+    const content = (cleanText || message?.content || '').toLowerCase();
+    if (content.includes('book') || content.includes('author') || content.includes('read')) {
+      return [
+        "Create a structured chapter-by-chapter reading plan for these books.",
+        "Show me a step-by-step example problem from the top recommended book.",
+        "Compare the depth and difficulty of these recommendations.",
+      ];
+    }
+    if (content.includes('math') || content.includes('calculus') || content.includes('algebra') || content.includes('equation')) {
+      return [
+        "Walk me through a step-by-step example problem with full explanations.",
+        "What foundational prerequisites should I review before starting this topic?",
+        "Generate 3 practice quiz problems with step-by-step solutions.",
+      ];
+    }
+    if (content.includes('code') || content.includes('python') || content.includes('function') || content.includes('program')) {
+      return [
+        "Show a complete working code example with detailed inline comments.",
+        "Explain the common edge cases and performance pitfalls with this approach.",
+        "Refactor this example for modern production best practices.",
+      ];
+    }
+    if (content.includes('exam') || content.includes('test') || content.includes('quiz')) {
+      return [
+        "Generate a 5-question practice exam with detailed answer keys.",
+        "What are the highest-yield exam concepts I must prioritize?",
+        "Create a targeted 7-day revision schedule for this exam.",
+      ];
+    }
+    if (content.includes('schedule') || content.includes('calendar') || content.includes('task') || content.includes('time')) {
+      return [
+        "Prioritize these tasks into a high-impact daily schedule.",
+        "Break down this timeline into manageable 45-minute study blocks.",
+        "Give me active recall techniques to retain this material faster.",
+      ];
+    }
+
+    return [
+      "Elaborate deeper on the most important concept mentioned above.",
+      "Give me a real-world case study and practical application of this.",
+      "What are the next advanced topics I should explore following this?",
+    ];
+  }, [followUps, cleanText, message?.content]);
+
+  const CopyBtn = (
+    <button
+      onClick={handleCopy}
+      className="p-1.5 rounded-lg border border-border/50 bg-secondary/40 hover:bg-secondary text-muted-foreground hover:text-foreground transition-all flex items-center justify-center"
+      title={copied ? "Copied to clipboard!" : "Copy response"}
+      aria-label="Copy response"
+    >
+      {copied ? <CheckCheck className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
 
   return (
     <motion.div
@@ -1232,45 +1866,94 @@ function Bubble({ message, streaming }: { message: ChatMessage; streaming?: bool
       }`}
     >
       {isUser ? (
-        /* User Message — right-aligned bubble */
-        <div className="max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] rounded-2xl rounded-tr-sm px-3.5 sm:px-4 py-2.5 sm:py-3 bg-secondary text-foreground text-[13px] sm:text-[14px] leading-relaxed shadow-xs border border-border/60">
+        /* User Message — right-aligned bubble with copy icon */
+        <div className="max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] rounded-2xl rounded-tr-sm px-3.5 sm:px-4 py-2.5 sm:py-3 bg-secondary text-foreground text-[13px] sm:text-[14px] leading-relaxed shadow-xs border border-border/60 group/user">
           <div className="flex items-center justify-between gap-2 mb-1">
             <span className="text-[9px] sm:text-[10px] font-mono text-primary font-semibold uppercase tracking-wider">YOU</span>
-            {message.created_at && (
-              <span className="text-[8.5px] sm:text-[9.5px] font-mono text-muted-foreground/50">
-                {format(new Date(message.created_at), 'h:mm a')}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5 ml-auto">
+              {message.created_at ? (
+                <span className="text-[8.5px] sm:text-[9.5px] font-mono text-muted-foreground/50">
+                  {(() => { try { return format(new Date(message.created_at), 'h:mm a'); } catch { return ''; } })()}
+                </span>
+              ) : null}
+              <button
+                onClick={handleCopy}
+                className="p-1 rounded-md hover:bg-card/70 text-muted-foreground/60 hover:text-foreground transition-all flex items-center justify-center"
+                title={copied ? "Copied to clipboard!" : "Copy prompt"}
+                aria-label="Copy prompt"
+              >
+                {copied ? <CheckCheck className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+              </button>
+            </div>
           </div>
           <p className="whitespace-pre-wrap text-foreground/95">{message.content}</p>
         </div>
       ) : (
         /* Assistant Message — full-width clean typography */
-        <div className="w-full text-foreground text-[13px] sm:text-[14px] leading-relaxed space-y-1.5 sm:space-y-2">
+        <div className="w-full text-foreground text-[13px] sm:text-[14px] leading-relaxed space-y-2">
           {/* Header */}
           <div className="flex items-center gap-1.5 sm:gap-2 text-[11.5px] sm:text-[12.5px] font-semibold text-foreground pb-0.5">
             <div className="w-5 h-5 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
               <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary" />
             </div>
             <span className="font-serif text-[12px] sm:text-[13px] tracking-tight">NoteZ AI</span>
-            {message.created_at && (
+            {message.created_at ? (
               <span className="text-[8.5px] sm:text-[9.5px] font-mono text-muted-foreground/50 font-normal ml-auto">
-                {format(new Date(message.created_at), 'h:mm a')}
+                {(() => { try { return format(new Date(message.created_at), 'h:mm a'); } catch { return ''; } })()}
               </span>
-            )}
+            ) : null}
           </div>
 
           {/* Markdown Content */}
           <div className="text-foreground/95">
-            <Markdown text={message.content + (streaming ? ' ▍' : '')} />
+            <Markdown text={cleanText + (streaming ? ' ▍' : '')} />
           </div>
+
+          {/* Bottom Action Bar — Copy button at the end of response */}
+          {!streaming && (
+            <div className="flex items-center gap-2 pt-2 border-t border-border/40 mt-3 text-muted-foreground">
+              {CopyBtn}
+            </div>
+          )}
+
+          {/* Follow-up Prompts Section — 3 clickable choices at the end */}
+          {!streaming && (
+            <div className="mt-4 pt-3 border-t border-border/50 space-y-2 select-none">
+              <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-foreground">
+                <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+                <span>Follow-ups</span>
+              </div>
+              <div className="space-y-1.5">
+                {displayFollowUps.map((fu, idx) => (
+                  <motion.button
+                    key={idx}
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    onClick={() => onSelectFollowUp?.(fu)}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-border/60 bg-secondary/40 hover:bg-secondary hover:border-primary/40 text-left transition-all group cursor-pointer"
+                    title="Insert prompt into chat box"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />
+                      <span className="text-[12px] text-foreground/90 group-hover:text-foreground font-medium truncate">{fu}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-muted-foreground group-hover:text-primary shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      Insert ↵
+                    </span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </motion.div>
   );
 }
 
-function Markdown({ text }: { text: string }) {
+function Markdown({ text }: { text?: string }) {
+  const safeText = typeof text === 'string' ? text : '';
   return (
     <div className="text-foreground select-text overflow-hidden">
       <ReactMarkdown
@@ -1297,22 +1980,22 @@ function Markdown({ text }: { text: string }) {
             </h4>
           ),
           p: ({ children }) => (
-            <p className="text-[13.5px] sm:text-[14px] leading-relaxed text-foreground/95 my-2">
+            <p className="mb-2.5 leading-relaxed text-foreground/90 font-normal">
               {children}
             </p>
           ),
           ul: ({ children }) => (
-            <ul className="list-disc pl-5 my-2.5 space-y-1.5 text-[13.5px] sm:text-[14px] text-foreground/95">
+            <ul className="list-disc pl-5 mb-3 space-y-1 text-foreground/90 font-normal">
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="list-decimal pl-5 my-2.5 space-y-1.5 text-[13.5px] sm:text-[14px] text-foreground/95">
+            <ol className="list-decimal pl-5 mb-3 space-y-1 text-foreground/90 font-normal">
               {children}
             </ol>
           ),
           li: ({ children }) => (
-            <li className="leading-relaxed pl-1">
+            <li className="leading-relaxed">
               {children}
             </li>
           ),
@@ -1322,17 +2005,23 @@ function Markdown({ text }: { text: string }) {
             </strong>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-primary/70 bg-secondary/40 rounded-r-xl px-3.5 py-2.5 my-3 text-[13px] sm:text-[13.5px] text-foreground/90 not-italic shadow-xs">
+            <blockquote className="border-l-2 border-primary/60 pl-3 my-3 italic text-muted-foreground bg-secondary/40 py-1.5 rounded-r-lg">
               {children}
             </blockquote>
           ),
           code: ({ className, children, ...props }: any) => {
-            const isInline = !className;
-            if (isInline) {
+            const match = /language-(\w+)/.exec(className || '');
+            const codeString = String(children).replace(/\n$/, '');
+            if (match) {
               return (
-                <code className="bg-secondary/80 border border-border/70 rounded px-1.5 py-0.5 font-mono text-[12px] text-primary" {...props}>
-                  {children}
-                </code>
+                <div className="my-3 rounded-xl border border-border/80 bg-secondary/90 overflow-hidden font-mono text-[12px]">
+                  <div className="px-3 py-1.5 border-b border-border/60 bg-secondary flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{match[1]}</span>
+                  </div>
+                  <pre className="p-3 overflow-x-auto text-foreground font-mono">
+                    <code>{codeString}</code>
+                  </pre>
+                </div>
               );
             }
             return (
@@ -1349,7 +2038,7 @@ function Markdown({ text }: { text: string }) {
           hr: () => <hr className="my-4 border-border/70" />,
         }}
       >
-        {text}
+        {safeText}
       </ReactMarkdown>
     </div>
   );

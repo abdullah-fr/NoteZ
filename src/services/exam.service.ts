@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
 
 export interface ExamQuestion {
   question: string;
@@ -15,6 +16,7 @@ export interface GenerateExamPayload {
   questionCount: number;
   mode?: string;
   sourceText?: string;
+  userId?: string;
 }
 
 export interface GenerateExamResult {
@@ -29,6 +31,31 @@ const GEMINI_EXAM_API_KEY =
 export async function generateExamWithGemini(
   payload: GenerateExamPayload,
 ): Promise<GenerateExamResult> {
+  // 1. Credit Check & Reservation
+  const { data: authData } = await supabase.auth.getUser();
+  const userId = payload.userId || authData?.user?.id;
+
+  const creditCheck = await checkAndDeductCredits(
+    userId,
+    'generate_exam',
+    25,
+    `Exam Suite: ${payload.subject} (${payload.questionCount} Qs)`,
+    { subject: payload.subject, difficulty: payload.difficulty, count: payload.questionCount },
+  );
+
+  if (!creditCheck.success) {
+    const err: any = new Error(
+      `You need 25 credits to generate an exam, but you currently have ${creditCheck.balanceAfter ?? 0} credits.`,
+    );
+    err.error = creditCheck.code || 'INSUFFICIENT_CREDITS';
+    err.field = 'generate_exam';
+    err.action = 'generate_exam';
+    err.limit = 25;
+    err.required = 25;
+    err.balance = creditCheck.balanceAfter;
+    err.resetDate = creditCheck.resetDate;
+    throw err;
+  }
   const prompt = payload.sourceText
     ? `You are an expert exam creator generating an exam for a student.
 
@@ -179,6 +206,8 @@ Return ONLY a valid JSON array of ${payload.questionCount} questions matching th
     return await generateExam(payload);
   } catch (err: any) {
     console.error('Exam service error:', err);
+    // Safe automatic refund
+    await refundCredits(userId, 25, 'generate_exam', err?.message || 'Exam generation failed');
     throw new Error('The exam generator encountered a temporary connection issue. Please try again in a moment.');
   }
 }
@@ -227,4 +256,12 @@ export async function saveExamResult(
     questions: JSON.stringify(payload.questions),
   });
   if (error) console.error('Failed to save exam result:', error);
+}
+
+export async function deleteExamResult(id: string): Promise<void> {
+  const { error } = await supabase.from('exam_results').delete().eq('id', id);
+  if (error) {
+    console.error('Failed to delete exam result:', error);
+    throw error;
+  }
 }

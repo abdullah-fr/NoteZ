@@ -26,7 +26,6 @@ export default function FeedbackView() {
     if (!message.trim() || rating === 0) return;
     setSubmitting(true);
 
-    // Save to localStorage
     try {
       const existing: FeedbackEntry[] = JSON.parse(localStorage.getItem('notez_feedback') || '[]');
       existing.push({
@@ -44,7 +43,7 @@ export default function FeedbackView() {
     setTimeout(() => {
       setSubmitting(false);
       setSubmitted(true);
-    }, 600);
+    }, 400);
   }
 
   function resetForm() {
@@ -55,25 +54,29 @@ export default function FeedbackView() {
   }
 
   const categories: { value: FeedbackCategory; label: string; emoji: string }[] = [
-    { value: 'bug', label: t('tools.feedback.bug'), emoji: '🐛' },
-    { value: 'feature', label: t('tools.feedback.feature'), emoji: '✨' },
-    { value: 'general', label: t('tools.feedback.general'), emoji: '💬' },
+    { value: 'bug', label: t('tools.feedback.bug') || 'Bug Report', emoji: '🐛' },
+    { value: 'feature', label: t('tools.feedback.feature') || 'Feature Request', emoji: '✨' },
+    { value: 'general', label: t('tools.feedback.general') || 'General', emoji: '💬' },
   ];
 
   return (
-    <div className="max-w-lg mx-auto">
+    <div className="max-w-md mx-auto py-4 space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-pink-500/10 border border-pink-500/20">
-          <MessageCircleHeart className="h-5 w-5 text-pink-500" />
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-primary/10 border border-primary/20 text-primary shrink-0">
+          <MessageCircleHeart className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="font-serif text-2xl tracking-tight leading-none">{t('tools.feedback.title')}</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{t('tools.feedback.desc')}</p>
+          <h2 className="font-serif text-2xl font-bold tracking-tight text-foreground">
+            {t('tools.feedback.title') || 'Send Feedback'}
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t('tools.feedback.desc') || 'Help us improve NoteZ with your feedback'}
+          </p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-secondary p-5">
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
         <AnimatePresence mode="wait">
           {submitted ? (
             <motion.div
@@ -81,20 +84,22 @@ export default function FeedbackView() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="flex flex-col items-center gap-4 py-10"
+              className="flex flex-col items-center gap-3 py-8 text-center"
             >
-              <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <Check className="h-7 w-7 text-emerald-500" />
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Check className="h-6 w-6 text-emerald-400" />
               </div>
-              <div className="text-center">
-                <h3 className="font-semibold text-lg text-foreground">{t('tools.feedback.thankYou')}</h3>
-                <p className="text-[13px] text-muted-foreground mt-1">{t('tools.feedback.thankYouDesc')}</p>
-              </div>
+              <h3 className="font-semibold text-base text-foreground">
+                {t('tools.feedback.thankYou') || 'Thank you for your feedback!'}
+              </h3>
+              <p className="text-xs text-muted-foreground max-w-xs">
+                {t('tools.feedback.thankYouDesc') || 'Your message has been received.'}
+              </p>
               <button
                 onClick={resetForm}
-                className="px-4 py-2 rounded-xl border border-border bg-background text-[13px] text-foreground font-medium hover:bg-secondary transition-colors"
+                className="mt-2 px-4 py-2 rounded-xl border border-border bg-secondary text-xs text-foreground font-medium hover:bg-secondary/80 transition-colors cursor-pointer"
               >
-                {t('tools.feedback.sendAnother')}
+                {t('tools.feedback.sendAnother') || 'Send another message'}
               </button>
             </motion.div>
           ) : (
@@ -103,20 +108,23 @@ export default function FeedbackView() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="space-y-5"
+              className="space-y-4"
             >
               {/* Category */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-[0.15em] text-muted-foreground">{t('tools.feedback.category')}</label>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                  {t('tools.feedback.category') || 'CATEGORY'}
+                </label>
                 <div className="flex gap-2">
                   {categories.map(cat => (
                     <button
                       key={cat.value}
+                      type="button"
                       onClick={() => setCategory(cat.value)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-medium transition-all ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                         category === cat.value
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'bg-background border border-border text-muted-foreground hover:text-foreground hover:bg-background'
+                          ? 'bg-primary text-primary-foreground shadow-xs'
+                          : 'bg-secondary/60 border border-border/80 text-muted-foreground hover:text-foreground hover:bg-secondary'
                       }`}
                     >
                       <span>{cat.emoji}</span>
@@ -127,16 +135,19 @@ export default function FeedbackView() {
               </div>
 
               {/* Rating */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-[0.15em] text-muted-foreground">{t('tools.feedback.rating')}</label>
-                <div className="flex gap-1">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                  {t('tools.feedback.rating') || 'RATING'}
+                </label>
+                <div className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map(star => (
                     <button
                       key={star}
+                      type="button"
                       onClick={() => setRating(star)}
                       onMouseEnter={() => setHoverRating(star)}
                       onMouseLeave={() => setHoverRating(0)}
-                      className="p-1 transition-transform hover:scale-110"
+                      className="p-1 transition-transform hover:scale-110 cursor-pointer"
                     >
                       <Star
                         className={`h-6 w-6 transition-colors ${
@@ -151,28 +162,29 @@ export default function FeedbackView() {
               </div>
 
               {/* Message */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-[0.15em] text-muted-foreground">{t('tools.feedback.message')}</label>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                  {t('tools.feedback.message') || 'YOUR MESSAGE'}
+                </label>
                 <textarea
                   value={message}
                   onChange={e => setMessage(e.target.value)}
-                  placeholder={t('tools.feedback.messagePlaceholder')}
-                  rows={5}
-                  className="w-full bg-background border border-border rounded-xl px-4 py-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors resize-y leading-relaxed"
+                  placeholder={t('tools.feedback.messagePlaceholder') || 'Tell us what you think...'}
+                  rows={4}
+                  className="w-full bg-secondary/50 border border-border/80 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary/50 transition-colors resize-y leading-relaxed"
                 />
               </div>
 
-              {/* Submit */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+              {/* Submit Button */}
+              <button
+                type="button"
                 onClick={handleSubmit}
                 disabled={!message.trim() || rating === 0 || submitting}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-[13px] hover:opacity-90 transition-opacity shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {t('tools.feedback.submit')}
-              </motion.button>
+                <span>{t('tools.feedback.submit') || 'Send Feedback'}</span>
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
