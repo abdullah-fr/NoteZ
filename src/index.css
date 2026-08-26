@@ -6,7 +6,8 @@
 
 @layer base {
   :root,
-  [data-theme="warm-paper"] {
+  [data-theme="warm-paper"],
+  [data-theme="light"] {
     /* Warm Paper is the zero-configuration default. */
     --background: 38 30% 94%;
     --foreground: 25 30% 18%;
@@ -30,7 +31,7 @@
 
     --radius: 0.375rem;
 
-    /* Brand tones — kept as notez-* so existing components don't break */
+    /* Brand tones */
     --notez-purple: 32 55% 42%;
     --notez-purple-glow: 32 58% 52%;
     --notez-purple-dark: 28 38% 30%;
@@ -41,18 +42,18 @@
     --notez-success: 145 35% 45%;
     --notez-warning: 32 70% 55%;
 
-    /* Gradients (subtle, no glow) */
+    /* Gradients */
     --gradient-purple: linear-gradient(135deg, hsl(32 55% 42%), hsl(30 42% 65%));
     --gradient-dark: linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
     --gradient-glow: radial-gradient(ellipse at center, hsl(32 55% 42% / 0.08), transparent 70%);
     --gradient-card: linear-gradient(145deg, hsl(38 25% 98%), hsl(38 25% 92%));
 
-    /* Shadows — flat, refined */
+    /* Shadows */
     --shadow-glow: 0 1px 0 hsl(0 0% 100% / 0.65) inset, 0 8px 24px hsl(25 30% 18% / 0.12);
     --shadow-card: 0 1px 0 hsl(0 0% 100% / 0.7) inset, 0 1px 3px hsl(25 30% 18% / 0.1);
     --shadow-card-hover: 0 1px 0 hsl(0 0% 100% / 0.75) inset, 0 8px 24px hsl(25 30% 18% / 0.14);
 
-    /* Sidebar (unused now but kept for shadcn sidebar component) */
+    /* Sidebar */
     --sidebar-background: 38 28% 91%;
     --sidebar-foreground: 25 30% 18%;
     --sidebar-primary: 32 50% 45%;
@@ -65,15 +66,10 @@
   }
 }
 
-/* ══════════════════════════════════════════════════════════════
-   THEME VARIANTS  (Prompt 26)
-   Applied via data-theme attribute on <html>.
-   Warm Paper = default (:root).
-   All themes maintain accessible contrast ratios.
-══════════════════════════════════════════════════════════════ */
-
-/* Midnight — opt-in charcoal theme */
-[data-theme="midnight"] {
+/* Midnight / Dark */
+[data-theme="midnight"],
+[data-theme="dark"],
+.dark {
   --background: 220 8% 7%;
   --foreground: 40 20% 94%;
   --card: 220 8% 9%;

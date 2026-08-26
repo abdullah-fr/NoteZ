@@ -705,16 +705,19 @@ export default function AccountView() {
                 {/* Light */}
                 <button
                   type="button"
-                  onClick={() => setTheme('light')}
+                  onClick={() => {
+                    setTheme('light');
+                    toast({ title: 'Theme set to Light' });
+                  }}
                   className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                    activeTheme === 'light'
+                    activeTheme === 'light' || activeTheme === 'warm-paper'
                       ? 'border-primary bg-primary/5 ring-1 ring-primary'
                       : 'border-border bg-secondary/30 hover:border-border/80'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <Sun className={`h-5 w-5 ${activeTheme === 'light' ? 'text-primary' : 'text-muted-foreground'}`} />
-                    {activeTheme === 'light' && <Check className="h-4 w-4 text-primary" />}
+                    <Sun className={`h-5 w-5 ${activeTheme === 'light' || activeTheme === 'warm-paper' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    {(activeTheme === 'light' || activeTheme === 'warm-paper') && <Check className="h-4 w-4 text-primary" />}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-foreground">Light</p>
@@ -725,16 +728,19 @@ export default function AccountView() {
                 {/* Dark */}
                 <button
                   type="button"
-                  onClick={() => setTheme('dark')}
+                  onClick={() => {
+                    setTheme('dark');
+                    toast({ title: 'Theme set to Dark' });
+                  }}
                   className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                    activeTheme === 'dark'
+                    activeTheme === 'dark' || activeTheme === 'midnight'
                       ? 'border-primary bg-primary/5 ring-1 ring-primary'
                       : 'border-border bg-secondary/30 hover:border-border/80'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <Moon className={`h-5 w-5 ${activeTheme === 'dark' ? 'text-primary' : 'text-muted-foreground'}`} />
-                    {activeTheme === 'dark' && <Check className="h-4 w-4 text-primary" />}
+                    <Moon className={`h-5 w-5 ${activeTheme === 'dark' || activeTheme === 'midnight' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    {(activeTheme === 'dark' || activeTheme === 'midnight') && <Check className="h-4 w-4 text-primary" />}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-foreground">Dark</p>
@@ -757,13 +763,17 @@ export default function AccountView() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
                 {LANGUAGES.map((lang) => {
-                  const isCurrent = i18n.language.startsWith(lang.code);
+                  const isCurrent = (i18n.language || 'en').startsWith(lang.code);
 
                   return (
                     <button
                       key={lang.code}
                       type="button"
-                      onClick={() => i18n.changeLanguage(lang.code)}
+                      onClick={() => {
+                        i18n.changeLanguage(lang.code);
+                        localStorage.setItem('notez_lang', lang.code);
+                        toast({ title: `Language updated to ${lang.label}` });
+                      }}
                       className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                         isCurrent
                           ? 'border-primary bg-primary/5 ring-1 ring-primary'
