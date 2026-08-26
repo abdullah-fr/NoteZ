@@ -8,46 +8,41 @@ import {
   Zap,
   HelpCircle,
   ShieldCheck,
-  RotateCcw,
   Layers,
   MessageSquare,
   GraduationCap,
   FileText,
-  Clock,
   ListChecks,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/landing/Navbar';
 import { Footer } from '@/components/landing/Footer';
-import { PLANS, CREDIT_COSTS, ACTION_METADATA, type MeteredAction } from '@/lib/credits';
+import { PLANS, CREDIT_COSTS, ACTION_METADATA, METERED_ACTIONS, type MeteredAction } from '@/lib/credits';
 
 const ACTION_ICONS: Record<MeteredAction, any> = {
   ai_chat: MessageSquare,
-  ai_audio_transcription: Clock,
   generate_exam: GraduationCap,
   generate_flashcards: Layers,
   editor_ai_assist: FileText,
   activities_breakdown: ListChecks,
-  source_processing: FileText,
-  coach_advice: Sparkles,
 };
 
 const FAQS = [
   {
     q: 'What are AI Credits and how do they work?',
-    a: 'Credits power all AI and processing features in NoteZ (such as generating exams, AI chat explanations, and flashcard creation). Every time you run an AI action, a small, fixed number of credits is deducted from your balance.',
+    a: 'Credits power the AI features in NoteZ (such as generating practice exams, study chat explanations, and flashcard creation). Every time you run an AI action, a fixed number of credits is deducted from your balance.',
   },
   {
     q: 'When do my credits reset?',
-    a: 'Credits refill automatically at the beginning of each 30-day billing cycle. Free accounts receive 500 credits every month; Pro Student receives 5,000 credits; Pro Scholar receives 15,000 credits.',
+    a: 'Free accounts receive 150 credits every week (refilling every 7 days), so you never have to wait a whole month if you run low. Pro Student receives 5,000 credits every month, and Pro Scholar receives 15,000 credits every month.',
   },
   {
     q: 'What happens if an AI request fails or encounters an error?',
-    a: 'NoteZ includes an automatic refund guarantee. If any AI generation or API operation fails, your credits are immediately refunded back to your balance automatically.',
+    a: 'NoteZ includes an automatic refund guarantee. If any generation or operation fails, your credits are immediately refunded back to your balance automatically.',
   },
   {
     q: 'Can I use all major NoteZ features on the Free tier?',
-    a: 'Yes! Unlike other platforms that lock essential tools behind paywalls, NoteZ Free tier users have access to exams, chat, flashcards, focus timers, notes, and calendar features with a generous 500 credit allowance every month.',
+    a: 'Yes. Free tier users have access to exams, AI chat, flashcards, focus timer, notes, and syllabus breakdown with 150 credits refilled every single week.',
   },
   {
     q: 'Can I cancel or switch my plan anytime?',
@@ -103,6 +98,7 @@ export default function Pricing() {
             {tierList.map((tier, i) => {
               const price = yearly ? tier.yearlyPrice : tier.monthlyPrice;
               const isPopular = tier.highlighted;
+              const isFree = tier.id === 'free';
 
               return (
                 <motion.div
@@ -145,10 +141,12 @@ export default function Pricing() {
                         </span>
                       </div>
 
-                      {/* Monthly Credits Pill */}
+                      {/* Credits Pill */}
                       <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/80 border border-border text-xs font-mono font-bold text-foreground">
                         <Zap className="h-3.5 w-3.5 text-primary" />
-                        <span>{tier.monthlyCredits.toLocaleString()} AI Credits / mo</span>
+                        <span>
+                          {tier.creditAllowance.toLocaleString()} AI Credits / {isFree ? 'week' : 'mo'}
+                        </span>
                       </div>
                     </div>
 
@@ -188,7 +186,7 @@ export default function Pricing() {
         </div>
       </section>
 
-      {/* Credit Cost Reference Guide Table (ImageToText style transparency) */}
+      {/* Credit Cost Reference Guide Table */}
       <section className="py-12 md:py-16 border-t border-border/40 bg-secondary/20">
         <div className="container mx-auto px-4 max-w-4xl">
           <div className="text-center mb-8">
@@ -199,7 +197,7 @@ export default function Pricing() {
               What Does Each Action Cost?
             </h2>
             <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 max-w-xl mx-auto">
-              Every metered AI feature has a fixed credit rate. No hidden multipliers or confusing formulas.
+              Every metered AI feature has a fixed credit rate. No hidden multipliers or complicated calculations.
             </p>
           </div>
 
@@ -212,16 +210,16 @@ export default function Pricing() {
                     <th className="py-3 px-4 font-bold">Feature / Action</th>
                     <th className="py-3 px-4 font-bold">Category</th>
                     <th className="py-3 px-4 font-bold text-center">Credit Cost</th>
-                    <th className="py-3 px-4 font-bold">Free Plan Capacity</th>
-                    <th className="py-3 px-4 font-bold">Pro Student Capacity</th>
+                    <th className="py-3 px-4 font-bold">Free Plan Capacity (Weekly)</th>
+                    <th className="py-3 px-4 font-bold">Pro Student Capacity (Monthly)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40 font-medium">
-                  {(Object.keys(CREDIT_COSTS) as MeteredAction[]).map(actionKey => {
+                  {METERED_ACTIONS.map(actionKey => {
                     const meta = ACTION_METADATA[actionKey];
                     const cost = CREDIT_COSTS[actionKey];
                     const Icon = ACTION_ICONS[actionKey] || Sparkles;
-                    const freeCapacity = Math.floor(500 / cost);
+                    const freeCapacity = Math.floor(150 / cost);
                     const proCapacity = Math.floor(5000 / cost);
 
                     return (
@@ -246,10 +244,10 @@ export default function Pricing() {
                           </span>
                         </td>
                         <td className="py-3 px-4 font-mono text-foreground">
-                          ~{freeCapacity} / mo
+                          ~{freeCapacity} / week
                         </td>
                         <td className="py-3 px-4 font-mono text-foreground font-semibold">
-                          ~{proCapacity} / mo
+                          ~{proCapacity} / month
                         </td>
                       </tr>
                     );
@@ -263,7 +261,7 @@ export default function Pricing() {
               <div className="flex items-center gap-2 text-muted-foreground">
                 <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span>
-                  <strong>Zero-Risk Guarantee:</strong> If an API call fails or encounters an error, your credits are refunded automatically.
+                  <strong>Zero-Risk Guarantee:</strong> If an AI call fails or encounters an error, your credits are refunded automatically.
                 </span>
               </div>
               <Link

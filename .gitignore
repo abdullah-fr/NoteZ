@@ -32,3 +32,6 @@ dist-ssr
 *.git-credentials
 UsersLENOVO.git-credentials
 git-gh-helper.bat
+
+# Supabase CLI temp
+supabase/.temp

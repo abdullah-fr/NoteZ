@@ -6,34 +6,25 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 
 export type MeteredAction =
   | "ai_chat"
-  | "ai_audio_transcription"
   | "generate_exam"
   | "generate_flashcards"
   | "editor_ai_assist"
-  | "activities_breakdown"
-  | "source_processing"
-  | "coach_advice";
+  | "activities_breakdown";
 
 export const CREDIT_COSTS: Record<MeteredAction, number> = {
   ai_chat: 5,
-  ai_audio_transcription: 10,
   generate_exam: 25,
   generate_flashcards: 20,
   editor_ai_assist: 5,
   activities_breakdown: 20,
-  source_processing: 25,
-  coach_advice: 5,
 };
 
 export const ACTION_LABELS: Record<MeteredAction, string> = {
   ai_chat: "AI Chat Message",
-  ai_audio_transcription: "Voice Audio Transcription",
-  generate_exam: "Generate Exam",
+  generate_exam: "Generate Practice Exam",
   generate_flashcards: "Generate Flashcards",
   editor_ai_assist: "Editor AI Assist",
   activities_breakdown: "Syllabus Breakdown",
-  source_processing: "Document Source Processing",
-  coach_advice: "Coach Study Advice",
 };
 
 export interface DeductResult {
@@ -63,33 +54,37 @@ export async function checkAndDeductServer(
 
   const desc = description || ACTION_LABELS[action] || action;
 
-  const { data, error } = await admin.rpc("check_and_deduct_credits", {
-    p_user_id: userId,
-    p_amount: cost,
-    p_action: action,
-    p_description: desc,
-    p_metadata: {},
-  });
+  try {
+    const { data, error } = await admin.rpc("check_and_deduct_credits", {
+      p_user_id: userId,
+      p_amount: cost,
+      p_action: action,
+      p_description: desc,
+      p_metadata: {},
+    });
 
-  if (error) {
-    console.warn("[credits] check_and_deduct_credits RPC failed:", error.message);
-    // Fail open so service is not blocked if table is being migrated
+    if (error) {
+      console.warn("[credits] check_and_deduct_credits RPC note:", error.message);
+      return { allowed: true };
+    }
+
+    const res = data as any;
+    if (res?.success) {
+      return { allowed: true, balance: res.balance_after };
+    }
+
+    return {
+      allowed: false,
+      code: res?.code || "INSUFFICIENT_CREDITS",
+      balance: res?.balance,
+      required: res?.required || cost,
+      resetDate: res?.reset_date,
+      tier: res?.tier || "free",
+    };
+  } catch (err) {
+    console.warn("[credits] RPC exception, failing open:", err);
     return { allowed: true };
   }
-
-  const res = data as any;
-  if (res?.success) {
-    return { allowed: true, balance: res.balance_after };
-  }
-
-  return {
-    allowed: false,
-    code: res?.code || "INSUFFICIENT_CREDITS",
-    balance: res?.balance,
-    required: res?.required || cost,
-    resetDate: res?.reset_date,
-    tier: res?.tier || "free",
-  };
 }
 
 /**
@@ -104,21 +99,25 @@ export async function refundServer(
   serviceRoleKey: string,
 ): Promise<void> {
   if (amount <= 0) return;
-  const admin: SupabaseClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  try {
+    const admin: SupabaseClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
 
-  await admin.rpc("refund_credits", {
-    p_user_id: userId,
-    p_amount: amount,
-    p_action: action,
-    p_reason: reason,
-    p_metadata: {},
-  });
+    await admin.rpc("refund_credits", {
+      p_user_id: userId,
+      p_amount: amount,
+      p_action: action,
+      p_reason: reason,
+      p_metadata: {},
+    });
+  } catch (err) {
+    console.warn("[credits] Failed to refund credits:", err);
+  }
 }
 
 /**
- * Returns structured 402/429 JSON response when credit limit is hit.
+ * Returns structured 402 JSON response when credit limit is reached.
  */
 export function creditLimitResponse(
   action: MeteredAction,
@@ -139,7 +138,7 @@ export function creditLimitResponse(
       message: `You need ${cost} credits to ${label.toLowerCase()}, but you currently have ${deductResult.balance ?? 0} credits.`,
     }),
     {
-      status: 402, // Payment / Credit Required
+      status: 402,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     },
   );

@@ -258,144 +258,35 @@ function ChatViewInner() {
     setInput(preListeningInputRef.current);
   }, [stopAudioTracks]);
 
-  /* ── Transcribe audio blob using Gemini 3.1 Flash Lite (Universal for Brave/Firefox/Chrome) ── */
-  const transcribeAudioBlob = useCallback(async (blob: Blob): Promise<string> => {
-    const chatApiKey = import.meta.env.VITE_GEMINI_CHAT_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
-    if (!chatApiKey) {
-      console.warn('No Gemini API key available for audio transcription');
-      return '';
-    }
-
-    return new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-          const base64Data = (reader.result as string).split(',')[1];
-          if (!base64Data) {
-            resolve('');
-            return;
-          }
-
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${chatApiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    {
-                      inlineData: {
-                        mimeType: blob.type || 'audio/webm',
-                        data: base64Data,
-                      },
-                    },
-                    {
-                      text: 'Transcribe this spoken audio verbatim into plain text. Output ONLY the transcribed words. Do NOT add any preamble, quotes, formatting, or explanations.',
-                    },
-                  ],
-                }],
-              }),
-            }
-          );
-
-          if (!response.ok) {
-            console.error('Gemini audio transcription API error:', response.statusText);
-            resolve('');
-            return;
-          }
-
-          const data = await response.json();
-          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-          resolve(text);
-        } catch (err) {
-          console.error('Failed to transcribe audio with Gemini:', err);
-          resolve('');
-        }
-      };
-      reader.onerror = () => resolve('');
-      reader.readAsDataURL(blob);
-    });
-  }, []);
-
-  /* ── Confirm / Done: process recorded audio & finish ── */
+  /* ── Confirm / Done: finish speech recognition & focus composer ── */
   const confirmListening = useCallback(async () => {
-    const currentInput = input;
-    const initialText = preListeningInputRef.current;
-    const liveTextAdded = currentInput.length > initialText.length;
+    stopAudioTracks();
+    setIsTranscribing(false);
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [stopAudioTracks]);
 
-    // If Web Speech API already gave us live text preview, we're done!
-    if (liveTextAdded && currentInput.trim()) {
-      stopAudioTracks();
-      setTimeout(() => textareaRef.current?.focus(), 50);
-      return;
-    }
-
-    // Otherwise (e.g. Brave/Firefox where Web Speech API is blocked), use MediaRecorder audio + Gemini API
-    setIsTranscribing(true);
-
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        stopAudioTracks();
-
-        if (audioBlob.size > 0) {
-          const transcribedText = await transcribeAudioBlob(audioBlob);
-          if (transcribedText) {
-            setInput(prev => {
-              const separator = prev && !prev.endsWith(' ') ? ' ' : '';
-              return prev + separator + transcribedText;
-            });
-          } else {
-            toast({
-              title: 'No Speech Detected',
-              description: 'Could not hear any spoken words. Please check your mic and try speaking louder.',
-            });
-          }
-        }
-        setIsTranscribing(false);
-        setTimeout(() => textareaRef.current?.focus(), 50);
-      };
-      recorder.stop();
-    } else {
-      stopAudioTracks();
-      setIsTranscribing(false);
-    }
-  }, [input, stopAudioTracks, transcribeAudioBlob]);
-
-  /* ── Start Voice Dictation (MediaRecorder + AudioContext + SpeechRecognition) ── */
+  /* ── Start Voice Dictation (Native Browser Web Speech API with 0 API costs) ── */
   const startListening = useCallback(async () => {
     if (isListeningRef.current) return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast({
+        title: 'Browser Voice Support',
+        description: 'Voice speech-to-text is supported natively in Google Chrome, Apple Safari, and Microsoft Edge.',
+      });
+      return;
+    }
 
     preListeningInputRef.current = input;
     audioChunksRef.current = [];
 
     try {
-      // 1. Acquire mic media stream
+      // 1. Acquire mic media stream for live equalizer animation
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
-      // 2. Set up MediaRecorder (Universal across Chrome, Brave, Firefox, Safari)
-      let mimeType = 'audio/webm';
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        mimeType = 'audio/webm;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4';
-      } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-        mimeType = 'audio/ogg';
-      }
-
-      const recorder = new MediaRecorder(stream, { mimeType });
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
-      };
-      recorder.start(250); // Slice audio every 250ms
-      mediaRecorderRef.current = recorder;
-
-      // 3. Set up AudioContext real live volume equalizer bars
+      // 2. Set up AudioContext real live volume equalizer bars
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioCtx) {
@@ -411,7 +302,6 @@ function ChatViewInner() {
             if (!isListeningRef.current) return;
             analyser.getByteFrequencyData(dataArray);
             
-            // Generate 12 normalized bar heights (0.2 to 1.0)
             const newBars: number[] = [];
             for (let i = 0; i < 12; i++) {
               const val = dataArray[i % dataArray.length] || 0;
@@ -427,68 +317,62 @@ function ChatViewInner() {
         console.warn('AudioContext visualization setup note:', e);
       }
 
-      // 4. Try native Web Speech API as live streaming preview if available (Chrome/Safari)
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-          recognition.lang = 'en-US';
+      // 3. Native Web Speech API
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
 
-          let committedText = input;
+      let committedText = input;
 
-          recognition.onresult = (event: any) => {
-            let finalTranscript = '';
-            let interimTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const trans = event.results[i][0].transcript;
-              if (event.results[i].isFinal) {
-                finalTranscript += trans;
-              } else {
-                interimTranscript += trans;
-              }
-            }
-
-            if (finalTranscript) {
-              const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
-              committedText = committedText + separator + finalTranscript.trim();
-              setInput(committedText);
-            } else if (interimTranscript) {
-              const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
-              setInput(committedText + separator + interimTranscript.trim());
-            }
-          };
-
-          recognition.onerror = () => {
-            // Ignore errors — MediaRecorder + Gemini fallback handles non-Chrome / Brave
-          };
-
-          recognition.onend = () => {
-            if (isListeningRef.current && recognitionRef.current) {
-              try { recognition.start(); } catch {}
-            }
-          };
-
-          recognitionRef.current = recognition;
-          recognition.start();
-        } catch (recErr) {
-          console.warn('Native SpeechRecognition init notice:', recErr);
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const trans = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += trans;
+          } else {
+            interimTranscript += trans;
+          }
         }
-      }
+
+        if (finalTranscript) {
+          const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
+          committedText = committedText + separator + finalTranscript.trim();
+          setInput(committedText);
+        } else if (interimTranscript) {
+          const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
+          setInput(committedText + separator + interimTranscript.trim());
+        }
+      };
+
+      recognition.onerror = (err: any) => {
+        console.warn('Speech recognition status:', err?.error);
+      };
+
+      recognition.onend = () => {
+        if (isListeningRef.current && recognitionRef.current) {
+          try { recognition.start(); } catch {}
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
 
       isListeningRef.current = true;
       setIsListening(true);
     } catch (micErr) {
       console.error('Microphone access error:', micErr);
       toast({
-        title: 'Microphone Access Blocked',
-        description: 'Please grant microphone permissions in your browser address bar to use voice dictation.',
+        title: 'Microphone Access Required',
+        description: 'Please grant microphone permissions in your browser to use voice dictation.',
         variant: 'destructive',
       });
       stopAudioTracks();
     }
   }, [input, stopAudioTracks]);
+
 
   // Clean up on unmount
   useEffect(() => {
@@ -826,30 +710,31 @@ NEXT_FOLLOW_UPS:
       let rawText = '';
       let apiSuccess = false;
 
-      // 1. Direct call to Gemini 3.1 Flash Lite
-      const chatApiKey = import.meta.env.VITE_GEMINI_CHAT_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
-      if (chatApiKey) {
-        try {
-          const directRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${chatApiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            }
-          );
+      // 1. Invoke Supabase Edge Function (ai-chat)
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('ai-chat', {
+          body: {
+            conversationId: convId,
+            message: msg,
+            mode: effectiveMode,
+            sourceId: attached?.id,
+          },
+        });
 
-          if (directRes.ok) {
-            const data = await directRes.json();
-            rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (rawText) apiSuccess = true;
+        if (!edgeErr && edgeData) {
+          if (typeof edgeData === 'string') {
+            rawText = edgeData;
+            apiSuccess = true;
+          } else if (edgeData.content) {
+            rawText = edgeData.content;
+            apiSuccess = true;
           }
-        } catch {
-          /* direct fetch failed, try proxy */
         }
+      } catch {
+        /* edge function failed, try proxy fallback */
       }
 
-      // 2. Vite Proxy endpoint fallback (/api/ai-chat-proxy)
+      // 2. Local Proxy endpoint fallback (/api/ai-chat-proxy)
       if (!apiSuccess) {
         try {
           const proxyRes = await fetch('/api/ai-chat-proxy', {

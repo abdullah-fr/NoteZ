@@ -18,6 +18,7 @@ import {
   fetchUserCreditsSummary,
   checkAndDeductCredits,
   refundCredits,
+  PLANS,
 } from '@/lib/credits';
 import { toast } from 'sonner';
 
@@ -34,9 +35,10 @@ export interface LimitModalState {
 
 interface CreditsContextType {
   balance: number;
-  monthlyAllowance: number;
+  allowance: number;
   usedThisPeriod: number;
   tier: PlanTier;
+  resetDays: number;
   periodStart: string;
   periodEnd: string;
   transactions: CreditTransaction[];
@@ -60,13 +62,15 @@ const CreditsContext = createContext<CreditsContextType | undefined>(undefined);
 
 export function CreditsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const freePlan = PLANS.free;
   const [summary, setSummary] = useState<UserCreditsSummary>({
-    balance: 500,
-    monthlyAllowance: 500,
+    balance: freePlan.creditAllowance,
+    allowance: freePlan.creditAllowance,
     usedThisPeriod: 0,
     tier: 'free',
+    resetDays: freePlan.resetDays,
     periodStart: new Date().toISOString(),
-    periodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    periodEnd: new Date(Date.now() + freePlan.resetDays * 24 * 60 * 60 * 1000).toISOString(),
     transactions: [],
   });
   const [loading, setLoading] = useState(true);
@@ -74,7 +78,7 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
   const [limitModal, setLimitModal] = useState<LimitModalState>({
     open: false,
     type: 'INSUFFICIENT_CREDITS',
-    balance: 500,
+    balance: freePlan.creditAllowance,
     required: 25,
   });
 
@@ -139,7 +143,7 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
         throw new Error(`INSUFFICIENT_CREDITS: Required ${cost}, available ${summary.balance}`);
       }
 
-      // 2. Server-side reservation / deduction
+      // 2. Deduction
       const deductRes = await checkAndDeductCredits(
         user?.id,
         action,
@@ -169,7 +173,7 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
         }));
       }
 
-      // 3. Execute the actual API function
+      // 3. Execute the actual AI function
       try {
         const result = await executeFn();
         // Background refresh to sync ledger
@@ -210,9 +214,10 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
     <CreditsContext.Provider
       value={{
         balance: summary.balance,
-        monthlyAllowance: summary.monthlyAllowance,
+        allowance: summary.allowance,
         usedThisPeriod: summary.usedThisPeriod,
         tier: summary.tier,
+        resetDays: summary.resetDays,
         periodStart: summary.periodStart,
         periodEnd: summary.periodEnd,
         transactions: summary.transactions,

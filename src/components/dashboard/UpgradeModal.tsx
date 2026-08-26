@@ -4,14 +4,11 @@ import type { MeteredAction } from '@/lib/credits';
 export type LimitField =
   | 'ai_chat_messages_count'
   | 'exam_generations_count'
-  | 'source_uploads_count'
   | 'ai_chat'
   | 'generate_exam'
   | 'generate_flashcards'
   | 'editor_ai_assist'
-  | 'activities_breakdown'
-  | 'source_processing'
-  | 'coach_advice';
+  | 'activities_breakdown';
 
 interface UpgradeModalProps {
   open: boolean;
@@ -26,14 +23,11 @@ interface UpgradeModalProps {
 const FIELD_ACTION_MAP: Record<string, MeteredAction> = {
   ai_chat_messages_count: 'ai_chat',
   exam_generations_count: 'generate_exam',
-  source_uploads_count: 'source_processing',
   ai_chat: 'ai_chat',
   generate_exam: 'generate_exam',
   generate_flashcards: 'generate_flashcards',
   editor_ai_assist: 'editor_ai_assist',
   activities_breakdown: 'activities_breakdown',
-  source_processing: 'source_processing',
-  coach_advice: 'coach_advice',
 };
 
 export default function UpgradeModal({

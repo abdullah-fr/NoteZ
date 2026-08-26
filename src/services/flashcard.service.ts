@@ -222,11 +222,6 @@ export interface GenerateFlashcardsPayload {
   count?: number;
 }
 
-const GEMINI_FLASHCARDS_API_KEY =
-  import.meta.env.VITE_GEMINI_FLASHCARDS_API_KEY ||
-  import.meta.env.GEMINI_FLASHCARDS_API_KEY ||
-  '';
-
 export async function generateFlashcardsFromNotes(
   payload: GenerateFlashcardsPayload,
   userId?: string,
@@ -258,106 +253,32 @@ export async function generateFlashcardsFromNotes(
     err.resetDate = creditRes.resetDate;
     throw err;
   }
-  const prompt = `You are a study-aid flashcard creator. Given the study material below, generate ${cardCount} high-quality flashcards.
 
-Study Material:
-"""
-${payload.sourceText.slice(0, 16000)}
-"""
-
-Subject/Topic: ${payload.subject}
-
-Rules:
-- Each flashcard should have a concise "question" (front side) and a clear "answer" (back side).
-- Cover key concepts, definitions, facts, relationships, and important details from the material.
-- Vary question types: definitions, fill-in-the-blank style, cause-effect, comparisons, etc.
-- Keep answers brief but complete (1-3 sentences).
-- Do NOT invent facts not present in the material.
-
-Return ONLY a valid JSON array with no markdown wrappers:
-[
-  { "question": "What is...?", "answer": "It is..." },
-  ...
-]`;
-
-  // 1. Try local proxy first (hides API key)
   try {
-    const res = await fetch('/api/generate-ai-flashcards', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: 'application/json',
-        },
-      }),
+    const { data, error } = await supabase.functions.invoke('generate-flashcards', {
+      body: {
+        sourceText: payload.sourceText,
+        subject: payload.subject,
+        count: cardCount,
+      },
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        const cleanJson = rawText.replace(/^\`\`\`json\\s*/, '').replace(/\`\`\`$/, '').trim();
-        const cards = JSON.parse(cleanJson);
-        if (Array.isArray(cards) && cards.length > 0) {
-          return cards.map((c: any) => ({
-            question: c.question || 'Question',
-            answer: c.answer || 'Answer',
-          }));
-        }
-      }
+    if (error) throw error;
+    if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'Failed to generate flashcards');
+
+    if (Array.isArray(data?.cards) && data.cards.length > 0) {
+      return data.cards.map((c: any) => ({
+        question: c.question || 'Question',
+        answer: c.answer || 'Answer',
+      }));
     }
-  } catch {
-    /* silent fallback */
+
+    throw new Error('No flashcards returned from AI service.');
+  } catch (err: any) {
+    console.error('Flashcard service error:', err);
+    await refundCredits(effectiveUserId, 20, 'generate_flashcards', err?.message || 'Flashcard generation failed');
+    throw new Error(err?.message || 'Unable to generate flashcards. Please try again in a moment.');
   }
-
-  // 2. Fallback to direct Gemini endpoints
-  const fallbackModels = [
-    'gemini-3.1-flash-lite',
-    'gemini-2.5-flash-lite',
-    'gemini-1.5-flash-lite',
-    'gemini-2.0-flash-lite',
-  ];
-
-  for (const model of fallbackModels) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_FLASHCARDS_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.7,
-              responseMimeType: 'application/json',
-            },
-          }),
-        },
-      );
-
-      if (!res.ok) continue;
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) continue;
-
-      const cleanJson = rawText.replace(/^\`\`\`json\\s*/, '').replace(/\`\`\`$/, '').trim();
-      const cards = JSON.parse(cleanJson);
-
-      if (Array.isArray(cards) && cards.length > 0) {
-        return cards.map((c: any) => ({
-          question: c.question || 'Question',
-          answer: c.answer || 'Answer',
-        }));
-      }
-    } catch {
-      /* continue to next model */
-    }
-  }
-
-  // Safe automatic refund if all models fail
-  await refundCredits(effectiveUserId, 20, 'generate_flashcards', 'Flashcard generation failed');
-  throw new Error('Unable to generate flashcards. Please try again in a moment.');
 }
+
 

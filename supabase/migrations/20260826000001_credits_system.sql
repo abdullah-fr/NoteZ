@@ -2,14 +2,14 @@
 -- Centralized Credits & Subscription System for NoteZ
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- 1. Create user_credits table to store user credit balances and billing periods
+-- 1. Create user_credits table to store user credit balances and refill cycles
 CREATE TABLE IF NOT EXISTS public.user_credits (
   user_id             UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  balance             INTEGER NOT NULL DEFAULT 500 CHECK (balance >= 0),
-  monthly_allowance   INTEGER NOT NULL DEFAULT 500 CHECK (monthly_allowance >= 0),
+  balance             INTEGER NOT NULL DEFAULT 150 CHECK (balance >= 0),
+  allowance           INTEGER NOT NULL DEFAULT 150 CHECK (allowance >= 0),
   tier                TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro_student', 'pro_scholar', 'team')),
   period_start        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  period_end          TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '30 days'),
+  period_end          TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days'),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.credit_transactions (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id             UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   amount              INTEGER NOT NULL, -- Negative for deduction, positive for refill/grant
-  action              TEXT NOT NULL,    -- e.g. 'ai_chat', 'generate_exam', 'monthly_grant', 'refund'
+  action              TEXT NOT NULL,    -- e.g. 'ai_chat', 'generate_exam', 'credit_refill', 'refund'
   description         TEXT,
   status              TEXT NOT NULL DEFAULT 'success' CHECK (status IN ('success', 'refunded', 'failed')),
   balance_after       INTEGER NOT NULL,
@@ -53,7 +53,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_user_credits_user_id ON public.user_credits(user_id);
 CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_created ON public.credit_transactions(user_id, created_at DESC);
 
--- 6. Helper: Ensure user credit record exists (defaults to 500 for Free tier)
+-- 6. Helper: Ensure user credit record exists (150 weekly for Free, 5,000 monthly for Pro Student)
 CREATE OR REPLACE FUNCTION public.ensure_user_credits(p_user_id UUID)
 RETURNS public.user_credits
 LANGUAGE plpgsql
@@ -62,32 +62,54 @@ SET search_path = public
 AS $$
 DECLARE
   v_rec public.user_credits;
+  v_interval INTERVAL;
+  v_allowance INTEGER;
 BEGIN
   SELECT * INTO v_rec FROM public.user_credits WHERE user_id = p_user_id;
 
   IF NOT FOUND THEN
-    INSERT INTO public.user_credits (user_id, balance, monthly_allowance, tier, period_start, period_end)
-    VALUES (p_user_id, 500, 500, 'free', now(), now() + INTERVAL '30 days')
+    -- Default free tier: 150 weekly credits
+    v_allowance := 150;
+    v_interval := INTERVAL '7 days';
+
+    INSERT INTO public.user_credits (user_id, balance, allowance, tier, period_start, period_end)
+    VALUES (p_user_id, v_allowance, v_allowance, 'free', now(), now() + v_interval)
     ON CONFLICT (user_id) DO UPDATE SET updated_at = now()
     RETURNING * INTO v_rec;
 
     -- Record initial grant transaction
     INSERT INTO public.credit_transactions (user_id, amount, action, description, status, balance_after)
-    VALUES (p_user_id, 500, 'initial_grant', 'Welcome to NoteZ (Free Tier Allowance)', 'success', 500);
+    VALUES (p_user_id, v_allowance, 'initial_grant', 'Welcome to NoteZ (Weekly Free Allowance)', 'success', v_allowance);
   END IF;
 
-  -- Check if monthly reset period has elapsed
+  -- Determine refill interval based on tier
+  IF v_rec.tier = 'free' THEN
+    v_interval := INTERVAL '7 days';
+    v_allowance := 150;
+  ELSIF v_rec.tier = 'pro_student' THEN
+    v_interval := INTERVAL '30 days';
+    v_allowance := 5000;
+  ELSIF v_rec.tier = 'pro_scholar' THEN
+    v_interval := INTERVAL '30 days';
+    v_allowance := 15000;
+  ELSE
+    v_interval := INTERVAL '30 days';
+    v_allowance := 50000;
+  END IF;
+
+  -- Check if reset period has elapsed and auto-refill
   IF now() >= v_rec.period_end THEN
     UPDATE public.user_credits
-    SET balance = v_rec.monthly_allowance,
+    SET balance = v_allowance,
+        allowance = v_allowance,
         period_start = now(),
-        period_end = now() + INTERVAL '30 days',
+        period_end = now() + v_interval,
         updated_at = now()
     WHERE user_id = p_user_id
     RETURNING * INTO v_rec;
 
     INSERT INTO public.credit_transactions (user_id, amount, action, description, status, balance_after)
-    VALUES (p_user_id, v_rec.monthly_allowance, 'monthly_grant', 'Monthly credit allowance reset', 'success', v_rec.balance);
+    VALUES (p_user_id, v_allowance, 'credit_refill', 'Credit allowance refill', 'success', v_rec.balance);
   END IF;
 
   RETURN v_rec;
@@ -152,7 +174,7 @@ BEGIN
 END;
 $$;
 
--- 8. Atomic RPC: Refund Credits (e.g. when an API request fails)
+-- 8. Atomic RPC: Refund Credits
 CREATE OR REPLACE FUNCTION public.refund_credits(
   p_user_id     UUID,
   p_amount      INTEGER,
@@ -166,35 +188,28 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_credit_rec public.user_credits;
   v_new_balance INTEGER;
 BEGIN
   IF p_amount <= 0 THEN
-    RETURN jsonb_build_object('success', true, 'refunded', 0);
+    RETURN jsonb_build_object('success', true);
   END IF;
 
-  v_credit_rec := public.ensure_user_credits(p_user_id);
-  v_new_balance := v_credit_rec.balance + p_amount;
-
   UPDATE public.user_credits
-  SET balance = v_new_balance, updated_at = now()
-  WHERE user_id = p_user_id;
+  SET balance = balance + p_amount, updated_at = now()
+  WHERE user_id = p_user_id
+  RETURNING balance INTO v_new_balance;
 
   INSERT INTO public.credit_transactions (
     user_id, amount, action, description, status, balance_after, metadata
   ) VALUES (
-    p_user_id, p_amount, 'refund', p_reason, 'refunded', v_new_balance, p_metadata
+    p_user_id, p_amount, 'refund', 'Refund: ' || p_reason, 'refunded', COALESCE(v_new_balance, p_amount), p_metadata
   );
 
-  RETURN jsonb_build_object(
-    'success', true,
-    'balance_after', v_new_balance,
-    'refunded', p_amount
-  );
+  RETURN jsonb_build_object('success', true, 'balance_after', v_new_balance);
 END;
 $$;
 
--- 9. RPC: Get User Credits Summary
+-- 9. RPC: Get User Credits Summary with Transaction History
 CREATE OR REPLACE FUNCTION public.get_user_credits_summary(p_user_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -203,22 +218,12 @@ SET search_path = public
 AS $$
 DECLARE
   v_credit_rec public.user_credits;
-  v_transactions JSONB;
+  v_tx_json JSONB;
   v_used_this_period INTEGER;
 BEGIN
   v_credit_rec := public.ensure_user_credits(p_user_id);
 
-  -- Fetch recent 10 transactions
-  SELECT jsonb_agg(to_jsonb(t)) INTO v_transactions
-  FROM (
-    SELECT id, amount, action, description, status, balance_after, created_at
-    FROM public.credit_transactions
-    WHERE user_id = p_user_id
-    ORDER BY created_at DESC
-    LIMIT 15
-  ) t;
-
-  -- Calculate used this period
+  -- Calculate credits used during current cycle
   SELECT COALESCE(ABS(SUM(amount)), 0) INTO v_used_this_period
   FROM public.credit_transactions
   WHERE user_id = p_user_id
@@ -226,20 +231,24 @@ BEGIN
     AND status = 'success'
     AND created_at >= v_credit_rec.period_start;
 
+  -- Fetch last 50 transactions
+  SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) INTO v_tx_json
+  FROM (
+    SELECT id, user_id, amount, action, description, status, balance_after, created_at
+    FROM public.credit_transactions
+    WHERE user_id = p_user_id
+    ORDER BY created_at DESC
+    LIMIT 50
+  ) t;
+
   RETURN jsonb_build_object(
     'balance', v_credit_rec.balance,
-    'monthly_allowance', v_credit_rec.monthly_allowance,
+    'allowance', v_credit_rec.allowance,
     'used_this_period', v_used_this_period,
     'tier', v_credit_rec.tier,
     'period_start', v_credit_rec.period_start,
     'period_end', v_credit_rec.period_end,
-    'transactions', COALESCE(v_transactions, '[]'::jsonb)
+    'transactions', v_tx_json
   );
 END;
 $$;
-
--- Grant execution to authenticated users
-GRANT EXECUTE ON FUNCTION public.ensure_user_credits(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.check_and_deduct_credits(UUID, INTEGER, TEXT, TEXT, JSONB) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.refund_credits(UUID, INTEGER, TEXT, TEXT, JSONB) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_user_credits_summary(UUID) TO authenticated;

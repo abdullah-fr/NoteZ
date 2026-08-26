@@ -103,19 +103,6 @@ export async function deleteChecklistItem(itemId: string): Promise<void> {
   if (error) throw error;
 }
 
-/* ── Generate Activity Checklists from Document via Gemini ── */
-export interface GeneratedActivityDraft {
-  title: string;
-  subject: string;
-  description: string;
-  tasks: string[];
-}
-
-const GEMINI_ACTIVITIES_API_KEY =
-  import.meta.env.VITE_GEMINI_ACTIVITIES_API_KEY ||
-  import.meta.env.GEMINI_ACTIVITIES_API_KEY ||
-  '';
-
 export function cleanTaskLabel(label: string): string {
   if (!label) return '';
   return label.replace(/^(step|task|\d+)\s*\d*[:.-]\s*/i, '').trim();
@@ -149,115 +136,33 @@ export async function generateActivitiesFromDoc(
     err.resetDate = creditRes.resetDate;
     throw err;
   }
-  const prompt = `You are an expert academic project and task breakdown assistant.
-Analyze the following document (syllabus, assignment rubric, project requirements, concept document, or presentation guidelines):
 
-Document Name: "${fileName || 'Uploaded Document'}"
-Document Content:
-"""
-${documentText.slice(0, 16000)}
-"""
-
-CRITICAL INSTRUCTIONS:
-1. Extract and auto-generate structured Activity packages specifically for assignments, projects, concepts, or presentations found in the document.
-2. For EACH activity package, assign detailed actionable checklist tasks covering ALL file content requirements specifically.
-3. DO NOT prefix tasks with "Step 1:", "Step 2:", or "Task 1:". Output direct, clear action labels.
-
-Return ONLY a valid JSON array matching this structure with no markdown or wrappers:
-[
-  {
-    "title": "Assignment/Project Title",
-    "subject": "Subject Name",
-    "description": "Clear overview of requirements from document",
-    "tasks": [
-      "Conduct literature review on current state...",
-      "Identify core ethical challenges...",
-      "Analyze case studies..."
-    ]
-  }
-]`;
-
-  // 1. Try Vite proxy endpoint first (/api/generate-activities-from-doc)
   try {
-    const res = await fetch('/api/generate-activities-from-doc', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: 'application/json',
-        },
-      }),
+    const { data, error } = await supabase.functions.invoke('activities-breakdown', {
+      body: {
+        documentText,
+        fileName,
+      },
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        const cleanJson = rawText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
-        const drafts = JSON.parse(cleanJson);
-        if (Array.isArray(drafts) && drafts.length > 0) {
-          return drafts.map((d: any) => ({
-            title: d.title || 'Activity Package',
-            subject: d.subject || 'General',
-            description: d.description || 'Document requirements breakdown',
-            tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean).map(cleanTaskLabel) : ['Review document requirements'],
-          }));
-        }
-      }
+    if (error) throw error;
+    if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'Failed to generate activities');
+
+    const drafts = data?.activities;
+    if (Array.isArray(drafts) && drafts.length > 0) {
+      return drafts.map((d: any) => ({
+        title: d.title || 'Activity Package',
+        subject: d.subject || 'General',
+        description: d.description || 'Document requirements breakdown',
+        tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean).map(cleanTaskLabel) : ['Review document requirements'],
+      }));
     }
-  } catch {
-    /* silent fallback */
+
+    throw new Error('No activities returned from document breakdown service.');
+  } catch (err: any) {
+    console.error('Activities service error:', err);
+    await refundCredits(effectiveUserId, 20, 'activities_breakdown', err?.message || 'Syllabus breakdown failed');
+    throw new Error(err?.message || 'Unable to analyze document and generate activities. Please try again.');
   }
-
-  // 2. Direct Gemini REST endpoint fallback with gemini-3.1-flash-lite
-  const fallbackModels = [
-    'gemini-3.1-flash-lite',
-    'gemini-2.5-flash-lite',
-    'gemini-1.5-flash-lite',
-    'gemini-2.0-flash-lite',
-  ];
-
-  for (const model of fallbackModels) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_ACTIVITIES_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.7,
-              responseMimeType: 'application/json',
-            },
-          }),
-        },
-      );
-
-      if (!res.ok) continue;
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) continue;
-
-      const cleanJson = rawText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
-      const drafts = JSON.parse(cleanJson);
-
-      if (Array.isArray(drafts) && drafts.length > 0) {
-        return drafts.map((d: any) => ({
-          title: d.title || 'Activity Package',
-          subject: d.subject || 'General',
-          description: d.description || 'Document requirements breakdown',
-          tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean).map(cleanTaskLabel) : ['Review document requirements'],
-        }));
-      }
-    } catch {
-      /* continue to next model */
-    }
-  }
-
-  // Safe automatic refund if all models fail
-  await refundCredits(effectiveUserId, 20, 'activities_breakdown', 'Syllabus breakdown failed');
-  throw new Error('Unable to analyze document and generate activities. Please try again.');
 }
+

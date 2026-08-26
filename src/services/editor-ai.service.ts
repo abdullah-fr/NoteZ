@@ -1,23 +1,10 @@
 /**
  * Editor AI Assist Service
- * Powered by Gemini 3.1 Flash Lite with Centralized Credit Metering (5 credits)
+ * Invokes Supabase Edge Function with Centralized Credit Metering (5 credits)
  */
 
 import { supabase } from '@/integrations/supabase/client';
 import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
-
-const GEMINI_AI_ASSIST_API_KEY =
-  import.meta.env.VITE_GEMINI_AI_ASSIST_API_KEY ||
-  import.meta.env.GEMINI_AI_ASSIST_API_KEY ||
-  '';
-
-const ACTION_PROMPTS: Record<string, string> = {
-  improve: 'Improve the grammar, clarity, style, and flow of the following text while preserving its meaning. Return ONLY the improved version.',
-  rephrase: 'Rephrase the following text to make it clear, concise, and engaging. Return ONLY the rephrased version.',
-  summarize: 'Summarize the key concepts of the following text into clear bullet points for study notes. Return ONLY the summary.',
-  explain: 'Explain the concepts in the following text simply and clearly as an expert tutor. Return ONLY the explanation.',
-  flashcard: 'Create a flashcard question and answer pair based on the following text (Format: Q: ...\nA: ...). Return ONLY the Q&A pair.',
-};
 
 export async function editorAiAssist(action: string, selectedText: string, userId?: string): Promise<string> {
   if (!selectedText.trim()) return selectedText;
@@ -46,61 +33,27 @@ export async function editorAiAssist(action: string, selectedText: string, userI
     throw err;
   }
 
-  const actionInstruction = ACTION_PROMPTS[action] || `Perform "${action}" on the following text for study notes. Return ONLY the transformed text.`;
-  const prompt = `${actionInstruction}\n\nInput Text:\n"""\n${selectedText.slice(0, 12000)}\n"""`;
-
-  // 1. Try local Vite proxy endpoint first (/api/editor-ai-assist)
+  // 2. Invoke Supabase Edge Function
   try {
-    const res = await fetch('/api/editor-ai-assist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-        },
-      }),
+    const { data, error } = await supabase.functions.invoke('editor-ai', {
+      body: {
+        action,
+        text: selectedText,
+      },
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText && rawText.trim()) {
-        return rawText.trim();
-      }
+    if (error) throw error;
+    if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'Editor assist failed');
+
+    if (data?.result && typeof data.result === 'string') {
+      return data.result.trim();
     }
-  } catch {
-    /* fallback to direct fetch */
+
+    return selectedText;
+  } catch (err: any) {
+    console.error('Editor AI error:', err);
+    // Automatic safe refund on failure
+    await refundCredits(effectiveUserId, 5, 'editor_ai_assist', err?.message || 'Editor assist AI call failed');
+    return selectedText;
   }
-
-  // 2. Direct Gemini REST endpoint fallback with gemini-3.1-flash-lite
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_AI_ASSIST_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.7,
-          },
-        }),
-      },
-    );
-
-    if (res.ok) {
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText && rawText.trim()) {
-        return rawText.trim();
-      }
-    }
-  } catch {
-    /* silent fallback */
-  }
-
-  // If failed, refund credits
-  await refundCredits(effectiveUserId, 5, 'editor_ai_assist', 'Editor assist AI call failed');
-  return selectedText;
 }

@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { useCredits } from '@/contexts/CreditsContext';
-import { PLANS } from '@/lib/credits';
+import {
+  PLANS,
+  CREDIT_COSTS,
+  ACTION_METADATA,
+  METERED_ACTIONS,
+  getPerFeatureUsage,
+  type MeteredAction,
+} from '@/lib/credits';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/use-theme';
@@ -13,9 +20,18 @@ import {
   Save, Eye, EyeOff, Shield, Globe, Check,
   Zap, Clock, Sparkles, RefreshCw, Sun, Moon,
   ShieldCheck, ArrowUpRight, Edit3, X,
+  MessageSquare, GraduationCap, Layers, FileText, ListChecks,
 } from 'lucide-react';
 
 type Tab = 'profile' | 'credits' | 'security' | 'preferences';
+
+const ACTION_ICONS: Record<MeteredAction, any> = {
+  ai_chat: MessageSquare,
+  generate_exam: GraduationCap,
+  generate_flashcards: Layers,
+  editor_ai_assist: FileText,
+  activities_breakdown: ListChecks,
+};
 
 const LANGUAGES = [
   { code: 'en', label: 'English', flag: '🇬🇧', region: 'Global' },
@@ -26,7 +42,7 @@ export default function AccountView() {
   const { user, signOut } = useAuth();
   const {
     balance,
-    monthlyAllowance,
+    allowance,
     usedThisPeriod,
     tier,
     periodEnd,
@@ -40,12 +56,16 @@ export default function AccountView() {
   const [activeTab, setActiveTab] = useState<Tab>('profile');
 
   const currentPlan = PLANS[tier] || PLANS.free;
+  const isFree = tier === 'free';
   const resetDateStr = new Date(periodEnd).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
-  const usagePercentage = Math.min(100, Math.round((usedThisPeriod / Math.max(1, monthlyAllowance)) * 100));
+  const effectiveAllowance = allowance || currentPlan.creditAllowance || 150;
+  const usagePercentage = Math.min(100, Math.round((usedThisPeriod / Math.max(1, effectiveAllowance)) * 100));
+
+  const perFeatureUsage = getPerFeatureUsage(transactions);
 
   /* ── display name editing ── */
   const [displayName, setDisplayName] = useState(user?.user_metadata?.full_name ?? '');
@@ -98,78 +118,71 @@ export default function AccountView() {
   }
 
   async function deleteAccount() {
-    if (deleteEmailInput !== user?.email) {
-      toast({ title: 'Email does not match', variant: 'destructive' });
+    if (deleteEmailInput.trim().toLowerCase() !== user?.email?.toLowerCase()) {
+      toast({ title: 'Email does not match', description: 'Please enter your exact email to confirm deletion.', variant: 'destructive' });
       return;
     }
+
     setDeleting(true);
     try {
-      const { error } = await supabase.functions.invoke('delete-account');
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: { userId: user?.id },
+      });
       if (error) throw error;
-      await supabase.auth.signOut({ scope: 'local' });
-      toast({ title: 'Account deleted', description: 'Your account and study data have been permanently deleted.' });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not delete your account. Please try again.';
-      toast({ title: 'Account deletion failed', description: message, variant: 'destructive' });
+      toast({ title: 'Account deleted', description: 'Your account and data have been removed.' });
+      await signOut();
+    } catch (err: any) {
+      toast({ title: 'Could not delete account', description: err.message || 'Please contact support.', variant: 'destructive' });
     } finally {
       setDeleting(false);
     }
   }
 
-  const tabLabels: Record<Tab, string> = {
-    profile: 'Profile',
-    credits: 'Credits & Usage',
-    security: 'Security',
-    preferences: 'Preferences',
-  };
-
-  const initials = (displayName || user?.email || '?')
-    .split(/[\s@]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('');
+  const tabs: { id: Tab; label: string; icon: any }[] = [
+    { id: 'profile', label: 'Profile', icon: User },
+    { id: 'credits', label: 'Credits & Usage', icon: Zap },
+    { id: 'security', label: 'Security', icon: Lock },
+    { id: 'preferences', label: 'Preferences', icon: Globe },
+  ];
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-8">
-      {/* ── Top Navigation & Header Row ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-4">
-        <div>
-          <h1 className="font-serif text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-            Account Settings
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Manage your personal profile, subscription credits, and security settings.
-          </p>
-        </div>
-
-        {/* Tab Navigation Menu */}
-        <nav className="flex items-center gap-1 sm:gap-2 flex-wrap" aria-label="Account Settings Tabs">
-          {(['profile', 'credits', 'security', 'preferences'] as Tab[]).map((t) => {
-            const isActive = activeTab === t;
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setActiveTab(t)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer relative ${
-                  isActive
-                    ? 'text-foreground font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
-                }`}
-              >
-                {tabLabels[t]}
-                {isActive && (
-                  <motion.div
-                    layoutId="activeAccountTabIndicator"
-                    className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full"
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </nav>
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-8">
+      {/* Top Header */}
+      <div className="border-b border-border/40 pb-5">
+        <h1 className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+          Account Settings
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage your personal profile, AI credits, security credentials, and preferences.
+        </p>
       </div>
 
-      {/* ── Active Tab Content ── */}
-      <AnimatePresence mode="wait">
+      {/* Modern Clean Tab Navigation Bar */}
+      <div className="flex items-center gap-1 sm:gap-2 border-b border-border/40 overflow-x-auto no-scrollbar">
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const isActive = activeTab === t.id;
+
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                isActive
+                  ? 'border-primary text-foreground font-semibold'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/60'
+              }`}
+            >
+              <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main Tab Content Area */}
+      <div className="pt-2">
         {/* ══════════════════════════════════════════════════════════════
             TAB 1: PROFILE
         ══════════════════════════════════════════════════════════════ */}
@@ -182,29 +195,30 @@ export default function AccountView() {
             transition={{ duration: 0.15 }}
             className="space-y-8 max-w-3xl"
           >
-            {/* User Identity Header */}
-            <div className="flex items-start gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-secondary/80 border border-border flex items-center justify-center shrink-0 shadow-xs">
-                <span className="text-2xl font-bold font-mono text-foreground">{initials}</span>
+            {/* Identity Card Area */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+              {/* Avatar Initial Box */}
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-secondary border border-border flex items-center justify-center text-xl sm:text-2xl font-bold font-mono text-foreground shrink-0 shadow-xs">
+                {displayName ? displayName[0].toUpperCase() : user?.email ? user.email[0].toUpperCase() : 'U'}
               </div>
 
-              <div className="space-y-1.5 min-w-0 flex-1">
+              {/* Identity Info */}
+              <div className="space-y-1.5 flex-1 min-w-0">
                 {isEditingName ? (
-                  <div className="flex items-center gap-2 max-w-md">
+                  <div className="flex items-center gap-2 max-w-sm">
                     <input
                       type="text"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveName()}
-                      placeholder="Enter full name"
-                      className="flex-1 bg-secondary/60 border border-border rounded-lg px-3 py-1.5 text-base font-semibold text-foreground outline-none focus:border-primary"
+                      placeholder="Enter your name"
+                      className="bg-secondary/60 border border-border rounded-lg px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary flex-1"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={saveName}
                       disabled={savingName}
-                      className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 transition-colors flex items-center gap-1 cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors flex items-center gap-1 cursor-pointer"
                     >
                       <Save className="h-3.5 w-3.5" />
                       Save
@@ -212,9 +226,9 @@ export default function AccountView() {
                     <button
                       type="button"
                       onClick={() => setIsEditingName(false)}
-                      className="px-2.5 py-1.5 rounded-lg border border-border bg-secondary text-muted-foreground hover:text-foreground text-xs transition-colors cursor-pointer"
+                      className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
                 ) : (
@@ -258,14 +272,14 @@ export default function AccountView() {
                 Account Details
               </h3>
 
-              <div className="divide-y divide-border/40 border-t border-b border-border/40">
+              <div className="divide-y divide-border/40">
                 <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
                   <span className="text-muted-foreground">Display Name</span>
-                  <span className="font-medium text-foreground">{displayName || 'Not specified'}</span>
+                  <span className="font-medium text-foreground">{displayName || 'Not set'}</span>
                 </div>
 
                 <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
-                  <span className="text-muted-foreground">Primary Email</span>
+                  <span className="text-muted-foreground">Email Address</span>
                   <span className="font-mono text-foreground">{user?.email}</span>
                 </div>
 
@@ -275,7 +289,7 @@ export default function AccountView() {
                     <span className="font-semibold text-foreground">{currentPlan.name}</span>
                     <Link
                       to="/pricing"
-                      className="text-primary hover:underline text-xs font-bold"
+                      className="px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
                     >
                       {tier === 'free' ? 'Upgrade' : 'Change Plan'}
                     </Link>
@@ -291,7 +305,7 @@ export default function AccountView() {
                           day: 'numeric',
                           year: 'numeric',
                         })
-                      : 'Unknown'}
+                      : 'Active User'}
                   </span>
                 </div>
               </div>
@@ -350,7 +364,7 @@ export default function AccountView() {
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground font-mono">
-                  {monthlyAllowance.toLocaleString()} credits / 30-day cycle
+                  {effectiveAllowance.toLocaleString()} credits / {isFree ? 'week' : 'month'}
                 </p>
               </div>
 
@@ -373,15 +387,15 @@ export default function AccountView() {
               </div>
             </div>
 
-            {/* Monthly Cycle Usage Meter */}
+            {/* Cycle Usage Meter */}
             <div className="space-y-3 border-b border-border/40 pb-8">
               <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="font-medium text-foreground flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-muted-foreground" />
-                  Cycle Usage Progress
+                  {isFree ? 'Weekly' : 'Monthly'} Cycle Usage Progress
                 </span>
                 <span className="font-mono font-semibold text-foreground">
-                  {usedThisPeriod.toLocaleString()} / {monthlyAllowance.toLocaleString()} credits used ({usagePercentage}%)
+                  {usedThisPeriod.toLocaleString()} / {effectiveAllowance.toLocaleString()} credits used ({usagePercentage}%)
                 </span>
               </div>
               <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
@@ -392,7 +406,67 @@ export default function AccountView() {
               </div>
               <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
                 <span>{balance.toLocaleString()} credits remaining</span>
-                <span>Refills every 30 days</span>
+                <span>Refills every {isFree ? '7 days' : '30 days'}</span>
+              </div>
+            </div>
+
+            {/* Distinct Per-Feature Usage Breakdown */}
+            <div className="space-y-4 border-b border-border/40 pb-8">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Usage by Feature Section
+                </h3>
+                <span className="text-xs font-mono text-muted-foreground">
+                  Current {isFree ? 'week' : 'billing cycle'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {METERED_ACTIONS.map((actionKey) => {
+                  const meta = ACTION_METADATA[actionKey];
+                  const cost = CREDIT_COSTS[actionKey];
+                  const Icon = ACTION_ICONS[actionKey] || Sparkles;
+                  const stats = perFeatureUsage[actionKey] || { credits: 0, count: 0 };
+                  const featurePercent = usedThisPeriod > 0
+                    ? Math.min(100, Math.round((stats.credits / usedThisPeriod) * 100))
+                    : 0;
+
+                  return (
+                    <div
+                      key={actionKey}
+                      className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0">
+                            <Icon className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-foreground">{meta.label}</p>
+                            <p className="text-[10.5px] text-muted-foreground font-mono">{cost} credits / action</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-mono font-semibold text-foreground">
+                            {stats.credits} credits
+                          </span>
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            {stats.count} {stats.count === 1 ? 'use' : 'uses'}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
+                          <div
+                            className="h-full bg-primary/80 rounded-full transition-all duration-500"
+                            style={{ width: `${featurePercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -501,7 +575,7 @@ export default function AccountView() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Confirm Password</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Confirm New Password</label>
                   <input
                     type={showPw ? 'text' : 'password'}
                     value={confirmPw}
@@ -511,93 +585,81 @@ export default function AccountView() {
                   />
                 </div>
 
-                {newPw && confirmPw && newPw !== confirmPw && (
-                  <p className="text-xs text-destructive">Passwords do not match</p>
-                )}
-
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={savePassword}
-                    disabled={!newPw || !confirmPw || newPw !== confirmPw || savingPw}
-                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Shield className="h-3.5 w-3.5" />
-                    <span>{savingPw ? 'Updating…' : 'Update Password'}</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={savePassword}
+                  disabled={savingPw || !newPw || !confirmPw}
+                  className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>{savingPw ? 'Saving...' : 'Update Password'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Active Session & Sign Out */}
-            <div className="border-t border-border/40 pt-8 space-y-3">
+            {/* Session Management */}
+            <div className="border-t border-border/40 pt-8 space-y-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
-                  Active Session
+                  Active Sessions
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Sign out of your NoteZ studio account on this device.
+                  Sign out of your active workspace session on this device.
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={signOut}
-                className="px-4 py-2 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-xs font-semibold text-foreground transition-colors flex items-center gap-2 cursor-pointer"
+                onClick={() => signOut()}
+                className="px-4 py-2 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-xs text-foreground font-medium transition-colors flex items-center gap-2 cursor-pointer"
               >
                 <LogOut className="h-3.5 w-3.5" />
-                <span>Sign Out</span>
+                Sign Out
               </button>
             </div>
 
-            {/* Delete Account (Danger Zone) — Moved to Security as requested */}
-            <div className="border-t border-border/40 pt-8 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-destructive flex items-center gap-1.5">
-                    <Trash2 className="h-4 w-4" />
-                    Delete Account
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Once you delete your account, it cannot be restored. All your study notes, exams, and flashcards will be permanently removed.
-                  </p>
-                </div>
-
-                {!showDeleteConfirm && (
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="px-3.5 py-1.5 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold transition-colors cursor-pointer self-start sm:self-center shrink-0"
-                  >
-                    Delete Account
-                  </button>
-                )}
+            {/* Danger Zone: Delete Account */}
+            <div className="border-t border-destructive/20 pt-8 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-destructive flex items-center gap-1.5">
+                  <Trash2 className="h-4 w-4" />
+                  Danger Zone: Delete Account
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Permanently remove your profile, study notes, flashcards, exams, and credit history. This action cannot be reversed.
+                </p>
               </div>
 
-              {showDeleteConfirm && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-3 max-w-lg mt-3"
+              {!showDeleteConfirm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-2 rounded-lg border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-semibold transition-colors cursor-pointer"
                 >
-                  <p className="text-xs text-destructive font-medium">
-                    Type your email (<span className="font-mono font-bold">{user?.email}</span>) to permanently confirm:
+                  Delete Account
+                </button>
+              ) : (
+                <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-3 max-w-md">
+                  <p className="text-xs text-foreground font-medium">
+                    Type your email (<span className="font-mono font-bold text-destructive">{user?.email}</span>) to confirm:
                   </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="email"
-                      value={deleteEmailInput}
-                      onChange={(e) => setDeleteEmailInput(e.target.value)}
-                      placeholder={user?.email}
-                      className="flex-1 bg-background border border-destructive/30 rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-destructive"
-                    />
+
+                  <input
+                    type="email"
+                    value={deleteEmailInput}
+                    onChange={(e) => setDeleteEmailInput(e.target.value)}
+                    placeholder="Enter your email"
+                    className="w-full bg-background border border-destructive/40 rounded-lg px-3.5 py-2 text-xs text-foreground outline-none focus:border-destructive"
+                  />
+
+                  <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={deleteAccount}
-                      disabled={deleteEmailInput !== user?.email || deleting}
-                      className="px-3 py-1.5 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      disabled={deleting || deleteEmailInput.trim().toLowerCase() !== user?.email?.toLowerCase()}
+                      className="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/90 transition-colors disabled:opacity-40 cursor-pointer"
                     >
-                      {deleting ? 'Deleting…' : 'Confirm'}
+                      {deleting ? 'Deleting...' : 'Permanently Delete'}
                     </button>
                     <button
                       type="button"
@@ -605,12 +667,12 @@ export default function AccountView() {
                         setShowDeleteConfirm(false);
                         setDeleteEmailInput('');
                       }}
-                      className="px-2.5 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                      className="px-3 py-2 rounded-lg hover:bg-secondary text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                     >
                       Cancel
                     </button>
                   </div>
-                </motion.div>
+                </div>
               )}
             </div>
           </motion.div>
@@ -626,94 +688,86 @@ export default function AccountView() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
-            className="space-y-8 max-w-xl"
+            className="space-y-8 max-w-2xl"
           >
-            {/* Theme Preference */}
-            <div className="space-y-3">
+            {/* Theme Selector */}
+            <div className="space-y-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
-                  Theme Appearance
+                  Appearance Theme
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Choose your interface theme. Your preference syncs across your devices.
+                  Select your interface theme for reading and studying.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                {/* Light Mode */}
+              <div className="grid grid-cols-2 gap-4 max-w-md">
+                {/* Light */}
                 <button
                   type="button"
-                  onClick={() => setTheme('warm-paper')}
-                  disabled={themeSaving}
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    activeTheme === 'warm-paper'
-                      ? 'border-primary bg-primary/10 shadow-xs'
-                      : 'border-border bg-secondary/30 hover:border-border/80 text-muted-foreground hover:text-foreground'
+                  onClick={() => setTheme('light')}
+                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                    activeTheme === 'light'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border bg-secondary/30 hover:border-border/80'
                   }`}
                 >
-                  <Sun className="h-4 w-4 text-amber-500 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-foreground">Light</p>
-                    <p className="text-[10.5px] text-muted-foreground">Warm Paper</p>
+                  <div className="flex items-center justify-between">
+                    <Sun className={`h-5 w-5 ${activeTheme === 'light' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    {activeTheme === 'light' && <Check className="h-4 w-4 text-primary" />}
                   </div>
-                  {activeTheme === 'warm-paper' && (
-                    <div className="w-4 h-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-                      <Check className="h-2.5 w-2.5" />
-                    </div>
-                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Light</p>
+                    <p className="text-xs text-muted-foreground">Crisp clean light mode</p>
+                  </div>
                 </button>
 
-                {/* Dark Mode */}
+                {/* Dark */}
                 <button
                   type="button"
-                  onClick={() => setTheme('midnight')}
-                  disabled={themeSaving}
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    activeTheme === 'midnight'
-                      ? 'border-primary bg-primary/10 shadow-xs'
-                      : 'border-border bg-secondary/30 hover:border-border/80 text-muted-foreground hover:text-foreground'
+                  onClick={() => setTheme('dark')}
+                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                    activeTheme === 'dark'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border bg-secondary/30 hover:border-border/80'
                   }`}
                 >
-                  <Moon className="h-4 w-4 text-primary shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-foreground">Dark</p>
-                    <p className="text-[10.5px] text-muted-foreground">Midnight</p>
+                  <div className="flex items-center justify-between">
+                    <Moon className={`h-5 w-5 ${activeTheme === 'dark' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    {activeTheme === 'dark' && <Check className="h-4 w-4 text-primary" />}
                   </div>
-                  {activeTheme === 'midnight' && (
-                    <div className="w-4 h-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-                      <Check className="h-2.5 w-2.5" />
-                    </div>
-                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Dark</p>
+                    <p className="text-xs text-muted-foreground">Focused dark mode</p>
+                  </div>
                 </button>
               </div>
             </div>
 
-            {/* Language Preference */}
-            <div className="border-t border-border/40 pt-6 space-y-3">
+            {/* Language Selector */}
+            <div className="border-t border-border/40 pt-8 space-y-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
-                  Language & Region
+                  Language
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Select your preferred display language for NoteZ Studio.
+                  Select your preferred language for study prompts and system interface.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
                 {LANGUAGES.map((lang) => {
-                  const active = i18n.language === lang.code;
+                  const isCurrent = i18n.language.startsWith(lang.code);
+
                   return (
                     <button
                       key={lang.code}
                       type="button"
-                      onClick={() => {
-                        i18n.changeLanguage(lang.code);
-                        toast({ title: `Language set to ${lang.label}` });
-                      }}
-                      className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        active
-                          ? 'border-primary bg-primary/10 shadow-xs'
-                          : 'border-border bg-secondary/30 hover:border-border/80 text-muted-foreground hover:text-foreground'
+                      onClick={() => i18n.changeLanguage(lang.code)}
+                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        isCurrent
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border bg-secondary/30 hover:border-border/80'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -723,11 +777,7 @@ export default function AccountView() {
                           <p className="text-[10px] text-muted-foreground">{lang.region}</p>
                         </div>
                       </div>
-                      {active && (
-                        <div className="w-4 h-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-                          <Check className="h-2.5 w-2.5" />
-                        </div>
-                      )}
+                      {isCurrent && <Check className="h-4 w-4 text-primary" />}
                     </button>
                   );
                 })}
@@ -735,7 +785,7 @@ export default function AccountView() {
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </div>
     </div>
   );
 }
