@@ -238,14 +238,14 @@ export default function AccountView() {
                 </p>
 
                 {/* Status Badges */}
-                <div className="flex items-center gap-2.5 pt-1.5">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
-                    <Zap className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-2 pt-1.5">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/70 border border-border text-xs font-medium text-foreground">
+                    <Zap className="h-3.5 w-3.5 text-primary" />
                     {currentPlan.name} Plan
                   </span>
 
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-medium text-emerald-400">
-                    <ShieldCheck className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/70 border border-border text-xs font-medium text-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
                     Verified
                   </span>
                 </div>
