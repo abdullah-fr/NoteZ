@@ -112,7 +112,10 @@ export default function Dashboard() {
 
   // Listen to open-settings custom event
   useEffect(() => {
-    const handleOpenSettings = () => setActiveView("account");
+    const handleOpenSettings = () => {
+      setSidebarOpen(false);
+      setActiveView("account");
+    };
     window.addEventListener("notez:open-settings", handleOpenSettings);
     return () => window.removeEventListener("notez:open-settings", handleOpenSettings);
   }, []);
@@ -159,6 +162,9 @@ export default function Dashboard() {
     }
     if (view === 'chat') {
       setChatResetKey(key => key + 1);
+    }
+    if (view === 'account') {
+      setSidebarOpen(false);
     }
     setActiveView(view);
   };
