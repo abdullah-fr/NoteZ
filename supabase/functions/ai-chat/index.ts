@@ -69,8 +69,11 @@ serve(async (req) => {
       });
     }
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+    const GEMINI_API_KEY =
+      Deno.env.get("GEMINI_CHAT_API_KEY") ??
+      Deno.env.get("GEMINI_API_KEY") ??
+      Deno.env.get("GOOGLE_GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_CHAT_API_KEY is not configured");
 
     // ── Credit Metering ──────────────────────────────────────────────────────
     const creditResult = await checkAndDeductServer(

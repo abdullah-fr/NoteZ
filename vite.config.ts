@@ -5,7 +5,12 @@ import path from "path";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const getApiKey = (keyName: string) => env[keyName] || process.env[keyName] || '';
+  const getApiKey = (keyName: string) =>
+    env[keyName] ||
+    env[`VITE_${keyName}`] ||
+    process.env[keyName] ||
+    process.env[`VITE_${keyName}`] ||
+    '';
 
   return {
     server: {
@@ -16,7 +21,7 @@ export default defineConfig(({ mode }) => {
           target: 'https://generativelanguage.googleapis.com',
           changeOrigin: true,
           rewrite: () => {
-            const key = getApiKey('VITE_GEMINI_EXAM_API_KEY');
+            const key = getApiKey('GEMINI_EXAM_API_KEY');
             return `/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`;
           },
         },
@@ -24,7 +29,7 @@ export default defineConfig(({ mode }) => {
           target: 'https://generativelanguage.googleapis.com',
           changeOrigin: true,
           rewrite: () => {
-            const key = getApiKey('VITE_GEMINI_FLASHCARDS_API_KEY');
+            const key = getApiKey('GEMINI_FLASHCARDS_API_KEY');
             return `/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`;
           },
         },
@@ -32,7 +37,7 @@ export default defineConfig(({ mode }) => {
           target: 'https://generativelanguage.googleapis.com',
           changeOrigin: true,
           rewrite: () => {
-            const key = getApiKey('VITE_GEMINI_AI_ASSIST_API_KEY');
+            const key = getApiKey('GEMINI_AI_ASSIST_API_KEY');
             return `/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`;
           },
         },
@@ -40,7 +45,7 @@ export default defineConfig(({ mode }) => {
           target: 'https://generativelanguage.googleapis.com',
           changeOrigin: true,
           rewrite: () => {
-            const key = getApiKey('VITE_GEMINI_ACTIVITIES_API_KEY');
+            const key = getApiKey('GEMINI_ACTIVITIES_API_KEY');
             return `/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`;
           },
         },
@@ -48,7 +53,7 @@ export default defineConfig(({ mode }) => {
           target: 'https://generativelanguage.googleapis.com',
           changeOrigin: true,
           rewrite: () => {
-            const key = getApiKey('VITE_GEMINI_CHAT_API_KEY');
+            const key = getApiKey('GEMINI_CHAT_API_KEY');
             return `/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`;
           },
         },
@@ -62,4 +67,3 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-

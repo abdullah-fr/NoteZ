@@ -65,8 +65,11 @@ serve(async (req) => {
       });
     }
 
-    const API_KEY = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!API_KEY) throw new Error("AI service API key is not configured");
+    const API_KEY =
+      Deno.env.get("GEMINI_FLASHCARDS_API_KEY") ??
+      Deno.env.get("GEMINI_API_KEY") ??
+      Deno.env.get("GOOGLE_GEMINI_API_KEY");
+    if (!API_KEY) throw new Error("GEMINI_FLASHCARDS_API_KEY is not configured");
 
     // ── Credit Check ──
     const creditResult = await checkAndDeductServer(
