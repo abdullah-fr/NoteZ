@@ -64,33 +64,9 @@ export default function Pricing() {
     <div className="min-h-screen bg-background animated-bg overflow-x-hidden text-foreground">
       <Navbar />
 
-      {/* Hero Header */}
-      <section className="pt-24 pb-8 md:pt-28 md:pb-12">
+      {/* Billing Interval Toggle Section */}
+      <section className="pt-24 pb-6 md:pt-28 md:pb-8">
         <div className="container mx-auto px-4 text-center max-w-3xl">
-          <motion.span
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-xs font-semibold text-primary mb-5"
-          >
-            <Sparkles className="h-3.5 w-3.5" /> 100% Transparent Credits & Pricing
-          </motion.span>
-          <motion.h1
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-[1.1] mb-3 text-foreground"
-          >
-            Predictable plans. <span className="text-primary">No hidden limits.</span>
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-sm sm:text-base text-muted-foreground leading-relaxed mb-6 max-w-2xl mx-auto font-medium"
-          >
-            Start free with full feature access and monthly credits. Upgrade when you need higher allowances for intensive study sessions and finals.
-          </motion.p>
-
           {/* Billing Interval Toggle */}
           <div className="inline-flex items-center gap-1 p-1 rounded-full border border-border/80 bg-card/60 backdrop-blur-sm shadow-xs">
             <button
