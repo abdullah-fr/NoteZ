@@ -146,15 +146,17 @@ export default function AccountView() {
   ];
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-8">
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-5 space-y-4">
       {/* Top Header */}
-      <div className="border-b border-border/40 pb-5">
-        <h1 className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-          Account Settings
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage your personal profile, AI credits, security credentials, and preferences.
-        </p>
+      <div className="border-b border-border/40 pb-3 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
+        <div>
+          <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+            Account Settings
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Manage your personal profile, AI credits, security credentials, and preferences.
+          </p>
+        </div>
       </div>
 
       {/* Modern Clean Tab Navigation Bar */}
@@ -168,7 +170,7 @@ export default function AccountView() {
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 isActive
                   ? 'border-primary text-foreground font-semibold'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/60'
@@ -182,121 +184,119 @@ export default function AccountView() {
       </div>
 
       {/* Main Tab Content Area */}
-      <div className="pt-2">
+      <div>
         {/* ══════════════════════════════════════════════════════════════
             TAB 1: PROFILE
         ══════════════════════════════════════════════════════════════ */}
         {activeTab === 'profile' && (
           <motion.div
             key="profile"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
-            className="space-y-8 max-w-3xl"
+            className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start pt-1"
           >
-            {/* Identity Card Area */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-              {/* Avatar Initial Box */}
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-secondary border border-border flex items-center justify-center text-xl sm:text-2xl font-bold font-mono text-foreground shrink-0 shadow-xs">
-                {displayName ? displayName[0].toUpperCase() : user?.email ? user.email[0].toUpperCase() : 'U'}
+            {/* Identity Column (Left) */}
+            <div className="md:col-span-5 p-5 rounded-2xl border border-border/70 bg-card/60 space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-secondary border border-border flex items-center justify-center text-xl font-bold font-mono text-foreground shrink-0 shadow-xs">
+                  {displayName ? displayName[0].toUpperCase() : user?.email ? user.email[0].toUpperCase() : 'U'}
+                </div>
+
+                <div className="space-y-1 min-w-0 flex-1">
+                  {isEditingName ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="Enter name"
+                        className="bg-secondary/70 border border-border rounded-md px-2 py-1 text-xs text-foreground outline-none focus:border-primary flex-1"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={saveName}
+                        disabled={savingName}
+                        className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 transition-colors"
+                      >
+                        <Save className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingName(false)}
+                        className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-bold tracking-tight text-foreground truncate">
+                        {displayName || 'No display name'}
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingName(true)}
+                        className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                        title="Edit name"
+                      >
+                        <Edit3 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground font-mono truncate">
+                    {user?.email}
+                  </p>
+                </div>
               </div>
 
-              {/* Identity Info */}
-              <div className="space-y-1.5 flex-1 min-w-0">
-                {isEditingName ? (
-                  <div className="flex items-center gap-2 max-w-sm">
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Enter your name"
-                      className="bg-secondary/60 border border-border rounded-lg px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary flex-1"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={saveName}
-                      disabled={savingName}
-                      className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(false)}
-                      className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-                      {displayName || 'No display name'}
-                    </h2>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(true)}
-                      className="px-2.5 py-1 rounded-md border border-border/80 bg-secondary/50 hover:bg-secondary text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      <Edit3 className="h-3 w-3" />
-                      Edit
-                    </button>
-                  </div>
-                )}
+              {/* Badges */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/40">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary/80 border border-border text-[11px] font-medium text-foreground">
+                  <Zap className="h-3 w-3 text-primary" />
+                  {currentPlan.name} Plan
+                </span>
 
-                <p className="text-sm text-muted-foreground font-mono">
-                  {user?.email}
-                </p>
-
-                {/* Status Badges */}
-                <div className="flex items-center gap-2 pt-1.5">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/70 border border-border text-xs font-medium text-foreground">
-                    <Zap className="h-3.5 w-3.5 text-primary" />
-                    {currentPlan.name} Plan
-                  </span>
-
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/70 border border-border text-xs font-medium text-foreground">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                    Verified
-                  </span>
-                </div>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary/80 border border-border text-[11px] font-medium text-foreground">
+                  <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                  Verified Account
+                </span>
               </div>
             </div>
 
-            {/* Profile Information List */}
-            <div className="border-t border-border/40 pt-6 space-y-4">
+            {/* Account Details Table (Right) */}
+            <div className="md:col-span-7 p-5 rounded-2xl border border-border/70 bg-card/60 space-y-3">
               <h3 className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
                 Account Details
               </h3>
 
-              <div className="divide-y divide-border/40">
-                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+              <div className="divide-y divide-border/40 text-xs">
+                <div className="py-2.5 flex items-center justify-between">
                   <span className="text-muted-foreground">Display Name</span>
                   <span className="font-medium text-foreground">{displayName || 'Not set'}</span>
                 </div>
 
-                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                <div className="py-2.5 flex items-center justify-between">
                   <span className="text-muted-foreground">Email Address</span>
                   <span className="font-mono text-foreground">{user?.email}</span>
                 </div>
 
-                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                <div className="py-2.5 flex items-center justify-between">
                   <span className="text-muted-foreground">Current Plan</span>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-foreground">{currentPlan.name}</span>
                     <Link
                       to="/pricing"
-                      className="px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
+                      className="px-2.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 transition-colors"
                     >
                       {tier === 'free' ? 'Upgrade' : 'Change Plan'}
                     </Link>
                   </div>
                 </div>
 
-                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                <div className="py-2.5 flex items-center justify-between">
                   <span className="text-muted-foreground">Member Since</span>
                   <span className="text-foreground">
                     {user?.created_at
@@ -314,177 +314,145 @@ export default function AccountView() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 2: CREDITS & USAGE
+            TAB 2: CREDITS & USAGE (Desktop 2-Column Zero-Scroll Layout)
         ══════════════════════════════════════════════════════════════ */}
         {activeTab === 'credits' && (
           <motion.div
             key="credits"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
-            className="space-y-8"
+            className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start pt-1"
           >
-            {/* Top Balance Summary Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-b border-border/40 pb-8">
-              {/* Available Credits */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
-                    Available Balance
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => refreshCredits()}
-                    className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-secondary"
-                    title="Refresh balance"
+            {/* Left Column: Balance Summary + Progress + 5 Feature Cards (7 Cols) */}
+            <div className="lg:col-span-7 space-y-4">
+              {/* Balance & Plan Banner */}
+              <div className="p-4 rounded-2xl border border-border/70 bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                      Available Balance
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => refreshCredits()}
+                      className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded-md hover:bg-secondary"
+                      title="Refresh"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${creditsLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl sm:text-3xl font-mono font-bold text-foreground">
+                      {balance.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">/ {effectiveAllowance.toLocaleString()} credits</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground font-mono">
+                    {currentPlan.name} plan • Refills on {resetDateStr}
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:items-end gap-1.5 shrink-0">
+                  <Link
+                    to="/pricing"
+                    className="h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1 hover:bg-primary/90 transition-all shadow-xs"
                   >
-                    <RefreshCw className={`h-3.5 w-3.5 ${creditsLoading ? 'animate-spin' : ''}`} />
-                  </button>
+                    <Sparkles className="h-3 w-3" />
+                    <span>{tier === 'free' ? 'Upgrade Plan' : 'Change Plan'}</span>
+                    <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                  <Link
+                    to="/pricing"
+                    className="text-[10.5px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    View Credit Rates
+                  </Link>
                 </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl sm:text-4xl font-mono font-bold text-foreground">
-                    {balance.toLocaleString()}
+              </div>
+
+              {/* Cycle Usage Progress Bar */}
+              <div className="p-3.5 rounded-xl border border-border/70 bg-card/40 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-foreground flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {isFree ? 'Weekly' : 'Monthly'} Usage
                   </span>
-                  <span className="text-xs text-muted-foreground">credits</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground font-mono">
-                  Refills on {resetDateStr}
-                </p>
-              </div>
-
-              {/* Current Plan */}
-              <div className="space-y-1">
-                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
-                  Subscription Plan
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-foreground">
-                    {currentPlan.name}
+                  <span className="font-mono text-muted-foreground">
+                    {usedThisPeriod.toLocaleString()} used ({usagePercentage}%)
                   </span>
                 </div>
-                <p className="text-[11px] text-muted-foreground font-mono">
-                  {effectiveAllowance.toLocaleString()} credits / {isFree ? 'week' : 'month'}
-                </p>
+                <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all duration-500"
+                    style={{ width: `${usagePercentage}%` }}
+                  />
+                </div>
               </div>
 
-              {/* Plan Actions */}
-              <div className="flex flex-col justify-end gap-2">
-                <Link
-                  to="/pricing"
-                  className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-primary/90 transition-all shadow-xs"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>{tier === 'free' ? 'Upgrade Plan' : 'Change Plan'}</span>
-                  <ArrowUpRight className="h-3 w-3" />
-                </Link>
-                <Link
-                  to="/pricing"
-                  className="text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  View Credit Cost Reference Guide
-                </Link>
-              </div>
-            </div>
-
-            {/* Cycle Usage Meter */}
-            <div className="space-y-3 border-b border-border/40 pb-8">
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="font-medium text-foreground flex items-center gap-1.5">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  {isFree ? 'Weekly' : 'Monthly'} Cycle Usage Progress
-                </span>
-                <span className="font-mono font-semibold text-foreground">
-                  {usedThisPeriod.toLocaleString()} / {effectiveAllowance.toLocaleString()} credits used ({usagePercentage}%)
-                </span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-500"
-                  style={{ width: `${usagePercentage}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
-                <span>{balance.toLocaleString()} credits remaining</span>
-                <span>Refills every {isFree ? '7 days' : '30 days'}</span>
-              </div>
-            </div>
-
-            {/* Distinct Per-Feature Usage Breakdown */}
-            <div className="space-y-4 border-b border-border/40 pb-8">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground">
+              {/* 5 Distinct Feature Cards Grid */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
                   Usage by Feature Section
                 </h3>
-                <span className="text-xs font-mono text-muted-foreground">
-                  Current {isFree ? 'week' : 'billing cycle'}
-                </span>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {METERED_ACTIONS.map((actionKey) => {
-                  const meta = ACTION_METADATA[actionKey];
-                  const cost = CREDIT_COSTS[actionKey];
-                  const Icon = ACTION_ICONS[actionKey] || Sparkles;
-                  const stats = perFeatureUsage[actionKey] || { credits: 0, count: 0 };
-                  const featurePercent = usedThisPeriod > 0
-                    ? Math.min(100, Math.round((stats.credits / usedThisPeriod) * 100))
-                    : 0;
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {METERED_ACTIONS.map((actionKey) => {
+                    const meta = ACTION_METADATA[actionKey];
+                    const cost = CREDIT_COSTS[actionKey];
+                    const Icon = ACTION_ICONS[actionKey] || Sparkles;
+                    const stats = perFeatureUsage[actionKey] || { credits: 0, count: 0 };
+                    const featurePercent = usedThisPeriod > 0
+                      ? Math.min(100, Math.round((stats.credits / usedThisPeriod) * 100))
+                      : 0;
 
-                  return (
-                    <div
-                      key={actionKey}
-                      className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-3"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0">
-                            <Icon className="h-4 w-4 text-primary" />
+                    return (
+                      <div
+                        key={actionKey}
+                        className="p-3 rounded-xl border border-border/70 bg-card/60 space-y-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-md bg-secondary border border-border flex items-center justify-center shrink-0">
+                            <Icon className="h-3 w-3 text-primary" />
                           </div>
-                          <div>
-                            <p className="text-xs font-bold text-foreground">{meta.label}</p>
-                            <p className="text-[10.5px] text-muted-foreground font-mono">{cost} credits / action</p>
+                          <p className="text-[11px] font-bold text-foreground truncate">{meta.label}</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-baseline justify-between text-[11px]">
+                            <span className="font-mono font-bold text-foreground">{stats.credits} credits</span>
+                            <span className="text-[10px] text-muted-foreground font-mono">{stats.count} {stats.count === 1 ? 'use' : 'uses'}</span>
+                          </div>
+                          <div className="w-full h-1 rounded-full bg-secondary overflow-hidden">
+                            <div
+                              className="h-full bg-primary/80 rounded-full transition-all duration-500"
+                              style={{ width: `${featurePercent}%` }}
+                            />
                           </div>
                         </div>
                       </div>
-
-                      <div className="space-y-1.5 pt-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-mono font-semibold text-foreground">
-                            {stats.credits} credits
-                          </span>
-                          <span className="text-[11px] text-muted-foreground font-mono">
-                            {stats.count} {stats.count === 1 ? 'use' : 'uses'}
-                          </span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
-                          <div
-                            className="h-full bg-primary/80 rounded-full transition-all duration-500"
-                            style={{ width: `${featurePercent}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* Usage History Ledger */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Recent Credit Activity
+            {/* Right Column: Recent Activity Ledger (5 Cols with self-contained scroll) */}
+            <div className="lg:col-span-5 p-4 rounded-2xl border border-border/70 bg-card/60 space-y-3">
+              <div className="flex items-center justify-between border-b border-border/40 pb-2.5">
+                <h3 className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                  Recent Activity
                 </h3>
-                <span className="text-xs font-mono text-muted-foreground">
-                  Last {transactions.length} operations
+                <span className="text-[10.5px] font-mono text-muted-foreground">
+                  {transactions.length} events
                 </span>
               </div>
 
               {transactions.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-4">No credit transactions recorded yet.</p>
+                <p className="text-xs text-muted-foreground py-8 text-center">No credit transactions recorded yet.</p>
               ) : (
-                <div className="divide-y divide-border/40 border-t border-b border-border/40">
+                <div className="divide-y divide-border/40 max-h-[340px] overflow-y-auto pr-1">
                   {transactions.map((tx) => {
                     const isDeduction = tx.amount < 0;
                     const dateFormatted = new Date(tx.created_at).toLocaleDateString('en-US', {
@@ -495,19 +463,19 @@ export default function AccountView() {
                     });
 
                     return (
-                      <div key={tx.id} className="py-3 flex items-center justify-between text-xs">
-                        <div className="min-w-0 pr-4">
-                          <p className="font-medium text-foreground truncate">
+                      <div key={tx.id} className="py-2 flex items-center justify-between text-xs">
+                        <div className="min-w-0 pr-2">
+                          <p className="font-medium text-foreground truncate text-[11px]">
                             {tx.description || tx.action}
                           </p>
-                          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                          <p className="text-[10px] text-muted-foreground font-mono">
                             {dateFormatted}
                           </p>
                         </div>
 
                         <div className="text-right shrink-0">
                           <span
-                            className={`font-mono font-bold text-xs ${
+                            className={`font-mono font-bold text-[11px] ${
                               isDeduction
                                 ? 'text-foreground'
                                 : tx.status === 'refunded'
@@ -517,7 +485,7 @@ export default function AccountView() {
                           >
                             {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
                           </span>
-                          <span className="text-[10.5px] text-muted-foreground block font-mono">
+                          <span className="text-[9.5px] text-muted-foreground block font-mono">
                             {tx.balance_after} left
                           </span>
                         </div>
@@ -531,19 +499,19 @@ export default function AccountView() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 3: SECURITY
+            TAB 3: SECURITY (Desktop 2-Column Zero-Scroll Layout)
         ══════════════════════════════════════════════════════════════ */}
         {activeTab === 'security' && (
           <motion.div
             key="security"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
-            className="space-y-10 max-w-2xl"
+            className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start pt-1"
           >
-            {/* Password Section */}
-            <div className="space-y-4">
+            {/* Left Column: Change Password */}
+            <div className="p-5 rounded-2xl border border-border/70 bg-card/60 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
                   Change Password
@@ -553,35 +521,35 @@ export default function AccountView() {
                 </p>
               </div>
 
-              <div className="space-y-3 max-w-md">
+              <div className="space-y-2.5 pt-1">
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">New Password</label>
+                  <label className="block text-[11px] font-medium text-muted-foreground mb-1">New Password</label>
                   <div className="relative">
                     <input
                       type={showPw ? 'text' : 'password'}
                       value={newPw}
                       onChange={(e) => setNewPw(e.target.value)}
                       placeholder="Minimum 8 characters"
-                      className="w-full bg-secondary/50 border border-border rounded-lg px-3.5 py-2 text-xs text-foreground outline-none focus:border-primary pr-9"
+                      className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary pr-9"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPw((v) => !v)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
                     >
-                      {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      {showPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Confirm New Password</label>
+                  <label className="block text-[11px] font-medium text-muted-foreground mb-1">Confirm New Password</label>
                   <input
                     type={showPw ? 'text' : 'password'}
                     value={confirmPw}
                     onChange={(e) => setConfirmPw(e.target.value)}
                     placeholder="Repeat new password"
-                    className="w-full bg-secondary/50 border border-border rounded-lg px-3.5 py-2 text-xs text-foreground outline-none focus:border-primary"
+                    className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
                   />
                 </div>
 
@@ -589,109 +557,112 @@ export default function AccountView() {
                   type="button"
                   onClick={savePassword}
                   disabled={savingPw || !newPw || !confirmPw}
-                  className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer mt-1"
                 >
-                  <Lock className="h-3.5 w-3.5" />
+                  <Lock className="h-3 w-3" />
                   <span>{savingPw ? 'Saving...' : 'Update Password'}</span>
                 </button>
               </div>
             </div>
 
-            {/* Session Management */}
-            <div className="border-t border-border/40 pt-8 space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">
-                  Active Sessions
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Sign out of your active workspace session on this device.
-                </p>
-              </div>
+            {/* Right Column: Sessions + Danger Zone */}
+            <div className="space-y-4">
+              {/* Active Sessions */}
+              <div className="p-4 rounded-2xl border border-border/70 bg-card/60 flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xs font-bold text-foreground">
+                    Active Session
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Sign out of your current study session on this device.
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => signOut()}
-                className="px-4 py-2 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-xs text-foreground font-medium transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Sign Out
-              </button>
-            </div>
-
-            {/* Danger Zone: Delete Account */}
-            <div className="border-t border-destructive/20 pt-8 space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-destructive flex items-center gap-1.5">
-                  <Trash2 className="h-4 w-4" />
-                  Danger Zone: Delete Account
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Permanently remove your profile, study notes, flashcards, exams, and credit history. This action cannot be reversed.
-                </p>
-              </div>
-
-              {!showDeleteConfirm ? (
                 <button
                   type="button"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="px-4 py-2 rounded-lg border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-semibold transition-colors cursor-pointer"
+                  onClick={() => signOut()}
+                  className="px-3 py-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-xs text-foreground font-medium transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
-                  Delete Account
+                  <LogOut className="h-3 w-3" />
+                  Sign Out
                 </button>
-              ) : (
-                <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-3 max-w-md">
-                  <p className="text-xs text-foreground font-medium">
-                    Type your email (<span className="font-mono font-bold text-destructive">{user?.email}</span>) to confirm:
+              </div>
+
+              {/* Danger Zone: Delete Account */}
+              <div className="p-4 rounded-2xl border border-destructive/30 bg-destructive/5 space-y-2.5">
+                <div>
+                  <h3 className="text-xs font-bold text-destructive flex items-center gap-1.5">
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Danger Zone: Delete Account
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Permanently delete your profile, notes, exams, and credit history. This action cannot be reversed.
                   </p>
-
-                  <input
-                    type="email"
-                    value={deleteEmailInput}
-                    onChange={(e) => setDeleteEmailInput(e.target.value)}
-                    placeholder="Enter your email"
-                    className="w-full bg-background border border-destructive/40 rounded-lg px-3.5 py-2 text-xs text-foreground outline-none focus:border-destructive"
-                  />
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={deleteAccount}
-                      disabled={deleting || deleteEmailInput.trim().toLowerCase() !== user?.email?.toLowerCase()}
-                      className="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/90 transition-colors disabled:opacity-40 cursor-pointer"
-                    >
-                      {deleting ? 'Deleting...' : 'Permanently Delete'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDeleteConfirm(false);
-                        setDeleteEmailInput('');
-                      }}
-                      className="px-3 py-2 rounded-lg hover:bg-secondary text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
                 </div>
-              )}
+
+                {!showDeleteConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-3 py-1 rounded-md border border-destructive/40 bg-destructive/10 hover:bg-destructive/20 text-destructive text-[11px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Delete Account
+                  </button>
+                ) : (
+                  <div className="p-3 rounded-lg border border-destructive/30 bg-background/80 space-y-2">
+                    <p className="text-[11px] text-foreground font-medium">
+                      Type (<span className="font-mono font-bold text-destructive">{user?.email}</span>) to confirm:
+                    </p>
+
+                    <input
+                      type="email"
+                      value={deleteEmailInput}
+                      onChange={(e) => setDeleteEmailInput(e.target.value)}
+                      placeholder="Enter your email"
+                      className="w-full bg-background border border-destructive/40 rounded-md px-2.5 py-1 text-xs text-foreground outline-none focus:border-destructive"
+                    />
+
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={deleteAccount}
+                        disabled={deleting || deleteEmailInput.trim().toLowerCase() !== user?.email?.toLowerCase()}
+                        className="px-3 py-1 rounded-md bg-destructive text-destructive-foreground text-[11px] font-bold hover:bg-destructive/90 transition-colors disabled:opacity-40 cursor-pointer"
+                      >
+                        {deleting ? 'Deleting...' : 'Permanently Delete'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          setDeleteEmailInput('');
+                        }}
+                        className="px-2.5 py-1 rounded-md hover:bg-secondary text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </motion.div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 4: PREFERENCES
+            TAB 4: PREFERENCES (Desktop 2-Column Zero-Scroll Layout)
         ══════════════════════════════════════════════════════════════ */}
         {activeTab === 'preferences' && (
           <motion.div
             key="preferences"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
-            className="space-y-8 max-w-2xl"
+            className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start pt-1"
           >
-            {/* Theme Selector */}
-            <div className="space-y-4">
+            {/* Appearance Theme (Left Column) */}
+            <div className="p-5 rounded-2xl border border-border/70 bg-card/60 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
                   Appearance Theme
@@ -701,7 +672,7 @@ export default function AccountView() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 max-w-md">
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 {/* Light */}
                 <button
                   type="button"
@@ -709,19 +680,19 @@ export default function AccountView() {
                     setTheme('light');
                     toast({ title: 'Theme set to Light' });
                   }}
-                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 ${
                     activeTheme === 'light' || activeTheme === 'warm-paper'
                       ? 'border-primary bg-primary/5 ring-1 ring-primary'
                       : 'border-border bg-secondary/30 hover:border-border/80'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <Sun className={`h-5 w-5 ${activeTheme === 'light' || activeTheme === 'warm-paper' ? 'text-primary' : 'text-muted-foreground'}`} />
-                    {(activeTheme === 'light' || activeTheme === 'warm-paper') && <Check className="h-4 w-4 text-primary" />}
+                    <Sun className={`h-4 w-4 ${activeTheme === 'light' || activeTheme === 'warm-paper' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    {(activeTheme === 'light' || activeTheme === 'warm-paper') && <Check className="h-3.5 w-3.5 text-primary" />}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Light</p>
-                    <p className="text-xs text-muted-foreground">Crisp clean light mode</p>
+                    <p className="text-xs font-bold text-foreground">Light</p>
+                    <p className="text-[10.5px] text-muted-foreground">Crisp clean light mode</p>
                   </div>
                 </button>
 
@@ -732,36 +703,36 @@ export default function AccountView() {
                     setTheme('dark');
                     toast({ title: 'Theme set to Dark' });
                   }}
-                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 ${
                     activeTheme === 'dark' || activeTheme === 'midnight'
                       ? 'border-primary bg-primary/5 ring-1 ring-primary'
                       : 'border-border bg-secondary/30 hover:border-border/80'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <Moon className={`h-5 w-5 ${activeTheme === 'dark' || activeTheme === 'midnight' ? 'text-primary' : 'text-muted-foreground'}`} />
-                    {(activeTheme === 'dark' || activeTheme === 'midnight') && <Check className="h-4 w-4 text-primary" />}
+                    <Moon className={`h-4 w-4 ${activeTheme === 'dark' || activeTheme === 'midnight' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    {(activeTheme === 'dark' || activeTheme === 'midnight') && <Check className="h-3.5 w-3.5 text-primary" />}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Dark</p>
-                    <p className="text-xs text-muted-foreground">Focused dark mode</p>
+                    <p className="text-xs font-bold text-foreground">Dark</p>
+                    <p className="text-[10.5px] text-muted-foreground">Focused dark mode</p>
                   </div>
                 </button>
               </div>
             </div>
 
-            {/* Language Selector */}
-            <div className="border-t border-border/40 pt-8 space-y-4">
+            {/* Language (Right Column) */}
+            <div className="p-5 rounded-2xl border border-border/70 bg-card/60 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
                   Language
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Select your preferred language for study prompts and system interface.
+                  Select your preferred language for study prompts and interface.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 {LANGUAGES.map((lang) => {
                   const isCurrent = (i18n.language || 'en').startsWith(lang.code);
 
@@ -780,14 +751,14 @@ export default function AccountView() {
                           : 'border-border bg-secondary/30 hover:border-border/80'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-lg">{lang.flag}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{lang.flag}</span>
                         <div>
-                          <p className="text-xs font-semibold text-foreground">{lang.label}</p>
+                          <p className="text-xs font-bold text-foreground">{lang.label}</p>
                           <p className="text-[10px] text-muted-foreground">{lang.region}</p>
                         </div>
                       </div>
-                      {isCurrent && <Check className="h-4 w-4 text-primary" />}
+                      {isCurrent && <Check className="h-3.5 w-3.5 text-primary" />}
                     </button>
                   );
                 })}

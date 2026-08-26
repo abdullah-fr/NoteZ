@@ -535,7 +535,7 @@ export default function Dashboard() {
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden paper-texture min-w-0">
-          <div className={activeView === 'folder' || activeView === 'chat' || activeView === 'calendar' || activeView === 'timer' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
+          <div className={activeView === 'folder' || activeView === 'chat' || activeView === 'calendar' || activeView === 'timer' || activeView === 'account' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
             <motion.div
               key={activeView}
               initial={{ opacity: 0, y: 4 }}
