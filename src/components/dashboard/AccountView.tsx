@@ -123,14 +123,20 @@ export default function AccountView() {
     preferences: 'Preferences',
   };
 
+  const initials = (displayName || user?.email || '?')
+    .split(/[\s@]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('');
+
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-8">
       {/* ── Top Navigation & Header Row ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-4">
         <div>
           <h1 className="font-serif text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-            Account <span className="text-muted-foreground font-sans text-xl font-normal">— {tabLabels[activeTab]}</span>
+            Account Settings
           </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Manage your personal profile, subscription credits, and security settings.
+          </p>
         </div>
 
         {/* Tab Navigation Menu */}
@@ -142,7 +148,7 @@ export default function AccountView() {
                 key={t}
                 type="button"
                 onClick={() => setActiveTab(t)}
-                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer relative ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer relative ${
                   isActive
                     ? 'text-foreground font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
@@ -174,13 +180,17 @@ export default function AccountView() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
-            className="space-y-8"
+            className="space-y-8 max-w-3xl"
           >
-            {/* Identity & Details Section */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
+            {/* User Identity Header */}
+            <div className="flex items-start gap-5">
+              <div className="w-16 h-16 rounded-2xl bg-secondary/80 border border-border flex items-center justify-center shrink-0 shadow-xs">
+                <span className="text-2xl font-bold font-mono text-foreground">{initials}</span>
+              </div>
+
+              <div className="space-y-1.5 min-w-0 flex-1">
                 {isEditingName ? (
-                  <div className="flex items-center gap-2 max-w-md w-full">
+                  <div className="flex items-center gap-2 max-w-md">
                     <input
                       type="text"
                       value={displayName}
@@ -222,92 +232,69 @@ export default function AccountView() {
                     </button>
                   </div>
                 )}
+
+                <p className="text-sm text-muted-foreground font-mono">
+                  {user?.email}
+                </p>
+
+                {/* Status Badges */}
+                <div className="flex items-center gap-2.5 pt-1.5">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
+                    <Zap className="h-3.5 w-3.5" />
+                    {currentPlan.name} Plan
+                  </span>
+
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-medium text-emerald-400">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Verified
+                  </span>
+                </div>
               </div>
-
-              <p className="text-sm text-muted-foreground font-mono">
-                {user?.email}
-              </p>
-
-              {/* Status Badges */}
-              <div className="flex items-center gap-2.5 pt-1">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
-                  <Zap className="h-3.5 w-3.5" />
-                  {currentPlan.name} Plan
-                </span>
-
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-medium text-emerald-400">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  Verified
-                </span>
-              </div>
-
-              <p className="text-xs text-muted-foreground pt-2">
-                Member since {user?.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}
-              </p>
             </div>
 
-            {/* Danger Zone / Delete Account Section */}
-            <div className="border-t border-border/40 pt-8 mt-12 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-destructive flex items-center gap-1.5">
-                    <Trash2 className="h-4 w-4" />
-                    Delete Account
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Once you delete your account, it cannot be restored. All your study notes, exams, and flashcards will be permanently removed.
-                  </p>
+            {/* Profile Information List */}
+            <div className="border-t border-border/40 pt-6 space-y-4">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                Account Details
+              </h3>
+
+              <div className="divide-y divide-border/40 border-t border-b border-border/40">
+                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                  <span className="text-muted-foreground">Display Name</span>
+                  <span className="font-medium text-foreground">{displayName || 'Not specified'}</span>
                 </div>
 
-                {!showDeleteConfirm && (
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="px-3.5 py-1.5 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold transition-colors cursor-pointer self-start sm:self-center shrink-0"
-                  >
-                    Delete Account
-                  </button>
-                )}
-              </div>
+                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                  <span className="text-muted-foreground">Primary Email</span>
+                  <span className="font-mono text-foreground">{user?.email}</span>
+                </div>
 
-              {showDeleteConfirm && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-3 max-w-lg mt-3"
-                >
-                  <p className="text-xs text-destructive font-medium">
-                    Type your email (<span className="font-mono font-bold">{user?.email}</span>) to permanently confirm:
-                  </p>
+                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                  <span className="text-muted-foreground">Current Plan</span>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="email"
-                      value={deleteEmailInput}
-                      onChange={(e) => setDeleteEmailInput(e.target.value)}
-                      placeholder={user?.email}
-                      className="flex-1 bg-background border border-destructive/30 rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-destructive"
-                    />
-                    <button
-                      type="button"
-                      onClick={deleteAccount}
-                      disabled={deleteEmailInput !== user?.email || deleting}
-                      className="px-3 py-1.5 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    <span className="font-semibold text-foreground">{currentPlan.name}</span>
+                    <Link
+                      to="/pricing"
+                      className="text-primary hover:underline text-xs font-bold"
                     >
-                      {deleting ? 'Deleting…' : 'Confirm'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDeleteConfirm(false);
-                        setDeleteEmailInput('');
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      Cancel
-                    </button>
+                      {tier === 'free' ? 'Upgrade' : 'Change Plan'}
+                    </Link>
                   </div>
-                </motion.div>
-              )}
+                </div>
+
+                <div className="py-3.5 flex items-center justify-between text-xs sm:text-sm">
+                  <span className="text-muted-foreground">Member Since</span>
+                  <span className="text-foreground">
+                    {user?.created_at
+                      ? new Date(user.created_at).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : 'Unknown'}
+                  </span>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
@@ -381,7 +368,7 @@ export default function AccountView() {
                   to="/pricing"
                   className="text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  View Credit Cost Reference Guide →
+                  View Credit Cost Reference Guide
                 </Link>
               </div>
             </div>
@@ -479,7 +466,7 @@ export default function AccountView() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
-            className="space-y-8 max-w-xl"
+            className="space-y-10 max-w-2xl"
           >
             {/* Password Section */}
             <div className="space-y-4">
@@ -492,7 +479,7 @@ export default function AccountView() {
                 </p>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 max-w-md">
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">New Password</label>
                   <div className="relative">
@@ -528,7 +515,7 @@ export default function AccountView() {
                   <p className="text-xs text-destructive">Passwords do not match</p>
                 )}
 
-                <div className="pt-2">
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={savePassword}
@@ -543,13 +530,13 @@ export default function AccountView() {
             </div>
 
             {/* Active Session & Sign Out */}
-            <div className="border-t border-border/40 pt-6 space-y-3">
+            <div className="border-t border-border/40 pt-8 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
                   Active Session
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Sign out of NoteZ on this browser.
+                  Sign out of your NoteZ studio account on this device.
                 </p>
               </div>
 
@@ -561,6 +548,70 @@ export default function AccountView() {
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Sign Out</span>
               </button>
+            </div>
+
+            {/* Delete Account (Danger Zone) — Moved to Security as requested */}
+            <div className="border-t border-border/40 pt-8 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-destructive flex items-center gap-1.5">
+                    <Trash2 className="h-4 w-4" />
+                    Delete Account
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Once you delete your account, it cannot be restored. All your study notes, exams, and flashcards will be permanently removed.
+                  </p>
+                </div>
+
+                {!showDeleteConfirm && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-3.5 py-1.5 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold transition-colors cursor-pointer self-start sm:self-center shrink-0"
+                  >
+                    Delete Account
+                  </button>
+                )}
+              </div>
+
+              {showDeleteConfirm && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-3 max-w-lg mt-3"
+                >
+                  <p className="text-xs text-destructive font-medium">
+                    Type your email (<span className="font-mono font-bold">{user?.email}</span>) to permanently confirm:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="email"
+                      value={deleteEmailInput}
+                      onChange={(e) => setDeleteEmailInput(e.target.value)}
+                      placeholder={user?.email}
+                      className="flex-1 bg-background border border-destructive/30 rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-destructive"
+                    />
+                    <button
+                      type="button"
+                      onClick={deleteAccount}
+                      disabled={deleteEmailInput !== user?.email || deleting}
+                      className="px-3 py-1.5 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {deleting ? 'Deleting…' : 'Confirm'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDeleteConfirm(false);
+                        setDeleteEmailInput('');
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              )}
             </div>
           </motion.div>
         )}
@@ -577,7 +628,7 @@ export default function AccountView() {
             transition={{ duration: 0.15 }}
             className="space-y-8 max-w-xl"
           >
-            {/* Theme Preference (Clean Light / Dark) */}
+            {/* Theme Preference */}
             <div className="space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
