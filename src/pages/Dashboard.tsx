@@ -153,9 +153,6 @@ export default function Dashboard() {
     if (view === "timer") {
       setTimerWidgetClosed(false);
     }
-    if (view !== "timer" && anyActiveSession) {
-      setTimerWidgetClosed(false);
-    }
     if (view === 'folder') {
       setSelectedFolderId(null);
       setFolderResetKey(key => key + 1);
