@@ -4,7 +4,6 @@ import { useAuth } from '@/lib/auth';
 import { useCredits } from '@/contexts/CreditsContext';
 import {
   PLANS,
-  CREDIT_COSTS,
   ACTION_METADATA,
   METERED_ACTIONS,
   getPerFeatureUsage,
@@ -56,13 +55,12 @@ export default function AccountView() {
   const [activeTab, setActiveTab] = useState<Tab>('profile');
 
   const currentPlan = PLANS[tier] || PLANS.free;
-  const isFree = tier === 'free';
   const resetDateStr = new Date(periodEnd).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
-  const effectiveAllowance = allowance || currentPlan.creditAllowance || 150;
+  const effectiveAllowance = allowance || currentPlan.creditAllowance || 50;
   const usagePercentage = Math.min(100, Math.round((usedThisPeriod / Math.max(1, effectiveAllowance)) * 100));
 
   const perFeatureUsage = getPerFeatureUsage(transactions);
@@ -367,7 +365,7 @@ export default function AccountView() {
                     to="/pricing"
                     className="text-[10.5px] text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    View Credit Rates
+                    View Plans
                   </Link>
                 </div>
               </div>
@@ -377,7 +375,7 @@ export default function AccountView() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-foreground flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    {isFree ? 'Weekly' : 'Monthly'} Usage
+                    Monthly Usage
                   </span>
                   <span className="font-mono text-muted-foreground">
                     {usedThisPeriod.toLocaleString()} used ({usagePercentage}%)
@@ -400,11 +398,10 @@ export default function AccountView() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {METERED_ACTIONS.map((actionKey) => {
                     const meta = ACTION_METADATA[actionKey];
-                    const cost = CREDIT_COSTS[actionKey];
                     const Icon = ACTION_ICONS[actionKey] || Sparkles;
                     const stats = perFeatureUsage[actionKey] || { credits: 0, count: 0 };
                     const featurePercent = usedThisPeriod > 0
-                      ? Math.min(100, Math.round((stats.credits / usedThisPeriod) * 100))
+                      ? Math.min(100, Math.round((stats.count / usedThisPeriod) * 100))
                       : 0;
 
                     return (
@@ -421,8 +418,8 @@ export default function AccountView() {
 
                         <div className="space-y-1">
                           <div className="flex items-baseline justify-between text-[11px]">
-                            <span className="font-mono font-bold text-foreground">{stats.credits} credits</span>
-                            <span className="text-[10px] text-muted-foreground font-mono">{stats.count} {stats.count === 1 ? 'use' : 'uses'}</span>
+                            <span className="font-mono font-bold text-foreground">{stats.count} {stats.count === 1 ? 'request' : 'requests'}</span>
+                            <span className="text-[10px] text-muted-foreground font-mono">{stats.credits} {stats.credits === 1 ? 'credit' : 'credits'} used</span>
                           </div>
                           <div className="w-full h-1 rounded-full bg-secondary overflow-hidden">
                             <div

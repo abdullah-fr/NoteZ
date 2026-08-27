@@ -20,43 +20,17 @@ import { useAuth } from '@/lib/auth';
 import { editorAiAssist } from '@/services';
 import { createConversation, getStreamingToken } from '@/services/chat.service';
 import { fetchSources, triggerProcessSource, uploadSourceFile } from '@/services/sources.service';
+import { useFolderStorage } from '@/hooks/useFolderStorage';
 
 // Configure pdfjs worker source
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 /* ─── types ─── */
-type CategoryType = 'unit' | 'assignment' | 'project' | 'custom';
+// Note, Category, FolderItem, CategoryType are imported from useFolderStorage
+import type { Note, Category, FolderItem, CategoryType } from '@/hooks/useFolderStorage';
 type FolderListMode = 'grid' | 'list' | 'graph';
 type FolderSort = 'newest' | 'modified' | 'oldest' | 'name' | 'notes';
 type NoteSort = 'updated' | 'created' | 'title';
-type StoredFolder = Omit<FolderItem, 'createdAt' | 'updatedAt' | 'categories'> & { createdAt: string; updatedAt?: string; categories: StoredCategory[] };
-type StoredCategory = Omit<Category, 'notes'> & { notes: StoredNote[] };
-type StoredNote = Omit<Note, 'createdAt' | 'updatedAt'> & { createdAt: string; updatedAt: string };
-
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  type: CategoryType;
-  notes: Note[];
-}
-
-interface FolderItem {
-  id: string;
-  name: string;
-  color: string;
-  createdAt: Date;
-  updatedAt?: Date;
-  categories: Category[];
-  archived?: boolean;
-}
 
 /* ─── constants ─── */
 const FOLDER_COLORS = [
@@ -368,6 +342,7 @@ export default function FolderView({
   onToggleSidebar?: () => void;
 }) {
   const { user, signOut } = useAuth();
+  const { folders, setFolders, setTrashItems, loading: foldersLoading } = useFolderStorage(user?.id);
   const [view, setView] = useState<'folders' | 'notes' | 'trash'>('folders');
   const [folderScope, setFolderScope] = useState<'active' | 'archived'>(initialScope);
   const [activeFolder,   setActiveFolder]   = useState<FolderItem | null>(null);
@@ -380,31 +355,8 @@ export default function FolderView({
   /* ── folder list display mode: grid | list | graph ── */
   const [listMode, setListMode] = useState<FolderListMode>('list');
 
-  /* ── data loading ── */
-  const [folders, setFoldersRaw] = useState<FolderItem[]>(() => {
-    try {
-      const raw = localStorage.getItem('notez_folders');
-      if (!raw) return [];
-      const stored = JSON.parse(raw) as StoredFolder[];
-      return stored.map(f => ({
-        ...f, createdAt: new Date(f.createdAt), updatedAt: f.updatedAt ? new Date(f.updatedAt) : new Date(f.createdAt),
-        categories: (f.categories ?? []).map(c => ({
-          ...c, notes: (c.notes ?? []).map(n => ({
-            ...n, createdAt: new Date(n.createdAt), updatedAt: new Date(n.updatedAt),
-          })),
-        })),
-      }));
-    } catch { return []; }
-  });
-
   /* ── Dynamic trash state ── */
-  const [hasTrashItems, setHasTrashItems] = useState<boolean>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('notez_trash') || '[]').length > 0;
-    } catch {
-      return false;
-    }
-  });
+  const [hasTrashItems, setHasTrashItems] = useState<boolean>(false);
 
   useEffect(() => {
     const checkTrash = () => {
@@ -424,26 +376,6 @@ export default function FolderView({
   }, []);
 
   useEffect(() => {
-    const reloadFromStorage = () => {
-      try {
-        const raw = localStorage.getItem('notez_folders');
-        if (!raw) return;
-        const stored = JSON.parse(raw) as StoredFolder[];
-        setFoldersRaw(stored.map(f => ({
-          ...f, createdAt: new Date(f.createdAt), updatedAt: f.updatedAt ? new Date(f.updatedAt) : new Date(f.createdAt),
-          categories: (f.categories ?? []).map(c => ({
-            ...c, notes: (c.notes ?? []).map(n => ({
-              ...n, createdAt: new Date(n.createdAt), updatedAt: new Date(n.updatedAt),
-            })),
-          })),
-        })));
-      } catch { /* silent */ }
-    };
-    window.addEventListener('notez:folders-updated', reloadFromStorage);
-    return () => window.removeEventListener('notez:folders-updated', reloadFromStorage);
-  }, []);
-
-  useEffect(() => {
     if (!initialFolderId) return;
     const folder = folders.find(item => item.id === initialFolderId);
     if (folder) {
@@ -453,17 +385,6 @@ export default function FolderView({
       onFolderOpen?.();
     }
   }, [initialFolderId, folders, onFolderOpen]);
-
-  function setFolders(updater: FolderItem[] | ((prev: FolderItem[]) => FolderItem[])) {
-    setFoldersRaw(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        localStorage.setItem('notez_folders', JSON.stringify(next));
-        window.dispatchEvent(new Event('notez:folders-updated'));
-      } catch (error) { void error; }
-      return next;
-    });
-  }
 
   /* ── forms state ── */
   const [showFolderForm,  setShowFolderForm]  = useState(false);
@@ -569,20 +490,16 @@ export default function FolderView({
   function deleteFolder(id: string) {
     const targetFolder = folders.find(f => f.id === id);
     if (targetFolder) {
-      try {
-        const trashItems = JSON.parse(localStorage.getItem('notez_trash') || '[]');
-        trashItems.push({
-          id: crypto.randomUUID(),
-          type: 'folder',
-          folderId: targetFolder.id,
-          folderName: targetFolder.name,
-          color: targetFolder.color,
-          item: targetFolder,
-          folderData: targetFolder,
-          deletedAt: new Date().toISOString(),
-        });
-        localStorage.setItem('notez_trash', JSON.stringify(trashItems));
-      } catch { /* silent */ }
+      setTrashItems(prev => [...prev, {
+        id: crypto.randomUUID(),
+        type: 'folder' as const,
+        folderId: targetFolder.id,
+        folderName: targetFolder.name,
+        color: targetFolder.color,
+        item: targetFolder,
+        folderData: targetFolder,
+        deletedAt: new Date().toISOString(),
+      }]);
     }
     setFolders(prev => prev.filter(f => f.id !== id));
     if (activeFolder?.id === id) { setActiveFolder(null); setView('folders'); }
@@ -639,22 +556,19 @@ export default function FolderView({
     if (!window.confirm(`Delete ${count} selected folder${count === 1 ? '' : 's'}?`)) return;
     const targets = folders.filter(f => selectedFolderIds.has(f.id));
     if (targets.length > 0) {
-      try {
-        const trashItems = JSON.parse(localStorage.getItem('notez_trash') || '[]');
-        targets.forEach(t => {
-          trashItems.push({
-            id: crypto.randomUUID(),
-            type: 'folder',
-            folderId: t.id,
-            folderName: t.name,
-            color: t.color,
-            item: t,
-            folderData: t,
-            deletedAt: new Date().toISOString(),
-          });
-        });
-        localStorage.setItem('notez_trash', JSON.stringify(trashItems));
-      } catch { /* silent */ }
+      setTrashItems(prev => [
+        ...prev,
+        ...targets.map(t => ({
+          id: crypto.randomUUID(),
+          type: 'folder' as const,
+          folderId: t.id,
+          folderName: t.name,
+          color: t.color,
+          item: t,
+          folderData: t,
+          deletedAt: new Date().toISOString(),
+        })),
+      ]);
     }
     setFolders(previous => previous.filter(folder => !selectedFolderIds.has(folder.id)));
     setSelectedFolderIds(new Set());
@@ -707,19 +621,15 @@ export default function FolderView({
     // Move to trash instead of permanent deletion
     const note = activeCategory.notes.find(n => n.id === id);
     if (note && activeFolder) {
-      try {
-        const trashItems = JSON.parse(localStorage.getItem('notez_trash') || '[]');
-        trashItems.push({
-          id: crypto.randomUUID(),
-          noteId: note.id,
-          title: note.title,
-          content: note.content,
-          folderName: activeFolder.name,
-          folderId: activeFolder.id,
-          deletedAt: new Date().toISOString(),
-        });
-        localStorage.setItem('notez_trash', JSON.stringify(trashItems));
-      } catch { /* silent */ }
+      setTrashItems(prev => [...prev, {
+        id: crypto.randomUUID(),
+        noteId: note.id,
+        title: note.title,
+        content: note.content,
+        folderName: activeFolder.name,
+        folderId: activeFolder.id,
+        deletedAt: new Date().toISOString(),
+      }]);
     }
     syncCategory({ ...activeCategory, notes: activeCategory.notes.filter(n => n.id !== id) });
     if (activeNote?.id === id) { setActiveNote(null); setView('notes'); }
@@ -1224,7 +1134,7 @@ export default function FolderView({
         </div>
       ) : (
         <div className="p-4 md:p-6 max-w-6xl mx-auto w-full flex-1">
-        
+
         {/* Inline Folder Form */}
         <AnimatePresence initial={false}>
           {showFolderForm && (
@@ -1259,6 +1169,10 @@ export default function FolderView({
         {filteredFolders.length === 0 ? (
           !showFolderForm && (
             <div className="rounded-2xl border border-border bg-card p-10 text-center space-y-3">
+              {foldersLoading ? (
+                <Loader2 className="h-8 w-8 mx-auto text-muted-foreground/60 animate-spin" />
+              ) : (
+                <>
               <Folder className="h-10 w-10 mx-auto text-muted-foreground/60" />
               {search ? (
                 <p className="text-xs text-muted-foreground">No folders match your search.</p>
@@ -1272,6 +1186,8 @@ export default function FolderView({
                   >
                     <Plus className="h-3.5 w-3.5" /> Create Your First Folder
                   </button>
+                </>
+              )}
                 </>
               )}
             </div>

@@ -53,9 +53,9 @@ export function parseLimitError(
   const e = err as Record<string, any>;
 
   // Check structured credit error
-  if (e.error === 'INSUFFICIENT_CREDITS' || e.code === 'INSUFFICIENT_CREDITS' || e.error === 'USAGE_LIMIT_REACHED') {
+  if (e.error === 'INSUFFICIENT_CREDITS' || e.error === 'MONTHLY_LIMIT_REACHED' || e.code === 'INSUFFICIENT_CREDITS' || e.code === 'MONTHLY_LIMIT_REACHED' || e.error === 'USAGE_LIMIT_REACHED') {
     const field = (e.action || e.field || 'generate_exam') as LimitField;
-    const required = Number(e.cost || e.required || e.limit || 25);
+    const required = Number(e.cost || e.required || e.limit || 1);
     const balance = typeof e.balance === 'number' ? e.balance : undefined;
     return {
       field,

@@ -242,6 +242,111 @@ export type Database = {
           },
         ]
       }
+      notez_calendar_events: {
+        Row: {
+          data: Json
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notez_timer_data: {
+        Row: {
+          data: Json
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notez_user_credits: {
+        Row: {
+          data: Json
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notez_folders: {
+        Row: {
+          data: Json
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notez_trash: {
+        Row: {
+          data: Json
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          data?: Json
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notes: {
         Row: {
           content: string | null
@@ -630,6 +735,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_and_deduct_credits: {
+        Args: {
+          p_action: string
+          p_amount: number
+          p_description?: string
+          p_metadata?: Json
+          p_user_id: string
+        }
+        Returns: Json
+      }
       can_admin_workspace: {
         Args: { _user: string; _workspace: string }
         Returns: boolean
@@ -641,6 +756,20 @@ export type Database = {
       is_workspace_member: {
         Args: { _user: string; _workspace: string }
         Returns: boolean
+      }
+      get_user_credits_summary: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
+      refund_credits: {
+        Args: {
+          p_action: string
+          p_amount: number
+          p_metadata?: Json
+          p_reason?: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       workspace_role_of: {
         Args: { _user: string; _workspace: string }

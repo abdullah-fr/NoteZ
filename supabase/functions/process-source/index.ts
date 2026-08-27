@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { checkAndIncrement, limitReachedResponse } from "../_shared/usage.ts";
+import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +53,7 @@ async function extractFromUrl(url: string): Promise<string> {
 
 async function callGemini(apiKey: string, sysPrompt: string, userContent: string): Promise<string> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    geminiModelUrl(apiKey, "generateContent"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -104,7 +104,7 @@ async function extractDocumentWithGemini(apiKey: string, file: Blob, mimeType: s
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    geminiModelUrl(apiKey, "generateContent"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -130,8 +130,7 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+    const GEMINI_API_KEY = getGeminiApiKey("GEMINI_SOURCE_API_KEY");
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -144,18 +143,6 @@ serve(async (req) => {
       });
     }
     const userId = userData.user.id;
-
-    // ── Usage metering (source uploads, monthly cap) ──────────────────────────
-    const usageResult = await checkAndIncrement(
-      userId,
-      "source_uploads_count",
-      SUPABASE_URL,
-      SERVICE_KEY,
-    );
-    if (!usageResult.allowed) {
-      return limitReachedResponse("source_uploads_count", usageResult.limit!, corsHeaders);
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
     const { sourceId } = await req.json();
     if (!sourceId) throw new Error("sourceId required");
@@ -213,7 +200,7 @@ serve(async (req) => {
 
           // 2. Transcribe via generate-content with the file part
           const transcribeRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
+            geminiModelUrl(GEMINI_API_KEY, "generateContent"),
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },

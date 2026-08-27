@@ -16,7 +16,7 @@ import UpgradeModal from '@/components/dashboard/UpgradeModal';
 import { format } from 'date-fns';
 import { htmlToPlainText } from './note-utils';
 import { useCalendar, dayLabel, type CalendarEvent } from '@/lib/calendar';
-import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
+import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
 import {
   Sparkles, GraduationCap, FlaskConical, ScrollText,
   Loader2, Plus, FileText, X, BarChart3, HeartHandshake,
@@ -584,39 +584,8 @@ function ChatViewInner() {
         await updateConversation(convId, { mode: effectiveMode, source_id: attached?.id ?? null });
       }
 
-      // ── Credit Check & Reservation ──────────────────────────────────
-      const creditRes = await checkAndDeductCredits(
-        user?.id,
-        'ai_chat',
-        5,
-        `AI Chat: ${msg.slice(0, 40)}`,
-        { mode: effectiveMode },
-      );
-
-      if (!creditRes.success) {
-        handleLimitError('ai_chat', 5, {
-          balance: creditRes.balanceAfter,
-          required: 5,
-          resetDate: creditRes.resetDate,
-        });
-        return;
-      }
-      // ────────────────────────────────────────────────────────────────
-
       const userMsgObj: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: msg, created_at: new Date().toISOString() };
       setMessages(prev => [...prev, userMsgObj]);
-
-      // Save user message to Supabase DB
-      try {
-        await supabase.from('chat_messages').insert({
-          conversation_id: convId,
-          user_id: user.id,
-          role: 'user',
-          content: msg,
-        });
-      } catch (err) {
-        console.error('Failed to save user message to DB:', err);
-      }
 
       let folderContext = '';
       if (selectedFolder) {
@@ -652,128 +621,38 @@ function ChatViewInner() {
         ? `\n\n[CONTEXT SCOPE: ${scopeTitle}]${folderContext}`
         : '';
 
-      const systemPrompt = `You are NoteZ AI, an advanced, intelligent academic tutor and study assistant.
-Mode: ${effectiveMode}. Thinking level: ${thinkingLevel}.
-
-CRITICAL INSTRUCTIONS FOR FORMATTING, STRUCTURE & RELEVANCE:
-- MANDATORY USER FOLLOW-UP PROMPTS (CRITICAL):
-  * The follow-ups are the NEXT PROMPTS/COMMANDS that the USER will click to send to NoteZ AI to continue the conversation.
-  * Therefore, each follow-up MUST be written from the USER'S PERSPECTIVE as an action, prompt, or question TO the AI (e.g., "Create a...", "Explain how...", "Show me step-by-step...", "Compare X with Y...", "Give me 3 practice problems on...", "Walk me through...").
-  * NEVER write feedback questions asking the user what they want or prefer (NEVER write "Would you like...", "Do you prefer...", "Are you looking for...", "Should we...").
-  * Format strictly at the very end of your response as:
----
-NEXT_FOLLOW_UPS:
-- [Next user prompt 1]
-- [Next user prompt 2]
-- [Next user prompt 3]
-
-- DYNAMIC BRAND MODERATION & DELETION OF CANNED RESPONSES:
-  * You are NoteZ AI — an intelligent, friendly study and academic assistant built for the NoteZ workspace.
-  * Your primary focus is helping students learn: class notes, academic concepts, exam prep, flashcards, study schedules, and workspace tasks.
-  * IF THE USER ASKS AN OFF-TOPIC, EXPLICIT, OFFENSIVE, OR COMPLETELY NON-EDUCATIONAL QUESTION (e.g., explicit/adult content, profanity, cooking, gaming, sports, general trivia, personal chat):
-    - DO NOT use any fixed, hardcoded, or repetitive canned responses. NEVER repeat the exact same sentence multiple times.
-    - Instead, dynamically write a natural, polite, unique 1-2 sentence response tailored specifically to what the user asked.
-    - Acknowledge their message naturally, explain politely that as NoteZ AI you're tailored for academic and study help, and suggest a creative study query or workspace feature they can try next.
-    - Keep every refusal unique, fresh, friendly, and contextual.
-  * Casual greetings ("hi", "hello", "hey", "how are you") ARE allowed — greet them warmly in 1 short sentence and ask what they're studying today.
-- FORMATTING & LAYOUT (Crucial):
-  * For study guides, explanations, and summaries, always use structured Markdown with clear hierarchy:
-    - Main numbered section headers: "### 1. Section Title", "### 2. Section Title"
-    - Bullet points with bold lead-ins for key points: "- **Key Concept / Term:** Clear, detailed explanation."
-    - Highlight key terms with bold text (\`**term**\`) for scannability.
-    - For summaries, include an initial overview sentence/paragraph, structured sections with bullets, and a final summary callout:
-      "> **In one sentence / Key Takeaway:** Core summary here."
-    - Ensure clean blank lines between headers, paragraphs, and lists so text never looks cramped or plain.
-- GREETINGS & CASUAL CHAT: If the user says "hello", "hi", "hey", or casual greetings, respond naturally and warmly in ONE OR TWO short sentences (e.g., "Hello! How can I help you with your studies or notes today?"). DO NOT output long unprompted introductions or essays.
-- DIRECT ANSWERS: Answer questions directly without generic opening filler ("Sure, I can help with that", "Hello, I am NoteZ AI").
-- DIRECT CITATION: When study context, folders, or notes are provided in the prompt, base your responses directly on them. DO NOT tell the user to upload or paste notes.`;
-
-      // Format conversational turns so follow-ups work naturally
-      const turns = messages.slice(-8).map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }],
-      }));
-
-      const currentTurn = {
-        role: 'user',
-        parts: [{ text: msg + scopeHint }],
-      };
-
-      const payload = {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [...turns, currentTurn],
-        generationConfig: {
-          temperature: thinkingLevel === 'low' ? 0.3 : thinkingLevel === 'high' ? 0.7 : 0.9,
-        },
-      };
+      // Chat prompt construction is handled by the ai-chat Edge Function.
 
       let rawText = '';
-      let apiSuccess = false;
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('ai-chat', {
+        body: {
+          conversationId: convId,
+          message: msg,
+          context: scopeHint,
+          mode: effectiveMode,
+          sourceId: attached?.id,
+        },
+      });
+      if (edgeErr) throw edgeErr;
 
-      // 1. Invoke Supabase Edge Function (ai-chat)
-      try {
-        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('ai-chat', {
-          body: {
-            conversationId: convId,
-            message: msg,
-            mode: effectiveMode,
-            sourceId: attached?.id,
-          },
-        });
-
-        if (!edgeErr && edgeData) {
-          if (typeof edgeData === 'string') {
-            rawText = edgeData;
-            apiSuccess = true;
-          } else if (edgeData.content) {
-            rawText = edgeData.content;
-            apiSuccess = true;
-          }
-        }
-      } catch {
-        /* edge function failed, try proxy fallback */
-      }
-
-      // 2. Local Proxy endpoint fallback (/api/ai-chat-proxy)
-      if (!apiSuccess) {
-        try {
-          const proxyRes = await fetch('/api/ai-chat-proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-
-          if (proxyRes.ok) {
-            const data = await proxyRes.json();
-            rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (rawText) apiSuccess = true;
-          }
-        } catch {
-          /* proxy call failed */
-        }
-      }
-
-      if (!apiSuccess || !rawText) {
-        // Safe automatic refund
-        await refundCredits(user?.id, 5, 'ai_chat', 'AI chat generation failed');
-      }
+      if (typeof edgeData === 'string') rawText = edgeData;
+      else if (edgeData?.content) rawText = edgeData.content;
+      if (!rawText) throw new Error('The AI chat service returned an empty response.');
+      await syncCreditsAfterRequest(user.id);
 
       // Add assistant message (with guaranteed string fallback)
-      const responseContent = (apiSuccess && rawText)
-        ? rawText
-        : "I'm sorry, I couldn't generate a response right now. Please try asking again!";
+      const responseContent = rawText;
 
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: responseContent, created_at: new Date().toISOString() }]);
-      try {
-        await supabase.from('chat_messages').insert({
-          conversation_id: convId,
-          user_id: user.id,
-          role: 'assistant',
-          content: responseContent,
-        });
-      } catch { /* silent */ }
-    } catch (e: any) {
-      toast({ title: 'Error sending message', description: e.message, variant: 'destructive' });
+    } catch (e: unknown) {
+      const creditLimit = await reportCreditFunctionError(e);
+      await syncCreditsAfterRequest(user?.id);
+      // The global credit dialog is the complete response for exhausted
+      // allowances. Avoid stacking a generic red error toast underneath it.
+      if (!creditLimit) {
+        const message = e instanceof Error ? e.message : 'Please try sending your message again.';
+        toast({ title: 'Error sending message', description: message, variant: 'destructive' });
+      }
     } finally {
       setSending(false);
       setStreaming('');

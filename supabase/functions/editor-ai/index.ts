@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { checkAndDeductServer, creditLimitResponse } from "../_shared/credits.ts";
+import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
+import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,38 +17,24 @@ const ACTION_PROMPTS: Record<string, string> = {
 };
 
 async function callAi(apiKey: string, prompt: string): Promise<string> {
-  const models = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash-lite"];
-  let lastErr = "";
-  for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
-          }),
-        },
-      );
-      if (res.status === 429) throw new Error("RATE_LIMITED");
-      if (res.ok) {
-        const data = await res.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-      }
-      lastErr = await res.text();
-    } catch (e: any) {
-      if (e.message === "RATE_LIMITED") throw e;
-      lastErr = e.message;
-    }
-  }
-  throw new Error(`AI generation error: ${lastErr.slice(0, 300)}`);
+  const res = await fetch(geminiModelUrl(apiKey, "generateContent"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
+    }),
+  });
+  if (res.status === 429) throw new Error("RATE_LIMITED");
+  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let chargedUserId: string | null = null;
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -69,13 +56,14 @@ serve(async (req) => {
       });
     }
 
-    const API_KEY =
-      Deno.env.get("GEMINI_AI_ASSIST_API_KEY") ??
-      Deno.env.get("GEMINI_API_KEY") ??
-      Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!API_KEY) throw new Error("GEMINI_AI_ASSIST_API_KEY is not configured");
+    const { action, text } = await req.json();
+    if (!text) {
+      return new Response(JSON.stringify({ error: "No text provided" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // ── Credit Check ──
+    const API_KEY = getGeminiApiKey("GEMINI_AI_ASSIST_API_KEY");
     const creditResult = await checkAndDeductServer(
       userData.user.id,
       "editor_ai_assist",
@@ -85,24 +73,29 @@ serve(async (req) => {
     if (!creditResult.allowed) {
       return creditLimitResponse("editor_ai_assist", creditResult, corsHeaders);
     }
-
-    const { action, text } = await req.json();
-    if (!text) {
-      return new Response(JSON.stringify({ error: "No text provided" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    chargedUserId = userData.user.id;
 
     const actionInstruction = ACTION_PROMPTS[action] || `Perform "${action}" on the following text for study notes. Return ONLY the transformed text.`;
     const fullPrompt = `${actionInstruction}\n\nInput Text:\n"""\n${String(text).slice(0, 12000)}\n"""`;
 
     const result = await callAi(API_KEY, fullPrompt);
+    if (!result.trim()) throw new Error("AI returned an empty editor result.");
 
     return new Response(JSON.stringify({ result }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
     console.error("editor-ai error:", e);
+    if (chargedUserId) {
+      await refundServer(
+        chargedUserId,
+        1,
+        "editor_ai_assist",
+        e?.message || "Editor assist failed",
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+    }
     const isRateLimit = e.message === "RATE_LIMITED";
     return new Response(JSON.stringify({
       error: isRateLimit ? "Rate limited. Please try again in a moment." : "An unexpected error occurred.",

@@ -7,12 +7,11 @@ import {
   Sparkles,
   AlertTriangle,
   Clock,
-  ShieldAlert,
   HelpCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCredits, type LimitModalState } from '@/contexts/CreditsContext';
-import { ACTION_METADATA, PLANS } from '@/lib/credits';
+import { PLANS } from '@/lib/credits';
 
 interface LimitModalProps {
   overrideState?: LimitModalState;
@@ -43,11 +42,7 @@ export default function LimitModal({ overrideState, onCloseOverride }: LimitModa
 
   if (!modal.open) return null;
 
-  const actionMeta = modal.action ? ACTION_METADATA[modal.action] : null;
-  const actionLabel = actionMeta?.label || 'this action';
-  const cost = modal.required ?? (modal.action ? 25 : 25);
   const balance = modal.balance ?? 0;
-  const deficit = Math.max(0, cost - balance);
   const resetDateFormatted = modal.resetDate
     ? new Date(modal.resetDate).toLocaleDateString('en-US', {
         month: 'short',
@@ -62,72 +57,62 @@ export default function LimitModal({ overrideState, onCloseOverride }: LimitModa
       case 'INSUFFICIENT_CREDITS':
         return {
           icon: Zap,
-          iconBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-          headline: "You're low on credits",
-          subtitle: `This ${actionLabel.toLowerCase()} requires ${cost} credits, but you only have ${balance} remaining.`,
+          iconBg: 'bg-accent/15 text-accent border-accent/30',
+          headline: 'Monthly AI allowance reached',
+          subtitle: `You have ${balance} AI requests remaining. Choose a paid plan or wait until ${resetDateFormatted} for your allowance to reset.`,
           detailBox: (
             <div className="rounded-xl border border-border/70 bg-secondary/40 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground font-medium">Credits needed</span>
-                <span className="font-mono font-bold text-amber-400">+{deficit} credits</span>
+                <span className="text-muted-foreground font-medium">Available now</span>
+                <span className="font-mono font-bold text-accent">{balance} requests</span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground font-medium">Current Balance</span>
-                <span className="font-mono text-foreground">{balance} credits</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
-                <div
-                  className="h-full bg-amber-400 rounded-full"
-                  style={{ width: `${Math.min(100, Math.round((balance / cost) * 100))}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[10.5px] text-muted-foreground font-mono pt-0.5">
-                <span>Refills on {resetDateFormatted}</span>
-                <span>Pro gives 5,000/mo</span>
+                <span className="text-muted-foreground font-medium">Allowance resets</span>
+                <span className="font-mono text-foreground">{resetDateFormatted}</span>
               </div>
             </div>
           ),
-          ctaText: 'Upgrade for 5,000 Credits',
+          ctaText: 'View paid plans',
           ctaLink: '/pricing',
         };
 
       case 'MONTHLY_LIMIT_REACHED':
         return {
           icon: Clock,
-          iconBg: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
-          headline: 'Monthly credit limit reached',
-          subtitle: `You've used all of your credits for this billing period. Your allowance resets on ${resetDateFormatted}.`,
+          iconBg: 'bg-accent/15 text-accent border-accent/30',
+          headline: 'Monthly AI allowance reached',
+          subtitle: `You've used your monthly AI allowance. Choose a paid plan or wait until ${resetDateFormatted} when it resets.`,
           detailBox: (
             <div className="rounded-xl border border-border/70 bg-secondary/40 p-3.5 space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Current Plan</span>
-                <span className="font-semibold text-foreground capitalize">{modal.tier || 'Free'}</span>
+                <span className="font-semibold text-foreground">{PLANS[modal.tier || 'free']?.name || 'Free'}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Reset Date</span>
                 <span className="font-mono text-foreground">{resetDateFormatted}</span>
               </div>
               <p className="text-[11px] text-muted-foreground pt-1 leading-relaxed">
-                Upgrade to <strong>Pro Student</strong> for 5,000 monthly credits + priority AI responses.
+                Upgrade to <strong>Pro</strong> for a larger monthly AI allowance, or choose <strong>Max</strong> for the highest individual plan allowance.
               </p>
             </div>
           ),
-          ctaText: 'Get 10× More Credits',
+          ctaText: 'View paid plans',
           ctaLink: '/pricing',
         };
 
       case 'PLAN_REQUIRED':
         return {
           icon: Sparkles,
-          iconBg: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+          iconBg: 'bg-accent/15 text-accent border-accent/30',
           headline: 'Pro Plan Required',
           subtitle: `This premium feature is available on Pro plans. Upgrade to unlock complete access.`,
           detailBox: (
             <div className="rounded-xl border border-border/70 bg-secondary/40 p-3.5 space-y-1.5 text-xs">
-              <p className="font-semibold text-foreground">What you get with Pro Student:</p>
+              <p className="font-semibold text-foreground">What you get with Pro:</p>
               <ul className="text-[11px] text-muted-foreground space-y-1">
-                <li>• 5,000 monthly AI credits</li>
-                <li>• Unlimited practice exams & flashcard decks</li>
+                <li>• More room for regular AI-assisted study</li>
+                <li>• More room for practice exams & flashcard decks</li>
                 <li>• Priority AI processing & coach analytics</li>
               </ul>
             </div>
@@ -139,7 +124,7 @@ export default function LimitModal({ overrideState, onCloseOverride }: LimitModa
       case 'RATE_LIMITED':
         return {
           icon: AlertTriangle,
-          iconBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+          iconBg: 'bg-accent/15 text-accent border-accent/30',
           headline: 'Doing that a little too quickly',
           subtitle: modal.message || 'Please wait a few seconds before trying your request again.',
           detailBox: null,
@@ -192,7 +177,7 @@ export default function LimitModal({ overrideState, onCloseOverride }: LimitModa
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: 0.96 }}
           transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="relative z-50 w-full max-w-md rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto select-none"
+          className="relative z-50 w-full max-w-md rounded-xl border border-border bg-card p-5 sm:p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto select-none"
         >
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
@@ -205,7 +190,7 @@ export default function LimitModal({ overrideState, onCloseOverride }: LimitModa
                   {content.headline}
                 </h3>
                 <span className="text-[10.5px] font-mono text-muted-foreground uppercase tracking-wider">
-                  NoteZ Credits Engine
+                  Credits &amp; Usage
                 </span>
               </div>
             </div>

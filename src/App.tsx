@@ -44,16 +44,16 @@ function RouteScrollReset() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeInitializer />
-    <AuthProvider>
-      <CreditsProvider>
-        <TimerProvider>
-          <CalendarProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <LimitModal />
-              <BrowserRouter>
+    <BrowserRouter>
+      <ThemeInitializer />
+      <AuthProvider>
+        <CreditsProvider>
+          <TimerProvider>
+            <CalendarProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <LimitModal />
                 <RouteScrollReset />
                 <Routes>
                   <Route path="/" element={<Index />} />
@@ -70,14 +70,13 @@ const App = () => (
                   />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-              </BrowserRouter>
-            </TooltipProvider>
-          </CalendarProvider>
-        </TimerProvider>
-      </CreditsProvider>
-    </AuthProvider>
+              </TooltipProvider>
+            </CalendarProvider>
+          </TimerProvider>
+        </CreditsProvider>
+      </AuthProvider>
+    </BrowserRouter>
   </QueryClientProvider>
 );
 
 export default App;
-

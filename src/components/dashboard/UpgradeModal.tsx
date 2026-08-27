@@ -47,7 +47,7 @@ export default function UpgradeModal({
         open,
         type: 'INSUFFICIENT_CREDITS',
         action,
-        required: required ?? limit ?? 25,
+        required: required ?? limit ?? 1,
         balance: balance ?? 0,
         resetDate,
       }}

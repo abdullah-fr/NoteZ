@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
+import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
 import {
   createEmptyCard,
   fsrs,
@@ -228,31 +228,8 @@ export async function generateFlashcardsFromNotes(
 ): Promise<{ question: string; answer: string }[]> {
   const cardCount = payload.count || 10;
 
-  // Credit check & deduction
   const { data: authData } = await supabase.auth.getUser();
   const effectiveUserId = userId || authData?.user?.id;
-
-  const creditRes = await checkAndDeductCredits(
-    effectiveUserId,
-    'generate_flashcards',
-    20,
-    `Flashcard Deck: ${payload.subject} (${cardCount} cards)`,
-    { subject: payload.subject, count: cardCount },
-  );
-
-  if (!creditRes.success) {
-    const err: any = new Error(
-      `You need 20 credits to generate flashcards, but you currently have ${creditRes.balanceAfter ?? 0} credits.`,
-    );
-    err.error = creditRes.code || 'INSUFFICIENT_CREDITS';
-    err.field = 'generate_flashcards';
-    err.action = 'generate_flashcards';
-    err.limit = 20;
-    err.required = 20;
-    err.balance = creditRes.balanceAfter;
-    err.resetDate = creditRes.resetDate;
-    throw err;
-  }
 
   try {
     const { data, error } = await supabase.functions.invoke('generate-flashcards', {
@@ -267,6 +244,7 @@ export async function generateFlashcardsFromNotes(
     if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'Failed to generate flashcards');
 
     if (Array.isArray(data?.cards) && data.cards.length > 0) {
+      await syncCreditsAfterRequest(effectiveUserId);
       return data.cards.map((c: any) => ({
         question: c.question || 'Question',
         answer: c.answer || 'Answer',
@@ -276,9 +254,8 @@ export async function generateFlashcardsFromNotes(
     throw new Error('No flashcards returned from AI service.');
   } catch (err: any) {
     console.error('Flashcard service error:', err);
-    await refundCredits(effectiveUserId, 20, 'generate_flashcards', err?.message || 'Flashcard generation failed');
+    await reportCreditFunctionError(err);
+    await syncCreditsAfterRequest(effectiveUserId);
     throw new Error(err?.message || 'Unable to generate flashcards. Please try again in a moment.');
   }
 }
-
-

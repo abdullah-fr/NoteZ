@@ -3,50 +3,34 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   Check,
-  Sparkles,
   ArrowRight,
-  Zap,
   HelpCircle,
-  ShieldCheck,
-  Layers,
-  MessageSquare,
-  GraduationCap,
-  FileText,
-  ListChecks,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/landing/Navbar';
 import { Footer } from '@/components/landing/Footer';
-import { PLANS, CREDIT_COSTS, ACTION_METADATA, METERED_ACTIONS, type MeteredAction } from '@/lib/credits';
-
-const ACTION_ICONS: Record<MeteredAction, any> = {
-  ai_chat: MessageSquare,
-  generate_exam: GraduationCap,
-  generate_flashcards: Layers,
-  editor_ai_assist: FileText,
-  activities_breakdown: ListChecks,
-};
+import { PLANS } from '@/lib/credits';
 
 const FAQS = [
   {
-    q: 'What are AI Credits and how do they work?',
-    a: 'Credits power the AI features in NoteZ (such as generating practice exams, study chat explanations, and flashcard creation). Every time you run an AI action, a fixed number of credits is deducted from your balance.',
+    q: 'What is included in each plan?',
+    a: 'Every plan includes the core NoteZ workspace, including notes, folders, study chat, flashcards, exams, and activities. Paid plans add more room for regular AI-assisted study and advanced workflows.',
   },
   {
-    q: 'When do my credits reset?',
-    a: 'Free accounts receive 150 credits every week (refilling every 7 days), so you never have to wait a whole month if you run low. Pro Student receives 5,000 credits every month, and Pro Scholar receives 15,000 credits every month.',
+    q: 'When can I change my plan?',
+    a: 'You can upgrade, downgrade, or cancel your subscription at any time from Account Settings. Your workspace and notes remain available while your plan changes take effect.',
   },
   {
-    q: 'What happens if an AI request fails or encounters an error?',
-    a: 'NoteZ includes an automatic refund guarantee. If any generation or operation fails, your credits are immediately refunded back to your balance automatically.',
+    q: 'What happens if an AI request fails?',
+    a: 'Failed AI requests are handled safely so you can retry without being charged for an unsuccessful generation.',
   },
   {
     q: 'Can I use all major NoteZ features on the Free tier?',
-    a: 'Yes. Free tier users have access to exams, AI chat, flashcards, focus timer, notes, and syllabus breakdown with 150 credits refilled every single week.',
+    a: 'Yes. Free users can work with notes, folders, exams, AI chat, flashcards, focus sessions, and syllabus breakdown within the Free plan allowance.',
   },
   {
-    q: 'Can I cancel or switch my plan anytime?',
-    a: 'Absolutely. You can upgrade, downgrade, or cancel your subscription at any time directly from your Account Settings with zero cancellation fees.',
+    q: 'Do plans renew automatically?',
+    a: 'Paid subscriptions renew according to the billing interval you choose. You can manage or cancel renewal from Account Settings at any time.',
   },
 ];
 
@@ -141,13 +125,6 @@ export default function Pricing() {
                         </span>
                       </div>
 
-                      {/* Credits Pill */}
-                      <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/80 border border-border text-xs font-mono font-bold text-foreground">
-                        <Zap className="h-3.5 w-3.5 text-primary" />
-                        <span>
-                          {tier.creditAllowance.toLocaleString()} AI Credits / {isFree ? 'week' : 'mo'}
-                        </span>
-                      </div>
                     </div>
 
                     {/* CTA Button */}
@@ -186,95 +163,6 @@ export default function Pricing() {
         </div>
       </section>
 
-      {/* Credit Cost Reference Guide Table */}
-      <section className="py-12 md:py-16 border-t border-border/40 bg-secondary/20">
-        <div className="container mx-auto px-4 max-w-4xl">
-          <div className="text-center mb-8">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary border border-border text-xs font-mono font-semibold text-muted-foreground mb-3">
-              <Zap className="h-3.5 w-3.5 text-primary" /> Transparent Pricing
-            </span>
-            <h2 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-              What Does Each Action Cost?
-            </h2>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 max-w-xl mx-auto">
-              Every metered AI feature has a fixed credit rate. No hidden multipliers or complicated calculations.
-            </p>
-          </div>
-
-          {/* Cost Table Card */}
-          <div className="rounded-2xl border border-border/80 bg-card overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border/60 bg-secondary/50 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <th className="py-3 px-4 font-bold">Feature / Action</th>
-                    <th className="py-3 px-4 font-bold">Category</th>
-                    <th className="py-3 px-4 font-bold text-center">Credit Cost</th>
-                    <th className="py-3 px-4 font-bold">Free Plan Capacity (Weekly)</th>
-                    <th className="py-3 px-4 font-bold">Pro Student Capacity (Monthly)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40 font-medium">
-                  {METERED_ACTIONS.map(actionKey => {
-                    const meta = ACTION_METADATA[actionKey];
-                    const cost = CREDIT_COSTS[actionKey];
-                    const Icon = ACTION_ICONS[actionKey] || Sparkles;
-                    const freeCapacity = Math.floor(150 / cost);
-                    const proCapacity = Math.floor(5000 / cost);
-
-                    return (
-                      <tr key={actionKey} className="hover:bg-secondary/30 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-secondary border border-border/60 flex items-center justify-center shrink-0">
-                              <Icon className="h-3.5 w-3.5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="font-bold text-foreground">{meta.label}</p>
-                              <p className="text-[10px] text-muted-foreground">{meta.shortDesc}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-mono text-muted-foreground">
-                          {meta.category}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="inline-block px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 font-mono font-bold text-primary">
-                            {cost} credits
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-mono text-foreground">
-                          ~{freeCapacity} / week
-                        </td>
-                        <td className="py-3 px-4 font-mono text-foreground font-semibold">
-                          ~{proCapacity} / month
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Bottom Guarantee Banner */}
-            <div className="p-4 bg-secondary/40 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>
-                  <strong>Zero-Risk Guarantee:</strong> If an AI call fails or encounters an error, your credits are refunded automatically.
-                </span>
-              </div>
-              <Link
-                to="/signup"
-                className="text-primary hover:underline font-bold text-xs shrink-0 flex items-center gap-1"
-              >
-                Try Free Now <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* FAQs Section */}
       <section className="py-16 md:py-20">
         <div className="container mx-auto px-4 max-w-3xl">
@@ -283,7 +171,7 @@ export default function Pricing() {
               Frequently Asked Questions
             </h2>
             <p className="text-xs sm:text-sm text-muted-foreground">
-              Everything you need to know about NoteZ plans, credit refills, and subscriptions.
+              Everything you need to know about NoteZ plans and subscriptions.
             </p>
           </div>
 

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { checkAndDeductServer, creditLimitResponse, MeteredAction } from "../_shared/credits.ts";
+import { checkAndDeductServer, creditLimitResponse, refundServer, MeteredAction } from "../_shared/credits.ts";
+import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,7 +44,7 @@ Rules:
 
 async function callGemini(apiKey: string, prompt: string, userContent: string): Promise<string> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    geminiModelUrl(apiKey, "generateContent"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -68,11 +69,12 @@ function extractJson(s: string): any {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let chargedUserId: string | null = null;
+  let chargedAction: MeteredAction | null = null;
   try {
     const SUPABASE_URL  = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+    const GEMINI_API_KEY = getGeminiApiKey("GEMINI_SOURCE_API_KEY");
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -98,6 +100,12 @@ serve(async (req) => {
     };
     const creditAction = actionMap[mode] || "source_processing";
 
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const { data: source } = await admin
+      .from("sources").select("*").eq("id", sourceId).eq("user_id", userId).maybeSingle();
+    if (!source) throw new Error("Source not found");
+    if (source.status !== "ready" || !source.extracted_text) throw new Error("Source is not processed yet");
+
     const creditResult = await checkAndDeductServer(
       userId,
       creditAction,
@@ -107,12 +115,8 @@ serve(async (req) => {
     if (!creditResult.allowed) {
       return creditLimitResponse(creditAction, creditResult, corsHeaders);
     }
-
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { data: source } = await admin
-      .from("sources").select("*").eq("id", sourceId).eq("user_id", userId).maybeSingle();
-    if (!source) throw new Error("Source not found");
-    if (source.status !== "ready" || !source.extracted_text) throw new Error("Source is not processed yet");
+    chargedUserId = userId;
+    chargedAction = creditAction;
 
     let content: string;
     try {
@@ -123,9 +127,7 @@ serve(async (req) => {
       );
     } catch (e: any) {
       if (e.message === "RATE_LIMITED") {
-        return new Response(JSON.stringify({ error: "Rate limited." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        throw e;
       }
       throw e;
     }
@@ -189,10 +191,21 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-  } catch (e) {
+  } catch (e: any) {
     console.error("generate-from-source error:", e);
+    if (chargedUserId && chargedAction) {
+      await refundServer(
+        chargedUserId,
+        1,
+        chargedAction,
+        e?.message || "Source generation failed",
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+    }
     return new Response(JSON.stringify({ error: "An unexpected error occurred." }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: e?.message === "RATE_LIMITED" ? 429 : 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

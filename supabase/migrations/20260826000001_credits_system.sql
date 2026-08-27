@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.user_credits (
   allowance           INTEGER NOT NULL DEFAULT 150 CHECK (allowance >= 0),
   tier                TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro_student', 'pro_scholar', 'team')),
   period_start        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  period_end          TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days'),
+  period_end          TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '1 month'),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -53,7 +53,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_user_credits_user_id ON public.user_credits(user_id);
 CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_created ON public.credit_transactions(user_id, created_at DESC);
 
--- 6. Helper: Ensure user credit record exists (150 weekly for Free, 5,000 monthly for Pro Student)
+-- 6. Helper: Ensure user credit record exists (monthly allowance)
 CREATE OR REPLACE FUNCTION public.ensure_user_credits(p_user_id UUID)
 RETURNS public.user_credits
 LANGUAGE plpgsql
@@ -68,9 +68,9 @@ BEGIN
   SELECT * INTO v_rec FROM public.user_credits WHERE user_id = p_user_id;
 
   IF NOT FOUND THEN
-    -- Default free tier: 150 weekly credits
-    v_allowance := 150;
-    v_interval := INTERVAL '7 days';
+    -- Default free tier: 50 monthly credits
+    v_allowance := 50;
+    v_interval := INTERVAL '1 month';
 
     INSERT INTO public.user_credits (user_id, balance, allowance, tier, period_start, period_end)
     VALUES (p_user_id, v_allowance, v_allowance, 'free', now(), now() + v_interval)
@@ -79,19 +79,19 @@ BEGIN
 
     -- Record initial grant transaction
     INSERT INTO public.credit_transactions (user_id, amount, action, description, status, balance_after)
-    VALUES (p_user_id, v_allowance, 'initial_grant', 'Welcome to NoteZ (Weekly Free Allowance)', 'success', v_allowance);
+    VALUES (p_user_id, v_allowance, 'initial_grant', 'Welcome to NoteZ (Monthly Free Allowance)', 'success', v_allowance);
   END IF;
 
   -- Determine refill interval based on tier
   IF v_rec.tier = 'free' THEN
-    v_interval := INTERVAL '7 days';
-    v_allowance := 150;
+    v_interval := INTERVAL '1 month';
+    v_allowance := 50;
   ELSIF v_rec.tier = 'pro_student' THEN
     v_interval := INTERVAL '30 days';
-    v_allowance := 5000;
+    v_allowance := 250;
   ELSIF v_rec.tier = 'pro_scholar' THEN
     v_interval := INTERVAL '30 days';
-    v_allowance := 15000;
+    v_allowance := 500;
   ELSE
     v_interval := INTERVAL '30 days';
     v_allowance := 50000;

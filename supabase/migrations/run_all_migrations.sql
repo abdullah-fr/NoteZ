@@ -499,11 +499,11 @@ CREATE INDEX idx_aci_activity ON public.activity_checklist_items(activity_id);
 
 CREATE TABLE IF NOT EXISTS public.user_credits (
   user_id             UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  balance             INTEGER NOT NULL DEFAULT 150 CHECK (balance >= 0),
-  allowance           INTEGER NOT NULL DEFAULT 150 CHECK (allowance >= 0),
+  balance             INTEGER NOT NULL DEFAULT 50 CHECK (balance >= 0),
+  allowance           INTEGER NOT NULL DEFAULT 50 CHECK (allowance >= 0),
   tier                TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro_student', 'pro_scholar', 'team')),
   period_start        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  period_end          TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days'),
+  period_end          TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '1 month'),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -554,11 +554,11 @@ DECLARE
   v_interval INTERVAL;
   v_allowance INTEGER;
 BEGIN
-  SELECT * INTO v_rec FROM public.user_credits WHERE user_id = p_user_id;
+  SELECT * INTO v_rec FROM public.user_credits WHERE user_id = p_user_id FOR UPDATE;
 
   IF NOT FOUND THEN
-    v_allowance := 150;
-    v_interval := INTERVAL '7 days';
+    v_allowance := 50;
+    v_interval := INTERVAL '1 month';
 
     INSERT INTO public.user_credits (user_id, balance, allowance, tier, period_start, period_end)
     VALUES (p_user_id, v_allowance, v_allowance, 'free', now(), now() + v_interval)
@@ -566,18 +566,18 @@ BEGIN
     RETURNING * INTO v_rec;
 
     INSERT INTO public.credit_transactions (user_id, amount, action, description, status, balance_after)
-    VALUES (p_user_id, v_allowance, 'initial_grant', 'Welcome to NoteZ (Weekly Free Allowance)', 'success', v_allowance);
+    VALUES (p_user_id, v_allowance, 'initial_grant', 'Welcome to NoteZ (Monthly Free Allowance)', 'success', v_allowance);
   END IF;
 
   IF v_rec.tier = 'free' THEN
-    v_interval := INTERVAL '7 days';
-    v_allowance := 150;
+    v_interval := INTERVAL '1 month';
+    v_allowance := 50;
   ELSIF v_rec.tier = 'pro_student' THEN
     v_interval := INTERVAL '30 days';
-    v_allowance := 5000;
+    v_allowance := 250;
   ELSIF v_rec.tier = 'pro_scholar' THEN
     v_interval := INTERVAL '30 days';
-    v_allowance := 15000;
+    v_allowance := 500;
   ELSE
     v_interval := INTERVAL '30 days';
     v_allowance := 50000;
@@ -616,25 +616,26 @@ AS $$
 DECLARE
   v_credit_rec public.user_credits;
   v_new_balance INTEGER;
+  v_amount CONSTANT INTEGER := 1;
 BEGIN
-  IF p_amount <= 0 THEN
-    RETURN jsonb_build_object('success', true, 'balance_after', 0, 'deducted', 0);
+  IF auth.role() <> 'service_role' THEN
+    RAISE EXCEPTION 'Credit deductions are server-only';
   END IF;
 
   v_credit_rec := public.ensure_user_credits(p_user_id);
 
-  IF v_credit_rec.balance < p_amount THEN
+  IF v_credit_rec.balance < v_amount THEN
     RETURN jsonb_build_object(
       'success', false,
-      'code', 'INSUFFICIENT_CREDITS',
+      'code', 'MONTHLY_LIMIT_REACHED',
       'balance', v_credit_rec.balance,
-      'required', p_amount,
+      'required', v_amount,
       'reset_date', v_credit_rec.period_end,
       'tier', v_credit_rec.tier
     );
   END IF;
 
-  v_new_balance := v_credit_rec.balance - p_amount;
+  v_new_balance := v_credit_rec.balance - v_amount;
 
   UPDATE public.user_credits
   SET balance = v_new_balance, updated_at = now()
@@ -643,13 +644,13 @@ BEGIN
   INSERT INTO public.credit_transactions (
     user_id, amount, action, description, status, balance_after, metadata
   ) VALUES (
-    p_user_id, -p_amount, p_action, p_description, 'success', v_new_balance, p_metadata
+    p_user_id, -v_amount, p_action, COALESCE(NULLIF(p_description, ''), 'AI request'), 'success', v_new_balance, p_metadata
   );
 
   RETURN jsonb_build_object(
     'success', true,
     'balance_after', v_new_balance,
-    'deducted', p_amount,
+    'deducted', v_amount,
     'reset_date', v_credit_rec.period_end
   );
 END;
@@ -670,19 +671,23 @@ AS $$
 DECLARE
   v_new_balance INTEGER;
 BEGIN
-  IF p_amount <= 0 THEN
-    RETURN jsonb_build_object('success', true);
+  IF auth.role() <> 'service_role' THEN
+    RAISE EXCEPTION 'Credit refunds are server-only';
   END IF;
 
   UPDATE public.user_credits
-  SET balance = balance + p_amount, updated_at = now()
+  SET balance = LEAST(balance + 1, allowance), updated_at = now()
   WHERE user_id = p_user_id
   RETURNING balance INTO v_new_balance;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'code', 'USER_CREDITS_NOT_FOUND');
+  END IF;
 
   INSERT INTO public.credit_transactions (
     user_id, amount, action, description, status, balance_after, metadata
   ) VALUES (
-    p_user_id, p_amount, 'refund', 'Refund: ' || p_reason, 'refunded', COALESCE(v_new_balance, p_amount), p_metadata
+    p_user_id, 1, 'refund', 'Refund: ' || p_reason, 'refunded', v_new_balance, p_metadata
   );
 
   RETURN jsonb_build_object('success', true, 'balance_after', v_new_balance);
@@ -700,6 +705,10 @@ DECLARE
   v_tx_json JSONB;
   v_used_this_period INTEGER;
 BEGIN
+  IF auth.role() <> 'service_role' AND auth.uid() IS DISTINCT FROM p_user_id THEN
+    RAISE EXCEPTION 'You can only view your own credits';
+  END IF;
+
   v_credit_rec := public.ensure_user_credits(p_user_id);
 
   SELECT COALESCE(ABS(SUM(amount)), 0) INTO v_used_this_period
@@ -714,6 +723,7 @@ BEGIN
     SELECT id, user_id, amount, action, description, status, balance_after, created_at
     FROM public.credit_transactions
     WHERE user_id = p_user_id
+      AND created_at >= v_credit_rec.period_start
     ORDER BY created_at DESC
     LIMIT 50
   ) t;
@@ -730,3 +740,11 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.ensure_user_credits(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.check_and_deduct_credits(UUID, INTEGER, TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.refund_credits(UUID, INTEGER, TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_user_credits_summary(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.ensure_user_credits(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.check_and_deduct_credits(UUID, INTEGER, TEXT, TEXT, JSONB) TO service_role;
+GRANT EXECUTE ON FUNCTION public.refund_credits(UUID, INTEGER, TEXT, TEXT, JSONB) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_user_credits_summary(UUID) TO authenticated, service_role;

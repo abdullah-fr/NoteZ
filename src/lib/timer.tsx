@@ -304,7 +304,7 @@ function useCountdown(initialSeconds: number) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   STORAGE KEYS
+   STORAGE KEYS & HELPERS
 ───────────────────────────────────────────────────────────── */
 const SK_ROUTINES   = "notez_ft_routines";
 const SK_SESSIONS   = "notez_ft_sessions";
@@ -318,6 +318,33 @@ function loadJson<T>(key: string, fallback: T): T {
 }
 function saveJson(key: string, val: unknown) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+/** Timer data blob shape stored in Supabase (one row per user). */
+interface TimerCloudData {
+  sessions: FocusSession[];
+  routines: Routine[];
+  dailyGoal: DailyGoalSettings;
+}
+
+async function saveTimerDataToCloud(userId: string, data: TimerCloudData): Promise<void> {
+  await supabase
+    .from('notez_timer_data')
+    .upsert({ user_id: userId, data: data as unknown as Record<string, unknown> }, { onConflict: 'user_id' });
+}
+
+async function fetchTimerDataFromCloud(userId: string): Promise<TimerCloudData | null> {
+  try {
+    const { data, error } = await supabase
+      .from('notez_timer_data')
+      .select('data')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error || !data?.data) return null;
+    return data.data as unknown as TimerCloudData;
+  } catch {
+    return null;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -431,19 +458,79 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     const saved = loadJson<Routine[]>(SK_ROUTINES, []);
     return saved.length > 0 ? saved : DEFAULT_ROUTINES;
   });
-  useEffect(() => { saveJson(SK_ROUTINES, routines); }, [routines]);
 
   // session history
   const [sessionHistory, setSessionHistory] = useState<FocusSession[]>(
     () => loadJson<FocusSession[]>(SK_SESSIONS, [])
   );
-  useEffect(() => { saveJson(SK_SESSIONS, sessionHistory); }, [sessionHistory]);
 
   // daily goal
   const [dailyGoal, setDailyGoalState] = useState<DailyGoalSettings>(
     () => loadJson<DailyGoalSettings>(SK_DAILY_GOAL, { dailyMins: 120, weeklyMins: 600 })
   );
-  useEffect(() => { saveJson(SK_DAILY_GOAL, dailyGoal); }, [dailyGoal]);
+
+  // Track whether cloud data has been loaded for this session
+  const cloudLoadedRef = useRef(false);
+  // Refs to always have latest values in sync effects without stale closures
+  const sessionsRef  = useRef(sessionHistory);
+  const routinesRef  = useRef(routines);
+  const dailyGoalRef = useRef(dailyGoal);
+  useEffect(() => { sessionsRef.current  = sessionHistory; }, [sessionHistory]);
+  useEffect(() => { routinesRef.current  = routines; },      [routines]);
+  useEffect(() => { dailyGoalRef.current = dailyGoal; },     [dailyGoal]);
+
+  // Load from Supabase on mount — cloud wins over localStorage
+  useEffect(() => {
+    if (!userId || cloudLoadedRef.current) return;
+    cloudLoadedRef.current = true;
+
+    fetchTimerDataFromCloud(userId).then(cloud => {
+      if (!cloud) {
+        // No cloud row yet — migrate existing localStorage data up
+        const localData: TimerCloudData = {
+          sessions: loadJson<FocusSession[]>(SK_SESSIONS, []),
+          routines: loadJson<Routine[]>(SK_ROUTINES, []),
+          dailyGoal: loadJson<DailyGoalSettings>(SK_DAILY_GOAL, { dailyMins: 120, weeklyMins: 600 }),
+        };
+        if (localData.sessions.length > 0 || localData.routines.length > 0) {
+          void saveTimerDataToCloud(userId, localData);
+        }
+        return;
+      }
+      // Cloud wins — update state and localStorage cache
+      if (cloud.sessions?.length) {
+        setSessionHistory(cloud.sessions);
+        saveJson(SK_SESSIONS, cloud.sessions);
+      }
+      if (cloud.routines?.length) {
+        setRoutines(cloud.routines);
+        saveJson(SK_ROUTINES, cloud.routines);
+      }
+      if (cloud.dailyGoal) {
+        setDailyGoalState(cloud.dailyGoal);
+        saveJson(SK_DAILY_GOAL, cloud.dailyGoal);
+      }
+    });
+  }, [userId]);
+
+  // Sync to localStorage + Supabase whenever any of the three pieces change
+  useEffect(() => {
+    saveJson(SK_SESSIONS, sessionHistory);
+    if (userId) void saveTimerDataToCloud(userId, { sessions: sessionHistory, routines: routinesRef.current, dailyGoal: dailyGoalRef.current });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionHistory]);
+
+  useEffect(() => {
+    saveJson(SK_ROUTINES, routines);
+    if (userId) void saveTimerDataToCloud(userId, { sessions: sessionsRef.current, routines, dailyGoal: dailyGoalRef.current });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routines]);
+
+  useEffect(() => {
+    saveJson(SK_DAILY_GOAL, dailyGoal);
+    if (userId) void saveTimerDataToCloud(userId, { sessions: sessionsRef.current, routines: routinesRef.current, dailyGoal });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyGoal]);
 
   /* ── Focus countdown ── */
   const focus = useCountdown(25 * 60);

@@ -116,7 +116,8 @@ export async function createSourceRecord(
 }
 
 export async function invokeProcessSource(sourceId: string): Promise<void> {
-  await supabase.functions.invoke('process-source', { body: { sourceId } });
+  const { error } = await supabase.functions.invoke('process-source', { body: { sourceId } });
+  if (error) throw error;
 }
 
 export async function getStreamingToken(): Promise<string | null> {

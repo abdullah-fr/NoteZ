@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
+import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,6 +49,7 @@ const MODE_PROMPTS: Record<string, string> = {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let chargedUserId: string | null = null;
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -69,13 +71,14 @@ serve(async (req) => {
       });
     }
 
-    const GEMINI_API_KEY =
-      Deno.env.get("GEMINI_CHAT_API_KEY") ??
-      Deno.env.get("GEMINI_API_KEY") ??
-      Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_CHAT_API_KEY is not configured");
+    const { conversationId, message, context = "", mode = "researcher", sourceId, scope = "general" } = await req.json();
+    if (!conversationId || !message) {
+      return new Response(JSON.stringify({ error: "Missing conversationId or message" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // ── Credit Metering ──────────────────────────────────────────────────────
+    const GEMINI_API_KEY = getGeminiApiKey("GEMINI_CHAT_API_KEY");
     const creditResult = await checkAndDeductServer(
       user.id,
       "ai_chat",
@@ -85,22 +88,7 @@ serve(async (req) => {
     if (!creditResult.allowed) {
       return creditLimitResponse("ai_chat", creditResult, corsHeaders);
     }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    const { conversationId, message, mode = "researcher", sourceId, scope = "general" } = await req.json();
-    if (!conversationId || !message) {
-      return new Response(JSON.stringify({ error: "Missing conversationId or message" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Save user message
-    await supabase.from("chat_messages").insert({
-      conversation_id: conversationId,
-      user_id: user.id,
-      role: "user",
-      content: message,
-    });
+    chargedUserId = user.id;
 
     // Load history
     const { data: history } = await supabase
@@ -109,6 +97,15 @@ serve(async (req) => {
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(50);
+
+    // Persist the current message after loading history so Gemini receives it
+    // exactly once in the final contents array below.
+    await supabase.from("chat_messages").insert({
+      conversation_id: conversationId,
+      user_id: user.id,
+      role: "user",
+      content: message,
+    });
 
     // Optional source context
     let sourceContext = "";
@@ -137,52 +134,28 @@ serve(async (req) => {
       parts: [{ text: m.content }],
     }));
 
-    // Gemini streaming via SSE — Try valid model endpoints
-    const CANDIDATE_MODELS = [
-      "gemini-2.5-flash",
-      "gemini-1.5-flash",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-    ];
-
-    let geminiRes: Response | null = null;
-    let lastErrDetail = "";
-
-    for (const modelName of CANDIDATE_MODELS) {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              contents: [
-                ...turns,
-                { role: "user", parts: [{ text: message }] },
-              ],
-              generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
-            }),
-          },
-        );
-        if (res.status === 429) {
-          return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
-            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (res.ok && res.body) {
-          geminiRes = res;
-          break;
-        } else {
-          lastErrDetail = await res.text();
-        }
-      } catch (err: any) {
-        lastErrDetail = err.message;
-      }
+    // Gemini streaming via SSE. geminiModelUrl always targets
+    // gemini-3.1-flash-lite; do not fall back to retired model IDs.
+    const geminiRes = await fetch(
+      `${geminiModelUrl(GEMINI_API_KEY, "streamGenerateContent")}&alt=sse`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            ...turns,
+            { role: "user", parts: [{ text: `${message}${String(context || "").slice(0, 16000)}` }] },
+          ],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        }),
+      },
+    );
+    if (geminiRes.status === 429) {
+      throw new Error("RATE_LIMITED");
     }
-
-    if (!geminiRes || !geminiRes.body) {
-      throw new Error(`Gemini streaming error: ${lastErrDetail.slice(0, 300)}`);
+    if (!geminiRes.ok || !geminiRes.body) {
+      throw new Error(`Gemini streaming error ${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
     }
 
     let fullText = "";
@@ -231,6 +204,15 @@ serve(async (req) => {
               .from("chat_conversations")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", conversationId);
+          } else if (chargedUserId) {
+            await refundServer(
+              chargedUserId,
+              1,
+              "ai_chat",
+              "AI chat returned no content",
+              Deno.env.get("SUPABASE_URL")!,
+              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+            );
           }
           controller.close();
         }
@@ -248,13 +230,25 @@ serve(async (req) => {
     console.error("ai-chat error", e);
     const code = e instanceof Error ? e.message : String(e);
     const providerUnavailable = code === "GEMINI_ACCESS_DENIED";
+    if (chargedUserId) {
+      await refundServer(
+        chargedUserId,
+        1,
+        "ai_chat",
+        code || "AI chat failed",
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+    }
     return new Response(JSON.stringify({
       error: providerUnavailable
         ? "AI provider access is unavailable. Check the Gemini API project key."
+        : code === "RATE_LIMITED"
+        ? "Rate limit exceeded. Try again shortly."
         : "An unexpected error occurred.",
       code: providerUnavailable ? code : undefined,
     }), {
-      status: providerUnavailable ? 503 : 500,
+      status: providerUnavailable ? 503 : code === "RATE_LIMITED" ? 429 : 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

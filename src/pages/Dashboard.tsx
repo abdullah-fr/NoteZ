@@ -113,7 +113,6 @@ export default function Dashboard() {
   // Listen to open-settings custom event
   useEffect(() => {
     const handleOpenSettings = () => {
-      setSidebarOpen(false);
       setActiveView("account");
     };
     window.addEventListener("notez:open-settings", handleOpenSettings);
@@ -164,7 +163,7 @@ export default function Dashboard() {
       setChatResetKey(key => key + 1);
     }
     if (view === 'account') {
-      setSidebarOpen(false);
+      // sidebar stays open — user should not lose their navigation context
     }
     setActiveView(view);
   };
@@ -189,11 +188,20 @@ export default function Dashboard() {
             onNavigate={(view) => {
               const map: Record<string, View> = {
                 folders: 'folder',
+                folder: 'folder',
                 exam: 'exam',
+                exams: 'exam',
                 focus: 'timer',
+                timer: 'timer',
+                flashcards: 'flashcards',
+                flashcard: 'flashcards',
+                activities: 'activities',
+                activity: 'activities',
+                calendar: 'calendar',
+                chat: 'chat',
               };
-              const target = map[view] as View | undefined;
-              if (target) handleNavigate(target);
+              const target = (map[view] || view) as View;
+              handleNavigate(target);
             }}
           />
         );
@@ -273,9 +281,8 @@ export default function Dashboard() {
                 <button
                   key={item.id}
                   onClick={() => { handleNavigate(item.id); onNavigate?.(); }}
-                  className={`w-full flex items-center justify-start gap-2 px-2 py-1.5 rounded-md text-[12px] transition-colors ${
-                    active ? "bg-secondary text-foreground font-semibold" : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-                  }`}
+                  className={`w-full flex items-center justify-start gap-2 px-2 py-1.5 rounded-md text-[12px] transition-colors ${active ? "bg-secondary text-foreground font-semibold" : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+                    }`}
                 >
                   <item.icon className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{t(item.labelKey)}</span>
@@ -298,11 +305,10 @@ export default function Dashboard() {
             onClick={() => handleNavigate(item.id)}
             title={t(item.labelKey)}
             aria-label={t(item.labelKey)}
-            className={`relative w-9 h-9 mx-auto flex items-center justify-center rounded-lg transition-colors ${
-              active
+            className={`relative w-9 h-9 mx-auto flex items-center justify-center rounded-lg transition-colors ${active
                 ? "bg-secondary text-foreground font-semibold shadow-xs"
                 : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-            }`}
+              }`}
           >
             <item.icon className="h-4 w-4 shrink-0" />
           </button>
@@ -328,11 +334,10 @@ export default function Dashboard() {
                   handleNavigate(item.id);
                   setMobileNavOpen(false);
                 }}
-                className={`w-full flex items-center justify-start gap-2 px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
-                  activeView === item.id
+                className={`w-full flex items-center justify-start gap-2 px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${activeView === item.id
                     ? "bg-secondary text-foreground font-semibold"
                     : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-                }`}
+                  }`}
               >
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 {t(item.labelKey)}
@@ -398,11 +403,10 @@ export default function Dashboard() {
                   <button
                     onClick={() => handleNavigate("account")}
                     title={t('sidebar.account')}
-                    className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors min-w-0 ${
-                      activeView === "account"
+                    className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors min-w-0 ${activeView === "account"
                         ? "bg-secondary text-foreground"
                         : "hover:bg-secondary/70 text-muted-foreground hover:text-foreground"
-                    }`}
+                      }`}
                   >
                     <div className="w-5 h-5 rounded-sm bg-secondary border border-border flex items-center justify-center shrink-0">
                       <span className="text-[9px] font-bold font-mono text-foreground">
@@ -462,9 +466,8 @@ export default function Dashboard() {
                 <button
                   onClick={() => handleNavigate("account")}
                   title={user?.user_metadata?.full_name || user?.email || t('sidebar.account')}
-                  className={`w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${
-                    activeView === "account" ? "border-primary bg-primary/10 text-primary font-bold" : "border-border bg-secondary text-foreground"
-                  }`}
+                  className={`w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${activeView === "account" ? "border-primary bg-primary/10 text-primary font-bold" : "border-border bg-secondary text-foreground"
+                    }`}
                 >
                   <span className="text-[10px] font-bold font-mono">
                     {(user?.user_metadata?.full_name || user?.email || "?")
@@ -535,7 +538,7 @@ export default function Dashboard() {
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden paper-texture min-w-0">
-          <div className={activeView === 'folder' || activeView === 'chat' || activeView === 'calendar' || activeView === 'timer' || activeView === 'account' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
+          <div className={activeView === 'folder' || activeView === 'chat' || activeView === 'calendar' || activeView === 'timer' || activeView === 'account' || activeView === 'exam' ? 'h-full w-full' : 'px-3 md:px-6 py-5 md:py-6 pb-10 max-w-[1400px] mx-auto w-full'}>
             <motion.div
               key={activeView}
               initial={{ opacity: 0, y: 4 }}

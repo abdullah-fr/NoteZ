@@ -9,14 +9,16 @@ export type MeteredAction =
   | "generate_exam"
   | "generate_flashcards"
   | "editor_ai_assist"
-  | "activities_breakdown";
+  | "activities_breakdown"
+  | "source_processing";
 
 export const CREDIT_COSTS: Record<MeteredAction, number> = {
-  ai_chat: 5,
-  generate_exam: 25,
-  generate_flashcards: 20,
-  editor_ai_assist: 5,
-  activities_breakdown: 20,
+  ai_chat: 1,
+  generate_exam: 1,
+  generate_flashcards: 1,
+  editor_ai_assist: 1,
+  activities_breakdown: 1,
+  source_processing: 1,
 };
 
 export const ACTION_LABELS: Record<MeteredAction, string> = {
@@ -25,6 +27,7 @@ export const ACTION_LABELS: Record<MeteredAction, string> = {
   generate_flashcards: "Generate Flashcards",
   editor_ai_assist: "Editor AI Assist",
   activities_breakdown: "Syllabus Breakdown",
+  source_processing: "Process Study Source",
 };
 
 export interface DeductResult {
@@ -37,17 +40,18 @@ export interface DeductResult {
 }
 
 /**
- * Server-side check and deduction of credits using service-role client.
+ * Server-side check and deduction of credits using the service-role client.
+ * This is intentionally fail-closed: an unavailable ledger must never allow
+ * an AI request to bypass the monthly allowance.
  */
 export async function checkAndDeductServer(
   userId: string,
   action: MeteredAction,
   supabaseUrl: string,
   serviceRoleKey: string,
-  customCost?: number,
   description?: string,
 ): Promise<DeductResult> {
-  const cost = customCost ?? CREDIT_COSTS[action] ?? 5;
+  const cost = 1;
   const admin: SupabaseClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -64,8 +68,8 @@ export async function checkAndDeductServer(
     });
 
     if (error) {
-      console.warn("[credits] check_and_deduct_credits RPC note:", error.message);
-      return { allowed: true };
+      console.error("[credits] check_and_deduct_credits RPC failed:", error.message);
+      return { allowed: false, code: "CREDITS_UNAVAILABLE", required: cost };
     }
 
     const res = data as any;
@@ -82,8 +86,8 @@ export async function checkAndDeductServer(
       tier: res?.tier || "free",
     };
   } catch (err) {
-    console.warn("[credits] RPC exception, failing open:", err);
-    return { allowed: true };
+    console.error("[credits] check_and_deduct_credits RPC exception:", err);
+    return { allowed: false, code: "CREDITS_UNAVAILABLE", required: cost };
   }
 }
 
@@ -124,21 +128,24 @@ export function creditLimitResponse(
   deductResult: DeductResult,
   corsHeaders: Record<string, string>,
 ): Response {
-  const cost = deductResult.required ?? CREDIT_COSTS[action];
+  const cost = deductResult.required ?? CREDIT_COSTS[action] ?? 1;
   const label = ACTION_LABELS[action] || action;
+  const unavailable = deductResult.code === "CREDITS_UNAVAILABLE";
 
   return new Response(
     JSON.stringify({
-      error: deductResult.code || "INSUFFICIENT_CREDITS",
+      error: deductResult.code || "MONTHLY_LIMIT_REACHED",
       action,
       cost,
       balance: deductResult.balance ?? 0,
       resetDate: deductResult.resetDate,
       tier: deductResult.tier || "free",
-      message: `You need ${cost} credits to ${label.toLowerCase()}, but you currently have ${deductResult.balance ?? 0} credits.`,
+      message: unavailable
+        ? "The AI allowance service is temporarily unavailable. Please try again shortly."
+        : `Your monthly AI allowance is exhausted. Wait for the reset or choose a paid plan to continue with ${label.toLowerCase()}.`,
     }),
     {
-      status: 402,
+      status: unavailable ? 503 : 402,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     },
   );

@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
-import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
+import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { EXAM_TOPIC_BLOCK_MESSAGE } from '@/lib/exam-safety';
 
 export interface ExamQuestion {
   question: string;
@@ -23,36 +24,26 @@ export interface GenerateExamResult {
   questions: ExamQuestion[];
 }
 
+async function readExamFunctionError(error: unknown): Promise<string | null> {
+  const context = (error as { context?: unknown } | null)?.context;
+  if (!(context instanceof Response)) return null;
+
+  try {
+    const payload = await context.clone().json() as { code?: unknown; error?: unknown };
+    if (payload.code === 'TOPIC_NOT_ALLOWED') return EXAM_TOPIC_BLOCK_MESSAGE;
+    return typeof payload.error === 'string' ? payload.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function generateExamWithGemini(
   payload: GenerateExamPayload,
 ): Promise<GenerateExamResult> {
   const { data: authData } = await supabase.auth.getUser();
   const userId = payload.userId || authData?.user?.id;
 
-  // 1. Credit Check & Reservation
-  const creditCheck = await checkAndDeductCredits(
-    userId,
-    'generate_exam',
-    25,
-    `Practice Exam: ${payload.subject} (${payload.questionCount} Qs)`,
-    { subject: payload.subject, difficulty: payload.difficulty, count: payload.questionCount },
-  );
-
-  if (!creditCheck.success) {
-    const err: any = new Error(
-      `You need 25 credits to generate an exam, but you currently have ${creditCheck.balanceAfter ?? 0} credits.`,
-    );
-    err.error = creditCheck.code || 'INSUFFICIENT_CREDITS';
-    err.field = 'generate_exam';
-    err.action = 'generate_exam';
-    err.limit = 25;
-    err.required = 25;
-    err.balance = creditCheck.balanceAfter;
-    err.resetDate = creditCheck.resetDate;
-    throw err;
-  }
-
-  // 2. Invoke Secure Backend Supabase Edge Function
+  // The Edge Function performs the single authoritative deduction.
   try {
     const { data, error } = await supabase.functions.invoke('generate-exam', {
       body: {
@@ -73,24 +64,39 @@ export async function generateExamWithGemini(
     }
 
     if (Array.isArray(data?.questions) && data.questions.length > 0) {
+      await syncCreditsAfterRequest(userId);
       return {
-        questions: data.questions.map((q: any) => ({
-          question: q.question || 'Question',
-          options: Array.isArray(q.options) && q.options.length >= 2 ? q.options : ['True', 'False'],
-          correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-          explanation: q.explanation || 'Refer to course materials.',
-          wrongExplanations: q.wrongExplanations || {},
-          betterApproach: q.betterApproach || 'Review key definitions and formulas.',
-        })),
+        questions: data.questions.map((rawQuestion: unknown) => {
+          const q = rawQuestion && typeof rawQuestion === 'object'
+            ? rawQuestion as Record<string, unknown>
+            : {};
+          const options = Array.isArray(q.options)
+            ? q.options.filter((option): option is string => typeof option === 'string')
+            : [];
+          return {
+            question: typeof q.question === 'string' && q.question ? q.question : 'Question',
+            options: options.length >= 2 ? options : ['True', 'False'],
+            correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+            explanation: typeof q.explanation === 'string' && q.explanation ? q.explanation : 'Refer to course materials.',
+            wrongExplanations: q.wrongExplanations && typeof q.wrongExplanations === 'object'
+              ? q.wrongExplanations as Record<string, string>
+              : {},
+            betterApproach: typeof q.betterApproach === 'string' && q.betterApproach
+              ? q.betterApproach
+              : 'Review key definitions and formulas.',
+          };
+        }),
       };
     }
 
     throw new Error('The exam service did not return questions for this topic.');
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Exam service error:', err);
-    // Automatic safe refund on failure
-    await refundCredits(userId, 25, 'generate_exam', err?.message || 'Exam generation failed');
-    throw new Error(err?.message || 'Unable to generate exam at this time. Please try again.');
+    await reportCreditFunctionError(err);
+    await syncCreditsAfterRequest(userId);
+    const serverMessage = await readExamFunctionError(err);
+    const errorMessage = err instanceof Error ? err.message : null;
+    throw new Error(serverMessage || errorMessage || 'Unable to generate exam at this time. Please try again.');
   }
 }
 

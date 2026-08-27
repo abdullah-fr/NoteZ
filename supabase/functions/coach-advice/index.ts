@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +8,7 @@ const corsHeaders = {
 
 async function callGemini(apiKey: string, prompt: string, context: unknown): Promise<string> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    geminiModelUrl(apiKey, "generateContent"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -29,8 +30,7 @@ serve(async (req) => {
   try {
     const { type, context } = await req.json();
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+    const GEMINI_API_KEY = getGeminiApiKey("GEMINI_CHAT_API_KEY");
 
     let systemPrompt = "";
 

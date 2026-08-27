@@ -35,3 +35,6 @@ git-gh-helper.bat
 
 # Supabase CLI temp
 supabase/.temp
+
+# Playwright artifacts
+.playwright-cli/

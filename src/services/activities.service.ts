@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { checkAndDeductCredits, refundCredits } from '@/lib/credits';
+import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
 
 export interface Activity {
   id: string;
@@ -113,29 +113,8 @@ export async function generateActivitiesFromDoc(
   fileName?: string,
   userId?: string,
 ): Promise<GeneratedActivityDraft[]> {
-  // 1. Credit Check & Reservation
   const { data: authData } = await supabase.auth.getUser();
   const effectiveUserId = userId || authData?.user?.id;
-
-  const creditRes = await checkAndDeductCredits(
-    effectiveUserId,
-    'activities_breakdown',
-    20,
-    `Syllabus Breakdown: ${fileName || 'Document'}`,
-    { fileName },
-  );
-
-  if (!creditRes.success) {
-    const err: any = new Error(`You need 20 credits to break down a syllabus, but you currently have ${creditRes.balanceAfter ?? 0} credits.`);
-    err.error = creditRes.code || 'INSUFFICIENT_CREDITS';
-    err.field = 'activities_breakdown';
-    err.action = 'activities_breakdown';
-    err.limit = 20;
-    err.required = 20;
-    err.balance = creditRes.balanceAfter;
-    err.resetDate = creditRes.resetDate;
-    throw err;
-  }
 
   try {
     const { data, error } = await supabase.functions.invoke('activities-breakdown', {
@@ -145,11 +124,15 @@ export async function generateActivitiesFromDoc(
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      await reportCreditFunctionError(error);
+      throw error;
+    }
     if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'Failed to generate activities');
 
     const drafts = data?.activities;
     if (Array.isArray(drafts) && drafts.length > 0) {
+      await syncCreditsAfterRequest(effectiveUserId);
       return drafts.map((d: any) => ({
         title: d.title || 'Activity Package',
         subject: d.subject || 'General',
@@ -161,8 +144,8 @@ export async function generateActivitiesFromDoc(
     throw new Error('No activities returned from document breakdown service.');
   } catch (err: any) {
     console.error('Activities service error:', err);
-    await refundCredits(effectiveUserId, 20, 'activities_breakdown', err?.message || 'Syllabus breakdown failed');
+    await reportCreditFunctionError(err);
+    await syncCreditsAfterRequest(effectiveUserId);
     throw new Error(err?.message || 'Unable to analyze document and generate activities. Please try again.');
   }
 }
-

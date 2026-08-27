@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
 
 export type SourceKind = 'pdf' | 'docx' | 'txt' | 'url' | 'youtube' | 'text' | 'audio' | 'video';
 export type SourceStatus = 'pending' | 'processing' | 'ready' | 'failed';
@@ -91,11 +92,19 @@ export async function generateFromSource(
   mode: 'notes' | 'flashcards' | 'quiz',
   count = 10,
 ): Promise<{ count?: number }> {
-  const { data, error } = await supabase.functions.invoke('generate-from-source', {
-    body: { sourceId, mode, count: mode === 'notes' ? 1 : count },
-  });
-  if (error) throw error;
-  return data ?? {};
+  const { data: authData } = await supabase.auth.getUser();
+  try {
+    const { data, error } = await supabase.functions.invoke('generate-from-source', {
+      body: { sourceId, mode, count: mode === 'notes' ? 1 : count },
+    });
+    if (error) throw error;
+    await syncCreditsAfterRequest(authData.user?.id);
+    return data ?? {};
+  } catch (error) {
+    await reportCreditFunctionError(error);
+    await syncCreditsAfterRequest(authData.user?.id);
+    throw error;
+  }
 }
 
 export function subscribeToSourceChanges(userId: string, onChange: () => void) {

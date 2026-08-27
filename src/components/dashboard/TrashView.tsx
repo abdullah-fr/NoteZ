@@ -2,33 +2,13 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, RotateCcw, FileText, Folder, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '@/lib/auth';
+import { useFolderStorage } from '@/hooks/useFolderStorage';
+import type { TrashItem } from '@/hooks/useFolderStorage';
 
-export interface TrashItem {
-  id: string;
-  type?: 'folder' | 'note';
-  noteId?: string;
-  title?: string;
-  content?: string;
-  folderName?: string;
-  folderId?: string;
-  item?: any;
-  deletedAt: string; // ISO string
-}
+export type { TrashItem };
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-function getTrashItems(): TrashItem[] {
-  try {
-    return JSON.parse(localStorage.getItem('notez_trash') || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function setTrashItems(items: TrashItem[]) {
-  localStorage.setItem('notez_trash', JSON.stringify(items));
-  window.dispatchEvent(new Event('notez:trash-updated'));
-}
 
 function daysRemaining(deletedAt: string): number {
   const elapsed = Date.now() - new Date(deletedAt).getTime();
@@ -37,52 +17,56 @@ function daysRemaining(deletedAt: string): number {
 
 export default function TrashView({ onBack }: { onBack?: () => void }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const { folders, setFolders, trashItems: allTrashItems, setTrashItems } = useFolderStorage(user?.id);
+
+  // Auto-purge expired items on mount / when trash list loads
   const [items, setItems] = useState<TrashItem[]>([]);
 
-  // Load and auto-purge expired items on mount
   useEffect(() => {
-    const raw = getTrashItems();
     const now = Date.now();
-    const valid = raw.filter(item => now - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS);
-    if (valid.length !== raw.length) {
+    const valid = allTrashItems.filter(
+      item => now - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS
+    );
+    if (valid.length !== allTrashItems.length) {
       setTrashItems(valid);
     }
     setItems(valid);
-  }, []);
+  }, [allTrashItems, setTrashItems]);
 
   function restoreItem(trashEntry: TrashItem) {
-    try {
-      const foldersRaw = localStorage.getItem('notez_folders');
-      let folders = foldersRaw ? JSON.parse(foldersRaw) : [];
-
-      const folderData = trashEntry.item || trashEntry.folderData;
-      if (trashEntry.type === 'folder' && folderData) {
-        // Restore folder
-        const existingIdx = folders.findIndex((f: any) => f.id === folderData.id);
+    const folderData = trashEntry.item || trashEntry.folderData;
+    if (trashEntry.type === 'folder' && folderData) {
+      // Restore folder
+      setFolders(prev => {
+        const existingIdx = prev.findIndex(f => f.id === folderData.id);
         if (existingIdx !== -1) {
-          folders[existingIdx] = folderData;
-        } else {
-          folders.unshift(folderData);
+          const next = [...prev];
+          next[existingIdx] = folderData;
+          return next;
         }
-        localStorage.setItem('notez_folders', JSON.stringify(folders));
-        window.dispatchEvent(new Event('notez:folders-updated'));
-      } else {
-        // Restore note
+        return [folderData, ...prev];
+      });
+    } else {
+      // Restore note back into its folder
+      setFolders(prev => {
+        const next = prev.map(f => ({ ...f, categories: f.categories.map(c => ({ ...c, notes: [...c.notes] })) }));
         const targetFolderId = trashEntry.folderId;
-        let folder = folders.find((f: any) => f.id === targetFolderId);
+        let folder = next.find(f => f.id === targetFolderId);
 
-        if (!folder && folders.length > 0) {
-          folder = folders[0];
+        if (!folder && next.length > 0) {
+          folder = next[0];
         } else if (!folder) {
-          folder = {
+          const newFolder = {
             id: targetFolderId || crypto.randomUUID(),
             name: trashEntry.folderName || 'Restored Notes',
             color: '#3b82f6',
-            categories: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            categories: [] as typeof next[0]['categories'],
+            createdAt: new Date(),
+            updatedAt: new Date(),
           };
-          folders.unshift(folder);
+          next.unshift(newFolder);
+          folder = next[0];
         }
 
         if (!folder.categories || folder.categories.length === 0) {
@@ -91,26 +75,25 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
         const targetCat = folder.categories[0];
         if (!targetCat.notes) targetCat.notes = [];
 
-        const existingNoteIdx = targetCat.notes.findIndex((n: any) => n.id === (trashEntry.noteId || trashEntry.id));
         const noteToRestore = {
           id: trashEntry.noteId || trashEntry.id,
           title: trashEntry.title || 'Untitled Note',
           content: trashEntry.content || '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
         };
 
+        const existingNoteIdx = targetCat.notes.findIndex(
+          n => n.id === (trashEntry.noteId || trashEntry.id)
+        );
         if (existingNoteIdx !== -1) {
           targetCat.notes[existingNoteIdx] = noteToRestore;
         } else {
           targetCat.notes.unshift(noteToRestore);
         }
 
-        localStorage.setItem('notez_folders', JSON.stringify(folders));
-        window.dispatchEvent(new Event('notez:folders-updated'));
-      }
-    } catch (err) {
-      console.error('Failed to restore trash item:', err);
+        return next;
+      });
     }
 
     // Remove from trash
@@ -131,9 +114,16 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
     setTrashItems([]);
   }
 
+  // keep local items in sync if trash changes from outside (e.g. cross-tab)
+  useEffect(() => {
+    setItems(allTrashItems.filter(
+      item => Date.now() - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS
+    ));
+  }, [allTrashItems]);
+
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Header matching Image 2 */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           {onBack && (
@@ -178,8 +168,14 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
             <AnimatePresence>
               {items.map((item, i) => {
                 const days = daysRemaining(item.deletedAt);
-                const isFolder = item.type === 'folder' || Boolean(item.folderData) || Boolean(item.color) || (Boolean(item.item) && !item.noteId && !item.content);
-                const displayName = isFolder ? (item.item?.name || item.folderData?.name || item.folderName || 'Folder') : (item.title || 'Untitled Note');
+                const isFolder =
+                  item.type === 'folder' ||
+                  Boolean(item.folderData) ||
+                  Boolean(item.color) ||
+                  (Boolean(item.item) && !item.noteId && !item.content);
+                const displayName = isFolder
+                  ? (item.item?.name || item.folderData?.name || item.folderName || 'Folder')
+                  : (item.title || 'Untitled Note');
 
                 return (
                   <motion.div
@@ -198,7 +194,10 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-semibold text-foreground truncate">{displayName}</p>
                       <p className="text-[10px] text-muted-foreground">
-                        {isFolder ? 'Folder' : t('tools.trash.fromFolder', { folder: item.folderName || 'Folder' })} · {t('tools.trash.daysLeft', { days })}
+                        {isFolder
+                          ? 'Folder'
+                          : t('tools.trash.fromFolder', { folder: item.folderName || 'Folder' })}{' '}
+                        · {t('tools.trash.daysLeft', { days })}
                       </p>
                     </div>
 

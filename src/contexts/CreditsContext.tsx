@@ -13,14 +13,11 @@ import {
   type CreditTransaction,
   type UserCreditsSummary,
   type CreditErrorCode,
-  CREDIT_COSTS,
-  ACTION_METADATA,
+  CREDIT_LIMIT_EVENT,
+  CREDITS_UPDATED_EVENT,
   fetchUserCreditsSummary,
-  checkAndDeductCredits,
-  refundCredits,
   PLANS,
 } from '@/lib/credits';
-import { toast } from 'sonner';
 
 export interface LimitModalState {
   open: boolean;
@@ -44,15 +41,6 @@ interface CreditsContextType {
   transactions: CreditTransaction[];
   loading: boolean;
   refreshCredits: () => Promise<void>;
-  deductAndExecute: <T>(
-    action: MeteredAction,
-    executeFn: () => Promise<T>,
-    options?: {
-      customCost?: number;
-      description?: string;
-      metadata?: Record<string, any>;
-    },
-  ) => Promise<T>;
   limitModal: LimitModalState;
   openLimitModal: (state: Partial<LimitModalState>) => void;
   closeLimitModal: () => void;
@@ -77,14 +65,17 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
 
   const [limitModal, setLimitModal] = useState<LimitModalState>({
     open: false,
-    type: 'INSUFFICIENT_CREDITS',
+    type: 'MONTHLY_LIMIT_REACHED',
     balance: freePlan.creditAllowance,
-    required: 25,
+    required: 1,
   });
 
   const refreshCredits = useCallback(async () => {
+    // Don't fetch until we actually have a userId — prevents creating a fresh
+    // summary with undefined userId and overwriting real cloud data.
+    if (!user?.id) return;
     try {
-      const data = await fetchUserCreditsSummary(user?.id);
+      const data = await fetchUserCreditsSummary(user.id);
       setSummary(data);
     } catch (err) {
       console.warn('[CreditsProvider] Failed to refresh credits:', err);
@@ -94,8 +85,13 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
   }, [user?.id]);
 
   useEffect(() => {
-    refreshCredits();
-  }, [refreshCredits]);
+    if (user?.id) {
+      refreshCredits();
+    } else {
+      // Auth still loading — keep loading state true until user resolves
+      setLoading(true);
+    }
+  }, [refreshCredits, user?.id]);
 
   const openLimitModal = useCallback((state: Partial<LimitModalState>) => {
     setLimitModal(prev => ({
@@ -113,102 +109,27 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
     setLimitModal(prev => ({ ...prev, open: false }));
   }, []);
 
-  /**
-   * Safely deducts credits, executes the AI operation, and automatically refunds
-   * credits if the operation fails or throws an exception.
-   */
-  const deductAndExecute = useCallback(
-    async <T,>(
-      action: MeteredAction,
-      executeFn: () => Promise<T>,
-      options?: {
-        customCost?: number;
-        description?: string;
-        metadata?: Record<string, any>;
-      },
-    ): Promise<T> => {
-      const cost = options?.customCost ?? CREDIT_COSTS[action] ?? 5;
-      const desc = options?.description || ACTION_METADATA[action]?.label || action;
+  useEffect(() => {
+    const handleCreditLimit = (event: Event) => {
+      const details = (event as CustomEvent<Partial<LimitModalState>>).detail;
+      const eventType = (details as Partial<LimitModalState> & { code?: CreditErrorCode })?.code;
+      openLimitModal({
+        ...details,
+        type: details?.type || eventType || 'MONTHLY_LIMIT_REACHED',
+        required: details?.required || 1,
+      });
+      void refreshCredits();
+    };
 
-      // 1. Client pre-check
-      if (summary.balance < cost) {
-        openLimitModal({
-          type: 'INSUFFICIENT_CREDITS',
-          action,
-          required: cost,
-          balance: summary.balance,
-          resetDate: summary.periodEnd,
-          tier: summary.tier,
-        });
-        throw new Error(`INSUFFICIENT_CREDITS: Required ${cost}, available ${summary.balance}`);
-      }
+    window.addEventListener(CREDIT_LIMIT_EVENT, handleCreditLimit);
+    return () => window.removeEventListener(CREDIT_LIMIT_EVENT, handleCreditLimit);
+  }, [openLimitModal, refreshCredits]);
 
-      // 2. Deduction
-      const deductRes = await checkAndDeductCredits(
-        user?.id,
-        action,
-        cost,
-        desc,
-        options?.metadata,
-      );
-
-      if (!deductRes.success) {
-        openLimitModal({
-          type: deductRes.code || 'INSUFFICIENT_CREDITS',
-          action,
-          required: deductRes.required || cost,
-          balance: summary.balance,
-          resetDate: deductRes.resetDate || summary.periodEnd,
-          tier: deductRes.tier || summary.tier,
-        });
-        throw new Error(`CREDIT_LIMIT_REACHED: ${deductRes.code || 'INSUFFICIENT_CREDITS'}`);
-      }
-
-      // Update local balance state immediately
-      if (typeof deductRes.balanceAfter === 'number') {
-        setSummary(prev => ({
-          ...prev,
-          balance: deductRes.balanceAfter!,
-          usedThisPeriod: prev.usedThisPeriod + cost,
-        }));
-      }
-
-      // 3. Execute the actual AI function
-      try {
-        const result = await executeFn();
-        // Background refresh to sync ledger
-        refreshCredits();
-        return result;
-      } catch (err: any) {
-        console.error(`[credits] Operation failed for ${action}, triggering auto-refund:`, err);
-
-        // 4. Automatic safe refund on failure
-        await refundCredits(
-          user?.id,
-          cost,
-          action,
-          err?.message || 'Operation failed',
-          options?.metadata,
-        );
-
-        // Re-sync credit balance after refund
-        await refreshCredits();
-
-        // Check if the failure was a rate-limit vs service error
-        const isRateLimit = err?.message?.includes('RATE_LIMITED') || err?.status === 429;
-        if (isRateLimit) {
-          openLimitModal({
-            type: 'RATE_LIMITED',
-            action,
-            message: 'Too many rapid requests. Please wait a few seconds and try again.',
-          });
-        }
-
-        throw err;
-      }
-    },
-    [user?.id, summary, openLimitModal, refreshCredits],
-  );
+  useEffect(() => {
+    const handleCreditsUpdated = () => { void refreshCredits(); };
+    window.addEventListener(CREDITS_UPDATED_EVENT, handleCreditsUpdated);
+    return () => window.removeEventListener(CREDITS_UPDATED_EVENT, handleCreditsUpdated);
+  }, [refreshCredits]);
 
   return (
     <CreditsContext.Provider
@@ -223,7 +144,6 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
         transactions: summary.transactions,
         loading,
         refreshCredits,
-        deductAndExecute,
         limitModal,
         openLimitModal,
         closeLimitModal,
