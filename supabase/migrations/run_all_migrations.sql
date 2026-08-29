@@ -463,6 +463,7 @@ CREATE TABLE public.activities (
   title TEXT NOT NULL,
   description TEXT,
   progress INTEGER NOT NULL DEFAULT 0,
+  completed BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

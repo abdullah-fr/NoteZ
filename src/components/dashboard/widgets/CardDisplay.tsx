@@ -1,6 +1,5 @@
 import React from 'react';
 import { Card, CardHeader, CardContent, CardFooter, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 type IconType = React.ElementType;
@@ -40,13 +39,25 @@ const CardDisplay: React.FC<CardDisplayProps> = ({ items, className, columns = 4
     <div className={cn('grid grid-cols-1 gap-4', colsClass[columns], className)}>
       {items.map((item) => {
         const Icon = item.icon;
+        const isClickable = Boolean(item.onActionClick) && !item.isDisabled;
         return (
           <Card
             key={item.id}
+            onClick={isClickable ? () => item.onActionClick?.(item.id) : undefined}
+            onKeyDown={isClickable ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                item.onActionClick?.(item.id);
+              }
+            } : undefined}
+            tabIndex={isClickable ? 0 : undefined}
+            role={isClickable ? 'button' : undefined}
+            aria-label={isClickable ? `Open ${item.title}` : undefined}
             className={cn(
               'group relative overflow-hidden',
               'border-border/80 bg-card',
               'transition-all duration-300 ease-out',
+              isClickable && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               'hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-[0_10px_40px_-12px_hsl(var(--foreground)/0.6)]',
             )}
           >
@@ -85,22 +96,18 @@ const CardDisplay: React.FC<CardDisplayProps> = ({ items, className, columns = 4
 
             {item.actionLabel && (
               <CardFooter className="relative pt-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => item.onActionClick?.(item.id)}
-                  disabled={item.isDisabled}
-                  aria-label={`${item.title}: ${item.actionLabel}`}
+                <div
+                  aria-hidden="true"
                   className={cn(
-                    'w-full justify-between text-xs font-mono uppercase tracking-[0.16em]',
+                    'inline-flex h-9 w-full items-center justify-between rounded-md px-3 text-xs font-mono uppercase tracking-[0.16em]',
                     'border border-border/60 bg-transparent text-muted-foreground',
                     'transition-all duration-200',
-                    'hover:bg-foreground hover:text-background hover:border-foreground',
+                    'group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary',
                   )}
                 >
                   <span>{item.actionLabel}</span>
                   <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
-                </Button>
+                </div>
               </CardFooter>
             )}
           </Card>

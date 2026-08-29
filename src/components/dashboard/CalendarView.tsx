@@ -3,12 +3,12 @@
  *
  * Updates:
  * 1. Functional Month, Week, and Day views with smooth switching.
- * 2. Clean, human-crafted aesthetics: ONLY icons & calendar dots are colored (Green Task, Red Deadline, Blue Meeting). No oversaturated AI-like colored backgrounds.
+ * 2. Clean, human-crafted aesthetics: ONLY icons & calendar dots are colored (Green Task, Red Deadline, Yellow Meeting). No oversaturated AI-like colored backgrounds.
  * 3. Specific single time per activity (e.g. 03:00 PM), with no start/end duration complexity.
  * 4. 100% mobile-friendly responsive layout that stacks and scrolls gracefully on all screen sizes.
  */
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, type ElementType } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X,
@@ -48,7 +48,7 @@ function getCurrentTimeDefaults() {
 // 3 Activity Types — clean neutral styling with colored icons
 export const TYPE_CONFIG: Record<EventType, {
   label: string;
-  icon: any;
+  icon: ElementType;
   dotColor: string;
   iconColor: string;
 }> = {
@@ -67,8 +67,8 @@ export const TYPE_CONFIG: Record<EventType, {
   event: {
     label: "Meeting",
     icon: Video,
-    dotColor: "bg-sky-500",
-    iconColor: "text-sky-400",
+    dotColor: "bg-amber-400",
+    iconColor: "text-amber-400",
   },
 };
 
@@ -442,7 +442,7 @@ function ProgressDonut({ completedCount, totalCount }: { completedCount: number;
           <circle
             cx={cx} cy={cy} r={r}
             fill="none"
-            stroke="#10b981"
+            stroke="hsl(var(--primary))"
             strokeWidth={sw}
             strokeDasharray={`${arcLength} ${circ}`}
             strokeLinecap="round"
@@ -760,13 +760,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                     <div
                       key={day.toISOString()}
                       onClick={() => setSelectedDate(day)}
-                      className={`rounded-2xl border p-2 flex flex-col cursor-pointer transition-all ${
-                        isSel
-                          ? "border-primary bg-primary/10 ring-1 ring-primary/40"
-                          : isNow
-                          ? "border-primary/40 bg-secondary/50"
-                          : "border-border/60 bg-secondary/20 hover:bg-secondary/40"
-                      }`}
+                      className="rounded-2xl border border-border/60 bg-secondary/20 p-2 flex flex-col cursor-pointer transition-all hover:bg-secondary/40"
                     >
                       {/* Day Header */}
                       <div className="flex items-center justify-between pb-1.5 border-b border-border/40 mb-1.5">
@@ -941,13 +935,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                         </span>
 
                         {/* Countdown badge */}
-                        <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
-                          diff <= 2
-                            ? "bg-rose-500/15 text-rose-400"
-                            : diff <= 5
-                            ? "bg-amber-500/15 text-amber-400"
-                            : "bg-secondary/80 text-muted-foreground"
-                        }`}>
+                        <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded-md shrink-0 bg-secondary/80 text-muted-foreground">
                           {diffLabel}
                         </span>
                       </div>
@@ -985,7 +973,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
               <div className="flex-1 min-w-0 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-foreground">Today's Progress</span>
-                  <span className="text-xs font-mono font-bold text-emerald-400">
+                  <span className="text-xs font-mono font-bold text-primary">
                     {progressPercent}%
                   </span>
                 </div>
@@ -993,7 +981,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                 {/* Linear progress bar */}
                 <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
                   <div
-                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                    className="h-full bg-primary rounded-full transition-all duration-500"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
@@ -1120,7 +1108,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                           onClick={() => toggleEvent(ev.id)}
                           className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-colors ${
                             ev.completed
-                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                              ? "bg-secondary/60 border-border/80 text-emerald-400"
                               : "border-border/80 bg-secondary/60 text-muted-foreground hover:text-foreground hover:border-border"
                           }`}
                           title={ev.completed ? "Mark incomplete" : "Mark completed"}

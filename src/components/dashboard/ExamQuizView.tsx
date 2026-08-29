@@ -10,34 +10,14 @@ import { getExamModerationMessage } from '@/lib/exam-safety';
 import {
   BookOpen, Zap, Pencil, Loader2, Check, X, Lightbulb, ArrowRight,
   RotateCcw, Trophy, Target, ChevronDown, ChevronUp, Brain,
-  Folder, FileText, FileQuestion, CheckSquare, Square, Clock, Award,
+  Folder, FileText, FileCheck2, CheckSquare, Square, Clock, Award, Timer,
   Edit2, ChevronRight,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
-/* Custom Exam Paper with Pencil Icon */
-function ExamPaperPencilIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg
-      className={`shrink-0 ${className}`}
-      style={{ width: '20px', height: '20px', minWidth: '20px', minHeight: '20px' }}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {/* Paper Sheet */}
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      {/* Exam lines */}
-      <line x1="8" y1="12" x2="12" y2="12" />
-      <line x1="8" y1="16" x2="10" y2="16" />
-      {/* Pencil writing on paper */}
-      <path d="M18.4 12.6l-5.8 5.8-2.6.8.8-2.6 5.8-5.8a1.5 1.5 0 0 1 2.1 2.1z" />
-    </svg>
-  );
+/* Shared exam mark used in the setup header, CTA, and empty state. */
+function ExamIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return <FileCheck2 aria-hidden="true" className={`shrink-0 ${className}`} />;
 }
 
 const difficulties = [
@@ -197,7 +177,7 @@ function HistoryResultModal({ exam, onClose }: { exam: RecentExam; onClose: () =
           <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4 sm:p-5">
             <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
-                <FileQuestion className="h-4 w-4" />
+                <FileCheck2 className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Exam history</p>
@@ -542,7 +522,9 @@ export default function ExamQuizView() {
       setAnswers([]);
 
       // Effective active timer minutes (Custom vs Preset)
-      const activeMinutes = isCustomTimer ? Math.max(1, parseInt(customTimerInput) || 10) : timerMinutes;
+      const activeMinutes = isCustomTimer
+        ? Math.min(60, Math.max(1, parseInt(customTimerInput) || 10))
+        : timerMinutes;
       if (activeMinutes > 0) {
         setExamMinutes(activeMinutes);
         startExam(activeMinutes);
@@ -689,7 +671,7 @@ export default function ExamQuizView() {
             <div className="flex items-center justify-between pb-3 sm:pb-3.5 border-b border-border/60 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
-                  <ExamPaperPencilIcon className="h-4 w-4 text-primary" />
+                  <ExamIcon className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <h2 className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-2">
@@ -1020,6 +1002,7 @@ export default function ExamQuizView() {
                     onClick={() => {
                       setIsCustomQuestions(true);
                       const qty = Math.min(30, Math.max(1, parseInt(customQuestionsInput) || 20));
+                      setCustomQuestionsInput(String(qty));
                       setQuestionCount(qty);
                     }}
                     className={`py-2 px-1 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
@@ -1046,13 +1029,17 @@ export default function ExamQuizView() {
                       value={customQuestionsInput}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setCustomQuestionsInput(val);
-                        let qty = parseInt(val) || 0;
-                        if (qty > 30) {
-                          qty = 30;
-                          toast.info('Maximum limit of 30 questions applied.');
+                        if (val === '') {
+                          setCustomQuestionsInput('');
+                          setQuestionCount(0);
+                          return;
                         }
-                        setQuestionCount(qty);
+                        const numericValue = Number(val);
+                        const cappedValue = Number.isFinite(numericValue)
+                          ? Math.min(30, Math.max(0, Math.trunc(numericValue)))
+                          : 0;
+                        setCustomQuestionsInput(String(cappedValue));
+                        setQuestionCount(cappedValue);
                       }}
                       className="w-16 h-7 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
                     />
@@ -1070,7 +1057,7 @@ export default function ExamQuizView() {
                   Timer Duration
                 </label>
                 <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
-                  <Zap className="h-3 w-3 text-amber-400" /> Synced with Focus Timer
+                  <Timer className="h-3 w-3 text-primary" /> Synced with Focus Timer
                 </span>
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
@@ -1095,7 +1082,8 @@ export default function ExamQuizView() {
                   type="button"
                   onClick={() => {
                     setIsCustomTimer(true);
-                    const mins = parseInt(customTimerInput) || 20;
+                    const mins = Math.min(60, Math.max(1, parseInt(customTimerInput) || 20));
+                    setCustomTimerInput(String(mins));
                     setTimerMinutes(mins);
                   }}
                   className={`py-2 px-2 rounded-xl text-center text-xs transition-all cursor-pointer font-medium border ${
@@ -1118,13 +1106,21 @@ export default function ExamQuizView() {
                   <input
                     type="number"
                     min={1}
-                    max={180}
+                    max={60}
                     value={customTimerInput}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setCustomTimerInput(val);
-                      const mins = parseInt(val) || 0;
-                      setTimerMinutes(mins);
+                      if (val === '') {
+                        setCustomTimerInput('');
+                        setTimerMinutes(0);
+                        return;
+                      }
+                      const numericValue = Number(val);
+                      const cappedValue = Number.isFinite(numericValue)
+                        ? Math.min(60, Math.max(0, Math.trunc(numericValue)))
+                        : 0;
+                      setCustomTimerInput(String(cappedValue));
+                      setTimerMinutes(cappedValue);
                     }}
                     className="w-16 h-7 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground text-center font-bold outline-none focus:border-primary"
                   />
@@ -1140,9 +1136,9 @@ export default function ExamQuizView() {
               whileTap={{ scale: 0.995 }}
               onClick={handleGenerateExam}
               disabled={!subject.trim() && !selectedFolderId}
-              className="w-full h-11 sm:h-12 rounded-xl bg-primary text-primary-foreground text-xs sm:text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 mt-2"
+              className="w-full h-11 sm:h-12 rounded-xl border border-primary/40 bg-primary/60 text-primary-foreground text-xs sm:text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/70 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 mt-2"
             >
-              <ExamPaperPencilIcon className="h-4.5 w-4.5 text-primary-foreground shrink-0" />
+              <ExamIcon className="h-4.5 w-4.5 text-primary-foreground shrink-0" />
               <span>Generate Personalized Exam</span>
               <ArrowRight className="h-4 w-4 ml-1" />
             </motion.button>
@@ -1151,12 +1147,12 @@ export default function ExamQuizView() {
           {/* ── RIGHT COLUMN: Weak Areas and History ── */}
           <div className="flex flex-col lg:grid lg:grid-rows-2 min-h-0 gap-3 h-auto lg:h-full lg:overflow-hidden">
 
-            {/* 1. Weak Areas (Needs Review) */}
+            {/* 1. Areas to improve */}
             <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 min-h-0 max-h-[min(36rem,70vh)] lg:max-h-none lg:overflow-y-auto shadow-xs space-y-2">
               <div className="flex items-center gap-1.5">
                 <Target className="h-3.5 w-3.5 text-primary" />
                 <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
-                  Weak Areas
+                  Areas to improve
                 </p>
                 <span className="text-[10px] font-mono text-muted-foreground/60 ml-auto">Accuracy + trend</span>
               </div>
@@ -1194,13 +1190,13 @@ export default function ExamQuizView() {
                   type="button"
                   onClick={() => {
                     if (weakAreas.length > 0) {
-                      setSubject(weakAreas[0].name);
+                      setSubject(recentExams[0]?.subject || weakAreas[0].name);
                       subjectInputRef.current?.focus();
                     }
                   }}
                   className="w-full mt-1 text-xs font-semibold text-foreground hover:text-primary flex items-center justify-end gap-1 transition-colors"
                 >
-                  Practice Weak Areas <ArrowRight className="h-3 w-3" />
+                  Practice areas to improve <ArrowRight className="h-3 w-3" />
                 </button>
               )}
             </div>
@@ -1239,7 +1235,7 @@ export default function ExamQuizView() {
                       >
                         {/* Neutral exam icon — result status is shown as text */}
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-secondary/60 text-primary">
-                          <FileQuestion className="h-3.5 w-3.5" />
+                          <FileCheck2 className="h-3.5 w-3.5" />
                         </div>
 
                         {/* Details */}
@@ -1455,7 +1451,7 @@ export default function ExamQuizView() {
     return (
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-xl">
-          <ExamPaperPencilIcon className="mx-auto mb-3 h-8 w-8 text-primary" />
+          <ExamIcon className="mx-auto mb-3 h-8 w-8 text-primary" />
           <h2 className="text-base font-semibold text-foreground">This exam could not be opened</h2>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             The question data is unavailable. Return to setup and generate the exam again.
@@ -1477,7 +1473,7 @@ export default function ExamQuizView() {
       {/* Active Exam Header Bar */}
       <div className="flex items-center justify-between mb-3 gap-2">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2 truncate">
-          <ExamPaperPencilIcon className="h-5 w-5 text-primary shrink-0" />
+          <ExamIcon className="h-5 w-5 text-primary shrink-0" />
           <span className="truncate">{subject || currentFolder?.name}</span>
         </h2>
 

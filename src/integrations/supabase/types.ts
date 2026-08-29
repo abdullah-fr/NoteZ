@@ -17,6 +17,7 @@ export type Database = {
       activities: {
         Row: {
           created_at: string
+          completed: boolean
           description: string | null
           id: string
           progress: number
@@ -28,6 +29,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          completed?: boolean
           description?: string | null
           id?: string
           progress?: number
@@ -39,6 +41,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          completed?: boolean
           description?: string | null
           id?: string
           progress?: number

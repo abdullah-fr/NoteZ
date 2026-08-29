@@ -83,12 +83,13 @@ ${safeText}
 """
 
 Break this document down into actionable study activities and checklists.
+Use the document's own section or topic heading as each activity's heading. The "subject" and "title" values must contain that same concise heading (for example, "AI Ethics and Governance"), never a learning objective, risk, outcome, sentence, or extra descriptive phrase. Put explanations, examples, risks, and action details in the description or tasks instead. Preserve the heading's wording and do not add a colon followed by extra context.
 Output strict JSON with this exact schema:
 {
   "activities": [
     {
-      "title": "Clear, concise activity or assignment title",
-      "subject": "Inferred course/subject name or General",
+      "title": "Exact concise section or topic heading from the document",
+      "subject": "The same exact section or topic heading",
       "description": "Short 1-2 sentence context or due date note",
       "tasks": [
         "Actionable step 1",
@@ -123,19 +124,20 @@ Output strict JSON with this exact schema:
     return new Response(JSON.stringify({ activities }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
     console.error("activities-breakdown error:", e);
     if (chargedUserId) {
       await refundServer(
         chargedUserId,
         1,
         "activities_breakdown",
-        e?.message || "Syllabus breakdown failed",
+        errorMessage || "Syllabus breakdown failed",
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       );
     }
-    const isRateLimit = e.message === "RATE_LIMITED";
+    const isRateLimit = errorMessage === "RATE_LIMITED";
     return new Response(JSON.stringify({
       error: isRateLimit ? "Rate limited. Please try again in a moment." : "An unexpected error occurred.",
     }), {

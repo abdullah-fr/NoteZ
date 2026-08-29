@@ -23,6 +23,24 @@ export interface StudySession {
   started_at: string;
 }
 
+/**
+ * The dashboard only needs the schema-stable creation timestamp. Keeping this
+ * query separate avoids probing optional FSRS columns on older deployments.
+ */
+export interface FlashcardActivity {
+  created_at: string;
+}
+
+export async function fetchFlashcardActivity(userId: string): Promise<FlashcardActivity[]> {
+  const { data, error } = await supabase
+    .from('flashcards')
+    .select('created_at')
+    .eq('user_id', userId);
+
+  if (error) return [];
+  return (data ?? []) as FlashcardActivity[];
+}
+
 export async function fetchProgressData(userId: string): Promise<{
   progress: UserProgress;
   examResults: ExamResult[];
@@ -90,6 +108,18 @@ export function subscribeToProgressUpdates(
     }, onChange)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'user_progress',
+      filter: `user_id=eq.${userId}`,
+    }, onChange)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'flashcards',
+      filter: `user_id=eq.${userId}`,
+    }, onChange)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'activities',
+      filter: `user_id=eq.${userId}`,
+    }, onChange)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'activity_checklist_items',
       filter: `user_id=eq.${userId}`,
     }, onChange)
     .subscribe();

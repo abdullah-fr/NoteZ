@@ -76,7 +76,8 @@
   --card-foreground: 40 20% 94%;
   --popover: 220 8% 10%;
   --popover-foreground: 40 20% 94%;
-  --primary: 40 30% 88%;
+  /* Keep primary actions warm and readable without the full-bright cream. */
+  --primary: 40 22% 78%;
   --primary-foreground: 220 10% 8%;
   --secondary: 220 8% 12%;
   --secondary-foreground: 40 20% 94%;

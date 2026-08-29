@@ -8,79 +8,16 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   fetchProgressData, subscribeToProgressUpdates,
   type UserProgress, type ExamResult, type StudySession,
-  fetchActivities, fetchChecklistItems, type Activity as ActivityType, type ChecklistItem,
+  fetchActivities, fetchChecklistItems, fetchFlashcardActivity,
+  type Activity as ActivityType, type ChecklistItem, type FlashcardActivity,
 } from '@/services';
 import {
-  Flame, Clock, GraduationCap, Sparkles, Loader2,
+  Clock, GraduationCap, Sparkles, Loader2,
   Activity, CheckSquare, Flag, BookOpen,
   Folder, FileQuestion, Check, X, ChevronRight, Layers,
 } from 'lucide-react';
 import { format, differenceInCalendarDays } from 'date-fns';
 import CardDisplay, { type CardDisplayItem } from './widgets/CardDisplay';
-
-const MONTHLY_EXAM_GOAL = 10;
-
-/* ══════════════════════════════════════════════════════════════
-   CRAM COUNTDOWN BANNER
-   Shows nearest Deadline event within 72 hours.
-══════════════════════════════════════════════════════════════ */
-function CramCountdownBanner({ activities }: { activities: { subject: string; progress: number }[] }) {
-  const { getUpcoming } = useCalendar();
-  const [dismissed, setDismissed] = useState(false);
-
-  const nearest = useMemo(() => {
-    return getUpcoming(3).find(e => e.type === 'deadline') ?? null;
-  }, [getUpcoming]);
-
-  const activityMatch = useMemo(() => {
-    if (!nearest) return null;
-    const needle = nearest.title.toLowerCase();
-    return activities.find(a =>
-      needle.includes(a.subject.toLowerCase()) ||
-      a.subject.toLowerCase().includes(needle.split(' ')[0])
-    ) ?? null;
-  }, [nearest, activities]);
-
-  if (!nearest || dismissed) return null;
-
-  const hoursAway = Math.round(
-    (nearest.date.getTime() - Date.now()) / 3_600_000
-  );
-  const timeLabel = hoursAway < 24
-    ? `${hoursAway}h`
-    : `${Math.round(hoursAway / 24)}d`;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.25 }}
-      className="relative flex items-center gap-3 rounded-md border border-border/80 bg-card/80 px-4 py-3"
-    >
-      <Flag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <p className="flex-1 text-[12px] text-foreground/90 leading-snug">
-        <span className="font-medium">{nearest.title}</span>
-        {' '}in{' '}
-        <span className="font-mono text-foreground font-semibold">{timeLabel}</span>
-        {activityMatch && (
-          <> — you're{' '}
-            <span className="font-mono text-foreground">{activityMatch.progress}%</span>
-            {' '}through{' '}
-            <span className="font-medium">{activityMatch.subject}</span>
-          </>
-        )}
-      </p>
-      <button
-        onClick={() => setDismissed(true)}
-        className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
-        aria-label="Dismiss deadline banner"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </motion.div>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════
    WEEKLY RECAP
@@ -627,9 +564,6 @@ function FiveFeatureSuggestions({
 
   return (
     <div className="relative rounded-md border border-border bg-card overflow-hidden shadow-sm transition-all duration-200">
-      {/* Top micro accent bar */}
-      <span aria-hidden className="absolute left-0 top-0 h-px w-28 bg-foreground/40" />
-
       {/* Header bar — the recommendations advance automatically, without tab chrome. */}
       <div className="flex items-center justify-between border-b border-border/70 px-4 py-2.5 bg-secondary/25 gap-2">
         <div className="flex items-center gap-2 shrink-0">
@@ -704,7 +638,7 @@ function FiveFeatureSuggestions({
             <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
               <button
                 onClick={() => onNavigate?.(current.navigateTarget)}
-                className="group flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border bg-secondary/30 text-xs font-mono uppercase tracking-[0.14em] text-foreground hover:bg-foreground hover:text-background hover:border-foreground transition-all duration-200"
+                className="group flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border bg-secondary/30 text-xs font-mono uppercase tracking-[0.14em] text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-200"
               >
                 <span>{current.actionLabel}</span>
                 <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -714,30 +648,21 @@ function FiveFeatureSuggestions({
         </AnimatePresence>
       </div>
 
-      {/* 5-second animated linear progress bar */}
-      <div className="h-[2px] w-full bg-border/40 overflow-hidden">
-        <motion.div
-          key={current.id}
-          initial={{ width: '0%' }}
-          animate={{ width: '100%' }}
-          transition={{ duration: 5, ease: 'linear' }}
-          className="h-full bg-foreground/60"
-        />
-      </div>
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════
-   OVERALL ENGAGEMENT SIGNAL
-   One compact visualization for the five core learning features.
+   OVERALL ENGAGEMENT HISTOGRAM
+   One compact, live visualization for the five core learning features.
 ══════════════════════════════════════════════════════════════ */
 interface EngagementFeature {
   id: 'notes' | 'exams' | 'flashcards' | 'focus' | 'activities';
   label: string;
-  signal: number;
   detail: string;
   icon: React.ElementType;
+  cells: number[];
+  total: number;
 }
 
 function getStoredNoteCount(): number {
@@ -763,100 +688,137 @@ function getStoredNoteCount(): number {
   }
 }
 
+function getStoredFolderCount(): number {
+  if (typeof window === 'undefined') return 0;
+
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem('notez_folders') || '[]');
+    return Array.isArray(raw) ? raw.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function getStoredNoteDates(): string[] {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem('notez_folders') || '[]');
+    if (!Array.isArray(raw)) return [];
+
+    return raw.flatMap(folder => {
+      if (!folder || typeof folder !== 'object') return [];
+      const categories = (folder as { categories?: unknown }).categories;
+      if (!Array.isArray(categories)) return [];
+
+      return categories.flatMap(category => {
+        if (!category || typeof category !== 'object') return [];
+        const notes = (category as { notes?: unknown }).notes;
+        if (!Array.isArray(notes)) return [];
+
+        return notes.flatMap(note => {
+          if (!note || typeof note !== 'object') return [];
+          const candidate = (note as { updatedAt?: unknown; createdAt?: unknown }).updatedAt
+            ?? (note as { createdAt?: unknown }).createdAt;
+          return typeof candidate === 'string' ? [candidate] : [];
+        });
+      });
+    });
+  } catch {
+    return [];
+  }
+}
+
+function getLastThirtyDays(): Date[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: 30 }, (_, index) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (29 - index));
+    return day;
+  });
+}
+
 function AdvancedEngagementReport({
   sessions,
   examResults,
   activities,
+  checklists,
+  flashcards,
   progress,
   noteCount,
 }: {
   sessions: StudySession[];
   examResults: ExamResult[];
   activities: ActivityType[];
+  checklists: ChecklistItem[];
+  flashcards: FlashcardActivity[];
   progress: UserProgress;
   noteCount: number;
 }) {
-  const [hoveredFeature, setHoveredFeature] = useState<EngagementFeature['id'] | null>(null);
+  const days = useMemo(() => getLastThirtyDays(), []);
+  const dayKeys = useMemo(() => days.map(day => format(day, 'yyyy-MM-dd')), [days]);
 
-  const { features, overallSignal, totalMinutes, activeDays, examCount } = useMemo(() => {
+  const { features, totalActions, activeDays, totalMinutes, examCount } = useMemo(() => {
+    type FeatureId = EngagementFeature['id'];
+    const featureIds: FeatureId[] = ['notes', 'exams', 'flashcards', 'focus', 'activities'];
+    const cells = Object.fromEntries(featureIds.map(id => [id, Array(30).fill(0)])) as Record<FeatureId, number[]>;
+    const indexByDay = new Map(dayKeys.map((key, index) => [key, index]));
+
+    const addAction = (feature: FeatureId, timestamp: string | null | undefined, amount = 1) => {
+      if (!timestamp || !Number.isFinite(new Date(timestamp).getTime())) return;
+      const index = indexByDay.get(format(new Date(timestamp), 'yyyy-MM-dd'));
+      if (index === undefined) return;
+      cells[feature][index] += Math.max(1, amount);
+    };
+
+    getStoredNoteDates().forEach(timestamp => addAction('notes', timestamp));
+    examResults.forEach(exam => addAction('exams', exam.created_at));
+    sessions.forEach(session => {
+      addAction('focus', session.started_at, Math.max(1, Math.ceil((session.duration_minutes || 0) / 25)));
+    });
+    flashcards.forEach(card => addAction('flashcards', card.created_at));
+
+    const completedByActivity = checklists.reduce<Record<string, number>>((counts, item) => {
+      if (item.done) counts[item.activity_id] = (counts[item.activity_id] || 0) + 1;
+      return counts;
+    }, {});
+    activities.forEach(activity => {
+      const progressActions = activity.progress > 0 ? Math.ceil(activity.progress / 25) : 1;
+      const completedActions = completedByActivity[activity.id] || 0;
+      addAction('activities', activity.updated_at || activity.created_at, progressActions + completedActions);
+    });
+
     const sessionMinutes = sessions.reduce((total, session) => total + Math.max(0, session.duration_minutes || 0), 0);
     const totalMinutes = Math.max(progress.total_study_minutes || 0, sessionMinutes);
     const averageExamScore = examResults.length > 0
-      ? Math.round(examResults.reduce((total, exam) => {
-        return total + (exam.total_questions ? (exam.score / exam.total_questions) * 100 : 0);
-      }, 0) / examResults.length)
+      ? Math.round(examResults.reduce((total, exam) => total + (exam.total_questions ? (exam.score / exam.total_questions) * 100 : 0), 0) / examResults.length)
       : 0;
     const averageActivityProgress = activities.length > 0
       ? Math.round(activities.reduce((total, activity) => total + Math.max(0, Math.min(100, activity.progress || 0)), 0) / activities.length)
       : 0;
-    const activeDateKeys = new Set<string>();
-    [...sessions.map(session => session.started_at), ...examResults.map(exam => exam.created_at)].forEach(value => {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) activeDateKeys.add(date.toISOString().slice(0, 10));
-    });
 
     const features: EngagementFeature[] = [
-      {
-        id: 'notes',
-        label: 'Notes',
-        signal: Math.min(100, noteCount * 10),
-        detail: `${noteCount} note${noteCount === 1 ? '' : 's'} saved`,
-        icon: BookOpen,
-      },
-      {
-        id: 'exams',
-        label: 'Exams',
-        signal: averageExamScore,
-        detail: examResults.length > 0 ? `${averageExamScore}% average score` : 'No exam results yet',
-        icon: GraduationCap,
-      },
-      {
-        id: 'flashcards',
-        label: 'Flashcards',
-        signal: Math.min(100, Math.round((progress.flashcards_reviewed / 60) * 100)),
-        detail: `${progress.flashcards_reviewed} reviewed · ${progress.quizzes_completed} quizzes`,
-        icon: Layers,
-      },
-      {
-        id: 'focus',
-        label: 'Focus',
-        signal: Math.min(100, Math.round((totalMinutes / 600) * 100)),
-        detail: `${formatMinutes(totalMinutes)} focused`,
-        icon: Clock,
-      },
-      {
-        id: 'activities',
-        label: 'Activities',
-        signal: averageActivityProgress,
-        detail: activities.length > 0 ? `${averageActivityProgress}% average completion` : 'No activity packages yet',
-        icon: CheckSquare,
-      },
+      { id: 'notes', label: 'Notes', detail: `${noteCount} note${noteCount === 1 ? '' : 's'} saved`, icon: BookOpen, cells: cells.notes, total: noteCount },
+      { id: 'exams', label: 'Exams', detail: examResults.length > 0 ? `${averageExamScore}% average score` : 'No exam results yet', icon: GraduationCap, cells: cells.exams, total: examResults.length },
+      { id: 'flashcards', label: 'Flashcards', detail: `${progress.flashcards_reviewed} reviewed · ${flashcards.length} cards`, icon: Layers, cells: cells.flashcards, total: progress.flashcards_reviewed },
+      { id: 'focus', label: 'Focus', detail: `${formatMinutes(totalMinutes)} focused`, icon: Clock, cells: cells.focus, total: totalMinutes },
+      { id: 'activities', label: 'Activities', detail: `${completedByActivity ? Object.values(completedByActivity).reduce((sum, count) => sum + count, 0) : 0} tasks complete · ${averageActivityProgress}% average`, icon: CheckSquare, cells: cells.activities, total: activities.length },
     ];
 
     return {
       features,
-      overallSignal: Math.round(features.reduce((total, feature) => total + feature.signal, 0) / features.length),
+      totalActions: features.reduce((total, feature) => total + feature.cells.reduce((sum, value) => sum + value, 0), 0),
+      activeDays: dayKeys.reduce((total, _, index) => total + (featureIds.some(id => cells[id][index] > 0) ? 1 : 0), 0),
       totalMinutes,
-      activeDays: activeDateKeys.size,
       examCount: examResults.length,
     };
-  }, [activities, examResults, noteCount, progress, sessions]);
+  }, [activities, checklists, dayKeys, examResults, flashcards, noteCount, progress, sessions]);
 
-  const center = { x: 180, y: 148 };
-  const radius = 91;
-  const labelRadius = 124;
-  const angleFor = (index: number, distance: number) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / features.length;
-    return {
-      x: center.x + Math.cos(angle) * distance,
-      y: center.y + Math.sin(angle) * distance,
-    };
-  };
-  const pointsFor = (scale: number) => features.map((feature, index) => {
-    const point = angleFor(index, radius * scale * (feature.signal / 100 || 0));
-    return `${point.x},${point.y}`;
-  }).join(' ');
-  const status = overallSignal >= 75 ? 'In rhythm' : overallSignal >= 40 ? 'Building momentum' : 'Start your signal';
+  const maxCellValue = Math.max(1, ...features.flatMap(feature => feature.cells));
+  const intensityAlpha = [0.06, 0.2, 0.38, 0.62, 0.88];
+  const status = activeDays >= 6 ? 'In rhythm' : activeDays >= 3 ? 'Building momentum' : 'Start your signal';
 
   return (
     <motion.div
@@ -871,165 +833,88 @@ function AdvancedEngagementReport({
         <div>
           <div className="flex items-center gap-2">
             <Activity className="h-4 w-4 text-muted-foreground shrink-0" />
-            <h3 className="font-serif text-lg tracking-tight text-foreground">Engagement Activity</h3>
+            <h3 className="font-serif text-lg tracking-tight text-foreground">Monthly Performance Report</h3>
           </div>
           <p className="mt-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-            One view of your learning rhythm
+            Last 30 days across your study features
           </p>
         </div>
-        <span className="shrink-0 rounded-sm border border-border/70 bg-secondary/30 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-          {status}
-        </span>
+        <div className="shrink-0 text-right font-mono">
+          <p className="text-sm font-semibold text-foreground">{totalActions} actions</p>
+          <p className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{status}</p>
+        </div>
       </div>
 
-      <div className="mt-4 grid items-center gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(15rem,0.85fr)]">
-        <div className="relative mx-auto aspect-[1.2] w-full max-w-[30rem] overflow-hidden rounded-sm border border-border/60 bg-secondary/20 p-1 sm:p-2">
-          <svg
-            viewBox="0 0 360 300"
-            className="h-full w-full"
-            role="img"
-            aria-label={`Overall engagement signal ${overallSignal} percent across Notes, Exams, Flashcards, Focus, and Activities`}
-          >
-            <motion.circle
-              cx={center.x}
-              cy={center.y}
-              r="107"
-              fill="none"
-              stroke="hsl(var(--foreground) / 0.16)"
-              strokeWidth="1"
-              animate={{ r: [104, 111, 104], opacity: [0.2, 0.45, 0.2] }}
-              transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            {[0.25, 0.5, 0.75, 1].map(scale => (
-              <polygon
-                key={scale}
-                points={pointsFor(scale)}
-                fill="none"
-                stroke="hsl(var(--border) / 0.9)"
-                strokeWidth="1"
-              />
+      <div className="mt-5 overflow-x-auto pb-1" role="img" aria-label="Monthly contribution activity heatmap showing Notes, Exams, Flashcards, Focus, and Activities across the last thirty days">
+        <div className="mx-auto w-fit min-w-0 sm:min-w-[30rem]">
+          <div className="grid grid-cols-[5rem_repeat(30,0.75rem)] items-end gap-1 px-1 sm:grid-cols-[6.25rem_repeat(30,0.9rem)] sm:gap-1.5">
+            <span aria-hidden />
+            {days.map((day, index) => (
+              <div key={dayKeys[index]} className={`text-center font-mono text-[8px] tracking-tight ${index === days.length - 1 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <span className="block">{index === 0 || index === days.length - 1 || index % 5 === 0 ? format(day, 'd') : ''}</span>
+              </div>
             ))}
+          </div>
 
-            {features.map((feature, index) => {
-              const end = angleFor(index, radius);
-              const label = angleFor(index, labelRadius);
-              const isActive = hoveredFeature === feature.id;
-              return (
-                <g
-                  key={feature.id}
-                  onMouseEnter={() => setHoveredFeature(feature.id)}
-                  onMouseLeave={() => setHoveredFeature(null)}
-                >
-                  <line
-                    x1={center.x}
-                    y1={center.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke="hsl(var(--border) / 0.8)"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={label.x}
-                    y={label.y}
-                    textAnchor={label.x < center.x - 8 ? 'end' : label.x > center.x + 8 ? 'start' : 'middle'}
-                    dominantBaseline="middle"
-                    fill="hsl(var(--muted-foreground))"
-                    className="font-mono text-[10px] uppercase tracking-wider"
-                  >
-                    {feature.label}
-                  </text>
-                  <circle
-                    cx={end.x}
-                    cy={end.y}
-                    r={isActive ? 5 : 3.5}
-                    fill="hsl(var(--foreground))"
-                    className="transition-all duration-200"
-                  />
-                </g>
-              );
-            })}
-
-            <motion.polygon
-              points={pointsFor(1)}
-              fill="hsl(var(--foreground) / 0.10)"
-              stroke="hsl(var(--foreground) / 0.78)"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.7, ease: 'easeOut' }}
-              style={{ transformOrigin: `${center.x}px ${center.y}px` }}
-            />
-            <motion.circle
-              cx={center.x}
-              cy={center.y}
-              r="35"
-              fill="hsl(var(--card))"
-              stroke="hsl(var(--foreground) / 0.28)"
-              strokeWidth="1"
-              animate={{ strokeOpacity: [0.2, 0.5, 0.2] }}
-              transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <text x={center.x} y={center.y - 2} textAnchor="middle" fill="hsl(var(--foreground))" className="font-serif text-[24px] font-semibold">
-              {overallSignal}%
-            </text>
-            <text x={center.x} y={center.y + 14} textAnchor="middle" fill="hsl(var(--muted-foreground))" className="font-mono text-[8px] uppercase tracking-[0.16em]">
-              overall signal
-            </text>
-          </svg>
-        </div>
-
-        <div className="min-w-0">
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+          <div className="mt-2 space-y-1.5">
             {features.map(feature => {
               const FeatureIcon = feature.icon;
-              const isActive = hoveredFeature === feature.id;
               return (
-                <button
-                  key={feature.id}
-                  type="button"
-                  onMouseEnter={() => setHoveredFeature(feature.id)}
-                  onMouseLeave={() => setHoveredFeature(null)}
-                  onFocus={() => setHoveredFeature(feature.id)}
-                  onBlur={() => setHoveredFeature(null)}
-                  className={`flex min-w-0 items-center gap-2 rounded-sm border px-2.5 py-2 text-left transition-colors ${
-                    isActive ? 'border-foreground/40 bg-secondary/50' : 'border-border/60 bg-secondary/20 hover:bg-secondary/40'
-                  }`}
-                  aria-label={`${feature.label}: ${feature.signal} percent. ${feature.detail}`}
-                >
-                  <FeatureIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[11px] font-medium text-foreground">{feature.label}</span>
-                    <span className="block truncate text-[10px] text-muted-foreground">{feature.detail}</span>
-                  </span>
-                  <span className="shrink-0 font-mono text-xs font-semibold text-foreground">{feature.signal}%</span>
-                </button>
+                <div key={feature.id} className="grid grid-cols-[5rem_repeat(30,0.75rem)] items-center gap-1 px-1 sm:grid-cols-[6.25rem_repeat(30,0.9rem)] sm:gap-1.5">
+                  <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <FeatureIcon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate sm:hidden">{feature.id === 'flashcards' ? 'Cards' : feature.id === 'activities' ? 'Tasks' : feature.label}</span>
+                    <span className="hidden truncate sm:block">{feature.label}</span>
+                  </div>
+                  {feature.cells.map((value, index) => {
+                    const level = value === 0 ? 0 : Math.max(1, Math.ceil((value / maxCellValue) * 4));
+                    const label = `${feature.label}, ${format(days[index], 'EEEE, MMMM d')}: ${value} action${value === 1 ? '' : 's'}`;
+                    return (
+                      <motion.button
+                        key={`${feature.id}-${dayKeys[index]}`}
+                        type="button"
+                        aria-label={label}
+                        title={label}
+                        whileHover={{ scale: 1.12 }}
+                        transition={{ duration: 0.16 }}
+                        className="aspect-square w-full min-w-0 rounded-[3px] border border-border/50 outline-none transition-[box-shadow,background-color] hover:border-foreground/40 focus-visible:ring-1 focus-visible:ring-foreground/70"
+                        style={{
+                          backgroundColor: `hsl(var(--foreground) / ${intensityAlpha[level]})`,
+                          boxShadow: level > 0 ? `inset 0 0 0 1px hsl(var(--foreground) / ${Math.min(0.2, intensityAlpha[level] / 3)})` : undefined,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
+        </div>
+      </div>
 
-          <div className="mt-3 border-t border-border/60 pt-3 text-[10px] font-mono text-muted-foreground">
-            <span>{activeDays} active day{activeDays === 1 ? '' : 's'}</span>
-            <span className="px-1.5 text-border">·</span>
-            <span>{formatMinutes(totalMinutes)} focus</span>
-            <span className="px-1.5 text-border">·</span>
-            <span>{examCount} exam{examCount === 1 ? '' : 's'}</span>
-          </div>
+      <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-muted-foreground">
+          <span>{activeDays} active day{activeDays === 1 ? '' : 's'}</span>
+          <span className="text-border">·</span>
+          <span>{formatMinutes(totalMinutes)} focus</span>
+          <span className="text-border">·</span>
+          <span>{examCount} exam{examCount === 1 ? '' : 's'}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
+          <span>Less</span>
+          {[0, 1, 2, 3, 4].map(level => (
+            <span
+              key={level}
+              aria-hidden
+              className="h-3 w-3 rounded-[2px] border border-border/50"
+              style={{ backgroundColor: `hsl(var(--foreground) / ${intensityAlpha[level]})` }}
+            />
+          ))}
+          <span>More</span>
         </div>
       </div>
     </motion.div>
   );
-}
-
-/* ── helpers ─────────────────────────────────────────────────── */
-function streakMessage(days: number): string {
-  if (days <= 0) return 'Begin today — every expert was once a beginner.';
-  if (days < 3) return 'A spark has been lit. Keep it burning.';
-  if (days < 7) return 'Momentum is building. Stay consistent.';
-  if (days < 14) return 'Discipline is becoming habit. Impressive.';
-  if (days < 30) return 'Two weeks strong — you are unstoppable.';
-  if (days < 60) return 'A monthly master. Greatness is your routine.';
-  return 'Legendary streak. You inspire by example.';
 }
 
 function formatMinutes(min: number): string {
@@ -1052,60 +937,49 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [activitiesList, setActivitiesList] = useState<ActivityType[]>([]);
   const [checklistsList, setChecklistsList] = useState<ChecklistItem[]>([]);
+  const [flashcardsList, setFlashcardsList] = useState<FlashcardActivity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activitySubjects, setActivitySubjects] = useState<{ subject: string; progress: number }[]>([]);
+  const [noteCount, setNoteCount] = useState(getStoredNoteCount);
+  const [folderCount, setFolderCount] = useState(getStoredFolderCount);
 
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const [{ progress: p, examResults: e, sessions: s }, acts, chks] = await Promise.all([
+      const [{ progress: p, examResults: e, sessions: s }, acts, chks, cards] = await Promise.all([
         fetchProgressData(user.id),
         fetchActivities(user.id).catch(() => []),
         fetchChecklistItems(user.id).catch(() => []),
+        fetchFlashcardActivity(user.id).catch(() => []),
       ]);
       setProgress(p);
       setExamResults(e);
       setSessions(s);
       setActivitiesList(acts);
       setChecklistsList(chks);
-
-      // Build per-subject progress map from activities
-      const subjectMap: Record<string, { total: number; count: number }> = {};
-      acts.forEach((a) => {
-        const k = a.subject || 'General';
-        subjectMap[k] ??= { total: 0, count: 0 };
-        subjectMap[k].total += a.progress || 0;
-        subjectMap[k].count += 1;
-      });
-      setActivitySubjects(
-        Object.entries(subjectMap).map(([subject, v]) => ({
-          subject,
-          progress: Math.round(v.total / v.count),
-        }))
-      );
+      setFlashcardsList(cards);
       setLoading(false);
     };
     load();
     return subscribeToProgressUpdates(user.id, load);
   }, [user]);
 
-  /* ── Core product metrics calculation ── */
-  const examStats = useMemo(() => {
-    if (examResults.length === 0) {
-      return { avgScore: null, passedCount: 0, totalExams: 0 };
-    }
-    const totalScore = examResults.reduce((acc, e) => acc + (e.total_questions ? (e.score / e.total_questions) * 100 : 0), 0);
-    const avgScore = Math.round(totalScore / examResults.length);
-    const passedCount = examResults.filter(e => (e.score / (e.total_questions || 1)) >= 0.8).length;
-    return { avgScore, passedCount, totalExams: examResults.length };
-  }, [examResults]);
+  useEffect(() => {
+    const refreshFolderMetrics = () => {
+      setNoteCount(getStoredNoteCount());
+      setFolderCount(getStoredFolderCount());
+    };
+
+    window.addEventListener('notez:folders-updated', refreshFolderMetrics);
+    window.addEventListener('storage', refreshFolderMetrics);
+    return () => {
+      window.removeEventListener('notez:folders-updated', refreshFolderMetrics);
+      window.removeEventListener('storage', refreshFolderMetrics);
+    };
+  }, []);
 
   /* ── first-run check ── */
   const isFirstRun = progress.total_study_minutes === 0 && progress.exams_completed === 0;
-  const hasFolders = (() => {
-    try { return JSON.parse(localStorage.getItem('notez_folders') || '[]').length > 0; } catch { return false; }
-  })();
-  const noteCount = getStoredNoteCount();
+  const hasFolders = folderCount > 0;
   const hasExams = examResults.length > 0;
   const hasSessions = sessions.length > 0;
 
@@ -1117,7 +991,12 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
     );
   }
 
-  /* ── 4 ONLY useful KPIs representing the core features ── */
+  const averageActivityProgress = activitiesList.length > 0
+    ? Math.round(activitiesList.reduce((total, activity) => total + Math.max(0, Math.min(100, activity.progress || 0)), 0) / activitiesList.length)
+    : 0;
+  const completedChecklistCount = checklistsList.filter(item => item.done).length;
+
+  /* ── 4 useful KPIs representing the core features ── */
   const overviewCards: CardDisplayItem[] = [
     {
       id: 'focus-mastery',
@@ -1129,13 +1008,15 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
       onActionClick: () => onNavigate?.('timer'),
     },
     {
-      id: 'exam-accuracy',
-      title: 'Exam Accuracy',
-      value: examStats.avgScore !== null ? `${examStats.avgScore}%` : 'No Exams',
-      description: `${examStats.totalExams || progress.exams_completed} completed · ${examStats.passedCount} passed (≥80%)`,
-      icon: GraduationCap,
-      actionLabel: 'Take Exam',
-      onActionClick: () => onNavigate?.('exam'),
+      id: 'activities-overview',
+      title: 'Activities',
+      value: `${activitiesList.length}`,
+      description: activitiesList.length > 0
+        ? `${averageActivityProgress}% average progress · ${completedChecklistCount} task${completedChecklistCount === 1 ? '' : 's'} complete`
+        : 'Create a structured study plan',
+      icon: CheckSquare,
+      actionLabel: 'Open Activities',
+      onActionClick: () => onNavigate?.('activities'),
     },
     {
       id: 'flashcard-retention',
@@ -1147,23 +1028,18 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
       onActionClick: () => onNavigate?.('flashcards'),
     },
     {
-      id: 'study-streak',
-      title: 'Study Streak',
-      value: `${progress.streak_days} Day${progress.streak_days === 1 ? '' : 's'}`,
-      description: `${streakMessage(progress.streak_days)}${(progress.streak_freezes_available ?? 0) > 0 ? ` · ${progress.streak_freezes_available} freeze shield stored` : ''}`,
-      icon: Flame,
-      actionLabel: 'View Schedule',
-      onActionClick: () => onNavigate?.('calendar'),
+      id: 'folders-overview',
+      title: 'Folders',
+      value: `${folderCount}`,
+      description: `${noteCount} note${noteCount === 1 ? '' : 's'} organized across your study space`,
+      icon: Folder,
+      actionLabel: 'Open Folders',
+      onActionClick: () => onNavigate?.('folders'),
     },
   ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 overflow-hidden">
-      {/* ── Cram countdown banner ── */}
-      <AnimatePresence>
-        <CramCountdownBanner activities={activitySubjects} />
-      </AnimatePresence>
-
       {/* ── Weekly recap ── */}
       <AnimatePresence>
         {user && !isFirstRun && (
@@ -1211,6 +1087,8 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
         sessions={sessions}
         examResults={examResults}
         activities={activitiesList}
+        checklists={checklistsList}
+        flashcards={flashcardsList}
         progress={progress}
         noteCount={noteCount}
       />

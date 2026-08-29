@@ -158,7 +158,7 @@ export default function DeckMarketplace() {
                 </div>
               )}
               <button onClick={() => importDeck(previewing)} disabled={importing}
-                className="w-full flex items-center justify-center gap-2 h-10 rounded-sm border border-foreground/80 bg-foreground text-background text-[13px] font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40"
+                className="w-full flex items-center justify-center gap-2 h-10 rounded-sm border border-primary/80 bg-primary text-primary-foreground text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-40"
               >
                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 {importing ? 'Importing…' : `Import all ${previewing.card_count} cards`}

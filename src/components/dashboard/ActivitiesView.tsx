@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { getSubjectColor } from '@/lib/subjectColors';
@@ -7,12 +7,13 @@ import {
   fetchActivities, fetchChecklistItems, createActivity,
   updateActivityProgress, deleteActivity, addChecklistItems,
   addChecklistItem, toggleChecklistItem, deleteChecklistItem,
+  updateActivityCompleted, updateChecklistItemLabel,
   generateActivitiesFromDoc, cleanTaskLabel,
   type Activity, type ChecklistItem,
 } from '@/services';
-import { uploadSourceFile, triggerProcessSource, subscribeToSourceChanges } from '@/services/sources.service';
+import { uploadSourceFile, triggerProcessSource } from '@/services/sources.service';
 import { toast } from 'sonner';
-import { Plus, Trash2, ListChecks, Check, X, ChevronDown, ChevronUp, Layers, BookOpen, Upload, Loader2, Edit3, Save, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, ListChecks, Check, X, ChevronDown, ChevronUp, Layers, Upload, Loader2, Edit3, Save, CheckCircle2 } from 'lucide-react';
 
 export default function ActivitiesView() {
   const { user } = useAuth();
@@ -27,6 +28,10 @@ export default function ActivitiesView() {
   const [draftTasks, setDraftTasks] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [newTaskByActivity, setNewTaskByActivity] = useState<Record<string, string>>({});
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [pendingCompletionActivityId, setPendingCompletionActivityId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskValue, setEditingTaskValue] = useState('');
 
   /* ── syllabus import (Prompt 17) ── */
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,8 +84,8 @@ export default function ActivitiesView() {
 
       setImportDraft(drafts);
       setImportStep('reviewing');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to process document');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to process document');
       setImportStep('idle');
     }
   }
@@ -111,19 +116,20 @@ export default function ActivitiesView() {
     }
   }
 
-  const load = async () => {
-    if (!user) return;
+  const load = useCallback(async () => {
+    const userId = user?.id;
+    if (!userId) return;
     setLoading(true);
     const [acts, checklists] = await Promise.all([
-      fetchActivities(user.id),
-      fetchChecklistItems(user.id),
+      fetchActivities(userId),
+      fetchChecklistItems(userId),
     ]);
     setActivities(acts);
     setItems(checklists);
     setLoading(false);
-  };
+  }, [user?.id]);
 
-  useEffect(() => { load(); }, [user?.id]);
+  useEffect(() => { load(); }, [load]);
 
   const itemsByActivity = useMemo(() => {
     const m: Record<string, ChecklistItem[]> = {};
@@ -131,11 +137,11 @@ export default function ActivitiesView() {
     return m;
   }, [items]);
 
-  const computeProgress = (activityId: string) => {
+  const computeProgress = useCallback((activityId: string) => {
     const list = itemsByActivity[activityId] || [];
     if (!list.length) return 0;
     return Math.round((list.filter(i => i.done).length / list.length) * 100);
-  };
+  }, [itemsByActivity]);
 
   const persistProgress = async (activityId: string, value: number) => {
     await updateActivityProgress(activityId, value);
@@ -173,13 +179,46 @@ export default function ActivitiesView() {
   const toggleItem = async (item: ChecklistItem) => {
     const newDone = !item.done;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, done: newDone } : i));
-    await toggleChecklistItem(item.id, newDone);
-    const list = (itemsByActivity[item.activity_id] || []).map(i => i.id === item.id ? { ...i, done: newDone } : i);
-    const pct = list.length ? Math.round((list.filter(i => i.done).length / list.length) * 100) : 0;
-    persistProgress(item.activity_id, pct);
-    if (pct === 100) {
-      toast.success('🎉 Activity package 100% completed!');
-      setTimeout(() => setExpanded(prev => prev === item.activity_id ? null : prev), 400);
+    try {
+      await toggleChecklistItem(item.id, newDone);
+      const list = (itemsByActivity[item.activity_id] || []).map(i => i.id === item.id ? { ...i, done: newDone } : i);
+      const pct = list.length ? Math.round((list.filter(i => i.done).length / list.length) * 100) : 0;
+      await persistProgress(item.activity_id, pct);
+      if (pct === 100) {
+        setPendingCompletionActivityId(item.activity_id);
+      } else if (pendingCompletionActivityId === item.activity_id) {
+        setPendingCompletionActivityId(null);
+      }
+    } catch {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, done: item.done } : i));
+      toast.error('Could not update this task. Please try again.');
+    }
+  };
+
+  const startEditingTask = (item: ChecklistItem) => {
+    setEditingTaskId(item.id);
+    setEditingTaskValue(cleanTaskLabel(item.label));
+  };
+
+  const cancelEditingTask = () => {
+    setEditingTaskId(null);
+    setEditingTaskValue('');
+  };
+
+  const saveTaskLabel = async (item: ChecklistItem) => {
+    const label = cleanTaskLabel(editingTaskValue.trim());
+    if (!label) {
+      toast.error('Task name cannot be empty.');
+      return;
+    }
+
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, label } : i));
+    cancelEditingTask();
+    try {
+      await updateChecklistItemLabel(item.id, label);
+    } catch {
+      await load();
+      toast.error('Could not rename this task. Please try again.');
     }
   };
 
@@ -207,48 +246,249 @@ export default function ActivitiesView() {
     await deleteActivity(id);
     setActivities(prev => prev.filter(a => a.id !== id));
     setItems(prev => prev.filter(i => i.activity_id !== id));
+    if (pendingCompletionActivityId === id) setPendingCompletionActivityId(null);
+    if (expanded === id) setExpanded(null);
   };
 
-  /* Filter out 100% completed activities completely from the UI & section */
   const activeActivities = useMemo(() => {
-    return activities.filter(a => {
-      const pct = computeProgress(a.id);
-      return pct < 100 && (a.progress ?? 0) < 100;
-    });
-  }, [activities, itemsByActivity]);
+    return activities.filter(a => !a.completed);
+  }, [activities]);
+
+  const completedActivities = useMemo(() => {
+    return activities.filter(a => a.completed);
+  }, [activities]);
 
   const overall = useMemo(() => {
     if (!activeActivities.length) return 0;
     return Math.round(activeActivities.reduce((s, a) => s + (computeProgress(a.id) || a.progress || 0), 0) / activeActivities.length);
-  }, [activeActivities, itemsByActivity]);
-
-  const bySubject = useMemo(() => {
-    const m: Record<string, { total: number; count: number }> = {};
-    activeActivities.forEach(a => {
-      const k = a.subject || 'General';
-      const pct = computeProgress(a.id) || a.progress || 0;
-      m[k] ||= { total: 0, count: 0 };
-      m[k].total += pct;
-      m[k].count += 1;
-    });
-    return Object.entries(m)
-      .map(([s, v]) => ({ subject: s, progress: Math.round(v.total / v.count) }))
-      .filter(s => s.progress < 100);
-  }, [activeActivities, itemsByActivity]);
+  }, [activeActivities, computeProgress]);
 
   const filteredActivities = activeActivities;
 
+  const pendingCompletionActivity = pendingCompletionActivityId
+    ? activities.find(a => a.id === pendingCompletionActivityId)
+    : null;
+
+  const moveToCompleted = async () => {
+    if (!pendingCompletionActivity) return;
+    try {
+      await updateActivityCompleted(pendingCompletionActivity.id, true);
+      setActivities(prev => prev.map(a => a.id === pendingCompletionActivity.id ? { ...a, completed: true } : a));
+      setPendingCompletionActivityId(null);
+      setExpanded(null);
+      toast.success('Moved to Completed.');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not move this package to Completed. Please try again.');
+    }
+  };
+
+  const renderCompletionPrompt = (activity: Activity) => {
+    if (pendingCompletionActivity?.id !== activity.id) return null;
+
+    return (
+      <motion.div
+        key={`completion-prompt-${activity.id}`}
+        initial={{ opacity: 0, y: -6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -6 }}
+        className="rounded-2xl border border-border bg-secondary p-3.5 sm:p-4"
+        role="dialog"
+        aria-label="Complete activity package"
+        aria-live="polite"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <CheckCircle2 className="h-5 w-5 mt-0.5 text-emerald-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-foreground">All tasks are complete</p>
+              <p className="text-[12px] text-muted-foreground mt-0.5 break-words">
+                Move “{activity.subject?.trim() || activity.title}” to Completed?
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:flex gap-2 sm:shrink-0">
+            <button
+              onClick={moveToCompleted}
+              className="px-3 py-2 rounded-xl bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[12px] font-semibold hover:bg-accent transition-colors"
+            >
+              Move to Completed
+            </button>
+            <button
+              onClick={() => setPendingCompletionActivityId(null)}
+              className="px-3 py-2 rounded-xl border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              Keep Active
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  const renderActivityCard = (activity: Activity, inCompletedSection = false) => {
+    const list = itemsByActivity[activity.id] || [];
+    const pct = computeProgress(activity.id);
+    const displayTitle = activity.subject?.trim() || activity.title;
+    const isCompleted = inCompletedSection || Boolean(activity.completed);
+    const readyToComplete = !isCompleted && pct === 100 && list.length > 0;
+    const open = expanded === activity.id;
+
+    return (
+      <div key={activity.id} className={`rounded-2xl border bg-secondary overflow-hidden transition-colors ${isCompleted ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'border-border'}`}>
+        <button
+          onClick={() => setExpanded(open ? null : activity.id)}
+          className="w-full p-3.5 sm:p-4 text-left hover:bg-secondary transition-colors"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 mb-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`font-semibold text-[14px] break-words ${isCompleted ? 'text-muted-foreground' : 'text-foreground'}`}>{displayTitle}</span>
+                {isCompleted && (
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="h-3 w-3" /> Completed
+                  </span>
+                )}
+                {readyToComplete && (
+                  <span className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-foreground text-[10px] font-semibold shrink-0">
+                    Ready to complete
+                  </span>
+                )}
+              </div>
+              {activity.description && (
+                <div className="text-[12px] text-muted-foreground mt-1 break-words">
+                  {activity.description}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {list.filter(i => i.done).length}/{list.length}
+              </span>
+              {open ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-1 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full transition-all duration-300"
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: activity.subject ? getSubjectColor(activity.subject) : 'hsl(var(--foreground))',
+                  opacity: 0.7,
+                }}
+              />
+            </div>
+            <span className="text-[10px] font-mono w-8 text-right text-muted-foreground">{pct}%</span>
+          </div>
+        </button>
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-t border-border overflow-hidden bg-secondary"
+            >
+              <div className="p-3.5 sm:p-4 space-y-2">
+                {list.map(item => (
+                  <div key={item.id} className="flex items-start gap-2.5 sm:gap-3 rounded-xl border border-border bg-card/60 px-3 py-2.5 hover:border-border transition-all">
+                    <button
+                      onClick={() => toggleItem(item)}
+                      className={`h-5 w-5 mt-0.5 rounded-md flex items-center justify-center border-2 transition-all shrink-0 cursor-pointer ${
+                        item.done
+                          ? 'bg-primary border-primary text-primary-foreground shadow-sm'
+                          : 'border-muted-foreground/40 hover:border-primary bg-background/80'
+                      }`}
+                      title={item.done ? 'Mark incomplete' : 'Mark completed'}
+                      aria-label={item.done ? 'Mark task incomplete' : 'Mark task completed'}
+                    >
+                      {item.done ? (
+                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      ) : (
+                        <div className="w-1.5 h-1.5 rounded-sm bg-transparent hover:bg-primary/30" />
+                      )}
+                    </button>
+                    {editingTaskId === item.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                        <input
+                          autoFocus
+                          value={editingTaskValue}
+                          onChange={e => setEditingTaskValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { e.preventDefault(); saveTaskLabel(item); }
+                            if (e.key === 'Escape') cancelEditingTask();
+                          }}
+                          className="min-w-0 flex-1 bg-background border border-border rounded-lg px-2 py-1 text-[13px] text-foreground outline-none focus:border-foreground/40"
+                          aria-label="Task name"
+                        />
+                        <button onClick={() => saveTaskLabel(item)} className="p-1 text-foreground hover:text-primary transition-colors" title="Save task name" aria-label="Save task name">
+                          <Save className="h-3.5 w-3.5" />
+                        </button>
+                        <button onClick={cancelEditingTask} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Cancel editing" aria-label="Cancel editing">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className={`min-w-0 flex-1 text-[13px] leading-snug break-words ${item.done ? 'line-through text-muted-foreground font-normal' : 'text-foreground font-medium'}`}>
+                        {cleanTaskLabel(item.label)}
+                      </span>
+                    )}
+                    {editingTaskId !== item.id && (
+                      <button onClick={() => startEditingTask(item)} className="text-muted-foreground/60 hover:text-foreground p-1 rounded transition-colors shrink-0" title="Edit task name" aria-label="Edit task name">
+                        <Edit3 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button onClick={() => deleteItem(item)} className="text-muted-foreground/50 hover:text-destructive p-1 rounded transition-colors shrink-0" title="Delete task" aria-label="Delete task">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <input
+                    placeholder="Add a task…"
+                    value={newTaskByActivity[activity.id] || ''}
+                    onChange={e => setNewTaskByActivity(p => ({ ...p, [activity.id]: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItemToActivity(activity.id); } }}
+                    className="min-w-0 flex-1 bg-secondary border border-border rounded-xl px-3 py-2 sm:py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
+                  />
+                  <button
+                    onClick={() => addItemToActivity(activity.id)}
+                    className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-xl border border-border text-[12px] text-foreground hover:bg-secondary transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="pt-2 flex justify-end">
+                  <button
+                    onClick={() => deleteActivityHandler(activity.id)}
+                    className="text-[11px] font-mono text-destructive/60 hover:text-destructive flex items-center gap-1 transition-colors"
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete activity
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 md:px-6 pb-6 space-y-4 sm:space-y-6">
       {/* Hidden file input supporting PDF, Word, PPT */}
       <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" className="hidden" onChange={handleSyllabusFile} />
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
+        <div className="grid grid-cols-1 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importStep !== 'idle'}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[11px] font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            className="w-full sm:w-auto justify-center flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl border border-border bg-secondary text-[11px] font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
           >
             {importStep === 'uploading' || importStep === 'processing' ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -261,21 +501,56 @@ export default function ActivitiesView() {
           </button>
           <button
             onClick={() => setShowForm(s => !s)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+            className="w-full sm:w-auto justify-center flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
           >
             <Plus className="h-3.5 w-3.5" /> New Task Package
           </button>
+          <button
+            onClick={() => setShowCompleted(s => !s)}
+            className={`w-full sm:w-auto justify-center flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl border text-[12px] font-medium transition-colors ${showCompleted ? 'border-foreground/40 bg-secondary text-foreground' : 'border-border bg-secondary text-muted-foreground hover:text-foreground'}`}
+            aria-pressed={showCompleted}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" /> Completed ({completedActivities.length})
+          </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showCompleted && (
+          <motion.section
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="space-y-3"
+          >
+            <div className="flex items-center justify-between gap-3 px-1">
+              <div>
+                <h2 className="text-[12px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Completed</h2>
+                <p className="text-[11px] text-muted-foreground mt-1">Finished task packages stay here for reference.</p>
+              </div>
+              <span className="text-[11px] font-mono text-muted-foreground shrink-0">{completedActivities.length} packages</span>
+            </div>
+            {completedActivities.length > 0 ? (
+              <div className="space-y-3">
+                {completedActivities.map(activity => renderActivityCard(activity, true))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-border bg-secondary p-5 text-center text-[12px] text-muted-foreground">
+                Completed task packages will appear here.
+              </div>
+            )}
+          </motion.section>
+        )}
+      </AnimatePresence>
 
       {/* Syllabus import review panel */}
       <AnimatePresence>
         {importStep === 'reviewing' && importDraft.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="rounded-2xl border border-border bg-secondary p-5 space-y-4"
+            className="rounded-2xl border border-border bg-secondary p-3.5 sm:p-5 space-y-4"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-start gap-3 justify-between">
               <div>
                 <h3 className="text-[13px] font-semibold text-foreground">Review imported work breakdown</h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">{importDraft.length} activities detected — edit before saving</p>
@@ -309,12 +584,12 @@ export default function ActivitiesView() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 pt-1">
-              <button onClick={saveImportedActivities} disabled={importStep === 'saving'}
+            <div className="flex flex-col-reverse sm:flex-row gap-2 pt-1">
+              <button onClick={saveImportedActivities}
                 className="flex-1 py-2 rounded-xl bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[12px] font-semibold hover:bg-accent transition-colors disabled:opacity-40"
-              >{importStep === 'saving' ? 'Saving…' : `Save ${importDraft.length} activities`}</button>
+              >Save {importDraft.length} activities</button>
               <button onClick={() => { setImportStep('idle'); setImportDraft([]); }}
-                className="px-4 py-2 rounded-xl border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
               >Discard</button>
             </div>
           </motion.div>
@@ -323,7 +598,7 @@ export default function ActivitiesView() {
 
       {/* Overall progress banner — only show if active activities exist */}
       {activeActivities.length > 0 && (
-        <div className="rounded-2xl border border-border bg-secondary p-5">
+        <div className="rounded-2xl border border-border bg-secondary p-3.5 sm:p-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Active Task Package Progress</span>
             <span className="text-[12px] font-mono text-foreground">{overall}%</span>
@@ -331,34 +606,6 @@ export default function ActivitiesView() {
           <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
             <div className="h-full bg-foreground transition-all duration-300" style={{ width: `${overall}%` }} />
           </div>
-
-          {bySubject.length > 0 && (
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {bySubject.map(s => {
-                const subjectColor = getSubjectColor(s.subject);
-                return (
-                  <div key={s.subject} className="rounded-xl border border-border bg-background/50 p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: subjectColor }}
-                        />
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{s.subject}</span>
-                      </div>
-                      <span className="text-[11px] font-mono text-foreground">{s.progress}%</span>
-                    </div>
-                    <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
-                      <div
-                        className="h-full transition-all duration-300"
-                        style={{ width: `${s.progress}%`, backgroundColor: subjectColor, opacity: 0.75 }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
 
@@ -393,18 +640,18 @@ export default function ActivitiesView() {
               className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
             />
             <div className="space-y-2 pt-1">
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   placeholder="Add breakdown task to checklist…"
                   value={taskInput}
                   onChange={e => setTaskInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDraftTask(); } }}
-                  className="flex-1 bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
+                  className="min-w-0 flex-1 bg-secondary border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
                 />
                 <button
                   type="button"
                   onClick={addDraftTask}
-                  className="px-3 py-1.5 rounded-xl border border-border text-[12px] text-foreground hover:bg-secondary transition-colors"
+                  className="w-full sm:w-auto px-3 py-2 rounded-xl border border-border text-[12px] text-foreground hover:bg-secondary transition-colors"
                 >
                   Add Task
                 </button>
@@ -422,7 +669,7 @@ export default function ActivitiesView() {
                 </ul>
               )}
             </div>
-            <div className="flex gap-2 pt-2">
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
               <button
                 onClick={createActivityHandler}
                 disabled={!title.trim()}
@@ -432,7 +679,7 @@ export default function ActivitiesView() {
               </button>
               <button
                 onClick={() => setShowForm(false)}
-                className="px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
+                className="w-full sm:w-auto px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
               >
                 Cancel
               </button>
@@ -446,7 +693,7 @@ export default function ActivitiesView() {
         {loading ? (
           <p className="text-[12px] text-muted-foreground font-mono">Loading task packages…</p>
         ) : filteredActivities.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-secondary p-10 text-center">
+          <div className="rounded-2xl border border-border bg-secondary p-6 sm:p-10 text-center">
             <ListChecks className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
             <p className="text-[14px] font-medium text-foreground mb-1">Track your study action plans here</p>
             <p className="text-[12px] text-muted-foreground mb-4 max-w-xs mx-auto">
@@ -454,141 +701,23 @@ export default function ActivitiesView() {
             </p>
             <button
               onClick={() => setShowForm(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+              className="w-full sm:w-auto inline-flex justify-center items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
             >
               <Plus className="h-3.5 w-3.5" /> Create your first task package
             </button>
           </div>
         ) : (
-          filteredActivities.map(a => {
-            const list = itemsByActivity[a.id] || [];
-            const pct = computeProgress(a.id);
-            const isCompleted = pct === 100 && list.length > 0;
-            const open = expanded === a.id;
-            return (
-              <div key={a.id} className={`rounded-2xl border bg-secondary overflow-hidden transition-all ${isCompleted ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'border-border'}`}>
-                <button
-                  onClick={() => setExpanded(open ? null : a.id)}
-                  className="w-full p-4 text-left hover:bg-secondary transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`font-semibold text-[14px] ${isCompleted ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{a.title}</span>
-                        {isCompleted && (
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> 100% Done
-                          </span>
-                        )}
-                      </div>
-                      {a.subject && (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: getSubjectColor(a.subject) }}
-                          />
-                          <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">
-                            {a.subject}
-                          </div>
-                        </div>
-                      )}
-                      {a.description && (
-                        <div className="text-[12px] text-muted-foreground mt-1">
-                          {a.description}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] font-mono text-muted-foreground">
-                        {list.filter(i => i.done).length}/{list.length}
-                      </span>
-                      {open ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-1 bg-secondary rounded-full overflow-hidden">
-                      <div
-                        className="h-full transition-all duration-300"
-                        style={{
-                          width: `${pct}%`,
-                          backgroundColor: a.subject ? getSubjectColor(a.subject) : 'hsl(var(--foreground))',
-                          opacity: 0.7,
-                        }}
-                      />
-                    </div>
-                    <span className="text-[10px] font-mono w-8 text-right text-muted-foreground">{pct}%</span>
-                  </div>
-                </button>
-                <AnimatePresence>
-                  {open && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-border overflow-hidden bg-secondary"
-                    >
-                      <div className="p-4 space-y-2">
-                        {list.map(item => (
-                          <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border bg-card/60 px-3.5 py-2.5 hover:border-border transition-all">
-                            <button
-                              onClick={() => toggleItem(item)}
-                              className={`h-5 w-5 rounded-md flex items-center justify-center border-2 transition-all shrink-0 cursor-pointer ${
-                                item.done
-                                  ? 'bg-primary border-primary text-primary-foreground shadow-sm'
-                                  : 'border-muted-foreground/40 hover:border-primary bg-background/80'
-                              }`}
-                              title={item.done ? "Mark incomplete" : "Mark completed"}
-                            >
-                              {item.done ? (
-                                <Check className="h-3.5 w-3.5 stroke-[3]" />
-                              ) : (
-                                <div className="w-1.5 h-1.5 rounded-sm bg-transparent hover:bg-primary/30" />
-                              )}
-                            </button>
-                            <span className={`flex-1 text-[13px] leading-snug ${item.done ? 'line-through text-muted-foreground font-normal' : 'text-foreground font-medium'}`}>
-                              {cleanTaskLabel(item.label)}
-                            </span>
-                            <button onClick={() => deleteItem(item)} className="text-muted-foreground/50 hover:text-destructive p-1 rounded transition-colors">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                        <div className="flex gap-2 pt-2">
-                          <input
-                            placeholder="Add a task…"
-                            value={newTaskByActivity[a.id] || ''}
-                            onChange={e => setNewTaskByActivity(p => ({ ...p, [a.id]: e.target.value }))}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItemToActivity(a.id); } }}
-                            className="flex-1 bg-secondary border border-border rounded-xl px-3 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground outline-none focus:border-border transition-colors"
-                          />
-                          <button
-                            onClick={() => addItemToActivity(a.id)}
-                            className="px-3 py-1.5 rounded-xl border border-border text-[12px] text-foreground hover:bg-secondary transition-colors"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        <div className="pt-2 flex justify-end">
-                          <button
-                            onClick={() => deleteActivityHandler(a.id)}
-                            className="text-[11px] font-mono text-destructive/60 hover:text-destructive flex items-center gap-1 transition-colors"
-                          >
-                            <Trash2 className="h-3 w-3" /> Delete activity
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            );
-          })
+          filteredActivities.map(activity => (
+            <div key={activity.id} className="space-y-3">
+              <AnimatePresence initial={false}>
+                {renderCompletionPrompt(activity)}
+              </AnimatePresence>
+              {renderActivityCard(activity)}
+            </div>
+          ))
         )}
       </div>
+
     </div>
   );
 }

@@ -1061,11 +1061,11 @@ export default function FolderView({
               <button onClick={toggleSelectAll} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-background">
                 <Check className="h-3.5 w-3.5" /> {allVisibleSelected ? 'Clear' : 'All'}
               </button>
-              <button onClick={archiveSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors">
+              <button onClick={archiveSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/70 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
                 <Archive className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Archive
               </button>
-              <button onClick={deleteSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40">
-                <Trash2 className="h-3.5 w-3.5" /> Delete
+              <button onClick={deleteSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/70 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                <Trash2 className="h-3.5 w-3.5 text-destructive" /> Delete
               </button>
               <button onClick={() => { setSelectMode(false); setSelectedFolderIds(new Set()); }} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground">
                 <X className="h-3.5 w-3.5" />

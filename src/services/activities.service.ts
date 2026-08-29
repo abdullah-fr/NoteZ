@@ -7,6 +7,7 @@ export interface Activity {
   description: string | null;
   subject: string | null;
   progress: number;
+  completed: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -17,6 +18,20 @@ export interface ChecklistItem {
   label: string;
   done: boolean;
   position: number;
+}
+
+export interface GeneratedActivityDraft {
+  title: string;
+  subject: string;
+  description: string;
+  tasks: string[];
+}
+
+interface RawGeneratedActivity {
+  title?: unknown;
+  subject?: unknown;
+  description?: unknown;
+  tasks?: unknown;
 }
 
 export async function fetchActivities(userId: string): Promise<Activity[]> {
@@ -60,6 +75,24 @@ export async function updateActivityProgress(activityId: string, progress: numbe
   if (error) throw error;
 }
 
+export async function updateActivityCompleted(activityId: string, completed: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('activities')
+    .update({ completed })
+    .eq('id', activityId);
+  if (!error) return;
+
+  // A remote project that was created before the completion migration returns
+  // HTTP 400 with PGRST204 when PostgREST cannot find this column. Surface a
+  // useful deployment error instead of hiding the actual cause behind a
+  // generic toast.
+  if (error.code === 'PGRST204' || /completed.*column|column.*completed|schema cache/i.test(error.message)) {
+    throw new Error('Activity completion is not enabled in the database yet. Apply the activity completion migration and try again.');
+  }
+
+  throw error;
+}
+
 export async function deleteActivity(activityId: string): Promise<void> {
   const { error } = await supabase.from('activities').delete().eq('id', activityId);
   if (error) throw error;
@@ -91,6 +124,14 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
   const { error } = await supabase
     .from('activity_checklist_items')
     .update({ done })
+    .eq('id', itemId);
+  if (error) throw error;
+}
+
+export async function updateChecklistItemLabel(itemId: string, label: string): Promise<void> {
+  const { error } = await supabase
+    .from('activity_checklist_items')
+    .update({ label })
     .eq('id', itemId);
   if (error) throw error;
 }
@@ -133,19 +174,27 @@ export async function generateActivitiesFromDoc(
     const drafts = data?.activities;
     if (Array.isArray(drafts) && drafts.length > 0) {
       await syncCreditsAfterRequest(effectiveUserId);
-      return drafts.map((d: any) => ({
-        title: d.title || 'Activity Package',
-        subject: d.subject || 'General',
-        description: d.description || 'Document requirements breakdown',
-        tasks: Array.isArray(d.tasks) ? d.tasks.filter(Boolean).map(cleanTaskLabel) : ['Review document requirements'],
-      }));
+      return drafts.map((draft: unknown) => {
+        const d = (draft && typeof draft === 'object' ? draft : {}) as RawGeneratedActivity;
+        const subject = typeof d.subject === 'string' && d.subject.trim() ? d.subject.trim() : 'General';
+        const generatedTitle = typeof d.title === 'string' && d.title.trim() ? d.title.trim() : 'Activity Package';
+        // The source topic is the activity heading; generated explanations belong in the description/tasks.
+        const title = subject !== 'General' ? subject : generatedTitle;
+        const description = typeof d.description === 'string' && d.description.trim()
+          ? d.description.trim()
+          : 'Document requirements breakdown';
+        const tasks = Array.isArray(d.tasks)
+          ? d.tasks.filter((task): task is string => typeof task === 'string' && Boolean(task.trim())).map(cleanTaskLabel)
+          : ['Review document requirements'];
+        return { title, subject, description, tasks };
+      });
     }
 
     throw new Error('No activities returned from document breakdown service.');
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Activities service error:', err);
     await reportCreditFunctionError(err);
     await syncCreditsAfterRequest(effectiveUserId);
-    throw new Error(err?.message || 'Unable to analyze document and generate activities. Please try again.');
+    throw new Error(err instanceof Error ? err.message : 'Unable to analyze document and generate activities. Please try again.');
   }
 }
