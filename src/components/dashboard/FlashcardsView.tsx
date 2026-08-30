@@ -468,11 +468,7 @@ export default function FlashcardsView() {
                           <div
                             key={note.id}
                             onClick={() => toggleNoteSelection(note.id)}
-                            className={`flex items-center justify-between p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${
-                              isChecked
-                                ? 'border-primary/50 bg-primary/10 text-foreground font-medium'
-                                : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                            }`}
+                            className="flex items-center justify-between p-1.5 rounded-lg border border-border/60 bg-card/60 text-[11px] text-foreground cursor-pointer transition-colors hover:bg-secondary"
                           >
                             <div className="flex items-center gap-1.5 min-w-0 pr-2">
                               {isChecked ? (
@@ -708,10 +704,10 @@ export default function FlashcardsView() {
             <button
               onClick={handleDelete}
               disabled={queue.length === 0}
-              className="h-9 w-9 rounded-xl border border-border bg-secondary hover:bg-destructive/10 hover:text-destructive flex items-center justify-center text-muted-foreground transition-colors disabled:opacity-30"
+              className="h-9 w-9 rounded-xl border border-border bg-secondary hover:bg-secondary/80 flex items-center justify-center text-foreground transition-colors disabled:opacity-30"
               title="Delete Card"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
             </button>
           </div>
 

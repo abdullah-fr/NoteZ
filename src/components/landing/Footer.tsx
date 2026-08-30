@@ -4,7 +4,6 @@ import { Sparkles, Twitter, Github, Linkedin } from 'lucide-react';
 const links = {
   Product: [
     { label: 'Features', href: '/#features' },
-    { label: 'How it works', href: '/#how-it-works' },
     { label: 'Pricing', href: '/pricing' },
   ],
   Company: [

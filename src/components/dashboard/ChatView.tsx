@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,8 +7,8 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   createConversation, updateConversation,
   uploadChatFile, createSourceRecord, invokeProcessSource,
-  getStreamingToken, subscribeToSourceUpdates,
-  type ChatMessage, type AttachedSource,
+  getStreamingToken, subscribeToSourceUpdates, fetchExamHistory,
+  type ChatMessage, type AttachedSource, type ExamHistoryEntry,
 } from '@/services';
 import { toast } from '@/hooks/use-toast';
 import { useUpgradeModal } from '@/hooks/use-upgrade-modal';
@@ -107,6 +107,8 @@ const TYPEWRITER_HINTS = [
 
 const ACCEPT    = '.pdf,.doc,.docx,.pptx,.png,.jpg,.jpeg';
 const ACCEPT_RE = /\.(pdf|docx?|pptx?|png|jpe?g)$/i;
+const MAX_COMPOSER_TEXTAREA_HEIGHT = 160;
+const IDLE_VOLUME_BARS = Array.from({ length: 12 }, () => 0.14);
 function detectKind(n: string): 'pdf' | 'docx' | 'txt' {
   if (n.toLowerCase().endsWith('.pdf')) return 'pdf';
   if (/\.(png|jpe?g)$/.test(n.toLowerCase())) return 'txt';
@@ -156,6 +158,72 @@ function NoteZBrandIcon({ className = "h-4 w-4" }: { className?: string }) {
 function isSimpleMessage(msg: string): boolean {
   const simple = /^(h(i|ello|ey|owdy)|yo|sup|thanks|thank you|ok|okay|yes|no|cool|nice|great|good|bye|goodbye|morning|evening|night|what'?s up|how are you)[!?.\s]*$/i;
   return simple.test(msg.trim()) || msg.trim().length < 12;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getHistoryQuestions(value: unknown): string[] {
+  let parsed: unknown = value;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap(item => {
+    if (!isRecord(item) || typeof item.question !== 'string') return [];
+    const question = item.question.trim();
+    return question ? [question] : [];
+  });
+}
+
+function buildExamHistoryContext(history: ExamHistoryEntry[]): string {
+  if (history.length === 0) {
+    return `
+
+[QUIZ/EXAM HISTORY]
+No completed quiz or exam results are currently available in the user's NoteZ workspace. Do not ask the user to paste missed questions; explain that there is no saved history to analyze yet and provide a useful starter plan based on that limitation.`;
+  }
+
+  const entries: string[] = [];
+  let characterCount = 0;
+  const budget = 9000;
+
+  for (const exam of history) {
+    const total = Number.isFinite(exam.total_questions) ? exam.total_questions : 0;
+    const score = Number.isFinite(exam.score) ? exam.score : 0;
+    const percent = total > 0 ? Math.round((score / total) * 100) : 0;
+    const questions = getHistoryQuestions(exam.questions)
+      .slice(0, 8)
+      .map(question => `- ${question.slice(0, 240)}`)
+      .join('\n');
+    const entry = [
+      `Exam: ${exam.subject || 'Untitled exam'}`,
+      `Score: ${score}/${total} (${percent}%)` ,
+      `Difficulty: ${exam.difficulty || 'unknown'}`,
+      `Completed: ${exam.created_at || 'unknown'}`,
+      questions ? `Question topics represented in this attempt:\n${questions}` : '',
+    ].filter(Boolean).join('\n');
+
+    if (characterCount + entry.length > budget) break;
+    entries.push(entry);
+    characterCount += entry.length;
+  }
+
+  return `
+
+[QUIZ/EXAM HISTORY — USE THIS DATA DIRECTLY]
+The following saved NoteZ exam results belong to the current user. Use the scores to identify the weakest subjects and use the question topics to make the plan specific. The saved records contain performance totals and generated question topics, but not the user's individual selected answers, so do not claim to know an exact missed answer.
+
+${entries.join('\n\n')}
+
+[STUDY-PLAN INSTRUCTION]
+Generate the focused study plan from this history. Do not ask the user to paste specific missed questions or topics when the history above is available. Mention the weakest evidence-based areas, explain why they are prioritized, and give concrete study actions and a review schedule.`;
 }
 
 /* ─── main component ─── */
@@ -215,7 +283,7 @@ function ChatViewInner() {
   const isListeningRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [volumeBars, setVolumeBars] = useState<number[]>([0.3, 0.5, 0.4, 0.7, 0.5, 0.8, 0.6, 0.4, 0.7, 0.5, 0.8, 0.4]);
+  const [volumeBars, setVolumeBars] = useState<number[]>(IDLE_VOLUME_BARS);
   
   const recognitionRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -229,6 +297,7 @@ function ChatViewInner() {
   const stopAudioTracks = useCallback(() => {
     isListeningRef.current = false;
     setIsListening(false);
+    setVolumeBars(IDLE_VOLUME_BARS);
     
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
@@ -285,6 +354,11 @@ function ChatViewInner() {
       // 1. Acquire mic media stream for live equalizer animation
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
+      // Enable the animation loop before its first frame. The loop exits when
+      // this ref is false, so setting it afterwards would stop it immediately.
+      isListeningRef.current = true;
+      setIsListening(true);
+      setVolumeBars(IDLE_VOLUME_BARS);
 
       // 2. Set up AudioContext real live volume equalizer bars
       try {
@@ -292,22 +366,40 @@ function ChatViewInner() {
         if (AudioCtx) {
           const audioCtx = new AudioCtx();
           audioCtxRef.current = audioCtx;
+          if (audioCtx.state === 'suspended') void audioCtx.resume().catch(() => undefined);
           const source = audioCtx.createMediaStreamSource(stream);
           const analyser = audioCtx.createAnalyser();
-          analyser.fftSize = 32;
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.75;
           source.connect(analyser);
 
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const timeData = new Uint8Array(analyser.fftSize);
+          const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+          let smoothedLevel = 0;
           const updateVolumeBars = () => {
             if (!isListeningRef.current) return;
-            analyser.getByteFrequencyData(dataArray);
-            
-            const newBars: number[] = [];
-            for (let i = 0; i < 12; i++) {
-              const val = dataArray[i % dataArray.length] || 0;
-              const norm = Math.max(0.2, Math.min(1.0, val / 140));
-              newBars.push(norm);
+            analyser.getByteTimeDomainData(timeData);
+            analyser.getByteFrequencyData(frequencyData);
+
+            // RMS detects whether the microphone is actually receiving a
+            // voice signal; frequency bands give each bar its own movement.
+            let sumSquares = 0;
+            for (const sample of timeData) {
+              const centered = (sample - 128) / 128;
+              sumSquares += centered * centered;
             }
+            const rms = Math.sqrt(sumSquares / timeData.length);
+            const voiceLevel = Math.max(0, Math.min(1, (rms - 0.012) * 9));
+            smoothedLevel = smoothedLevel * 0.78 + voiceLevel * 0.22;
+
+            const newBars = Array.from({ length: 12 }, (_, index) => {
+              const start = Math.floor((index / 12) * frequencyData.length);
+              const end = Math.max(start + 1, Math.floor(((index + 1) / 12) * frequencyData.length));
+              let bandTotal = 0;
+              for (let i = start; i < end; i++) bandTotal += frequencyData[i] || 0;
+              const bandLevel = bandTotal / ((end - start) * 255);
+              return Math.max(0.14, Math.min(1, 0.14 + smoothedLevel * (0.7 + bandLevel * 1.4)));
+            });
             setVolumeBars(newBars);
             animFrameRef.current = requestAnimationFrame(updateVolumeBars);
           };
@@ -359,9 +451,6 @@ function ChatViewInner() {
 
       recognitionRef.current = recognition;
       recognition.start();
-
-      isListeningRef.current = true;
-      setIsListening(true);
     } catch (micErr) {
       console.error('Microphone access error:', micErr);
       toast({
@@ -392,14 +481,37 @@ function ChatViewInner() {
   const scopeRef    = useRef<HTMLDivElement>(null);
   const thinkingRef = useRef<HTMLDivElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
+  const chatRequestIdRef = useRef(0);
+
+  const resizeComposerTextarea = useCallback((element?: HTMLTextAreaElement | null) => {
+    const textarea = element ?? textareaRef.current;
+    if (!textarea) return;
+
+    // Measure from the natural content height, then cap the composer so long
+    // prompts become internally scrollable instead of taking over the page.
+    textarea.style.height = 'auto';
+    const contentHeight = textarea.scrollHeight;
+    textarea.style.height = `${Math.min(contentHeight, MAX_COMPOSER_TEXTAREA_HEIGHT)}px`;
+    textarea.style.overflowY = contentHeight > MAX_COMPOSER_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeComposerTextarea();
+  }, [input, resizeComposerTextarea]);
 
   const activeCard  = AGENT_CARDS.find(c => c.id === activeCardId) ?? null;
   const typewriterText = useTypewriter(TYPEWRITER_HINTS);
   const activeMode  = mode ? (MODES.find(m => m.id === mode) ?? null) : null;
-  const inChat      = messages.length > 0 || !!streaming;
+  const inChat      = messages.length > 0 || !!streaming || sending;
+  const showHomePlaceholder = !inChat && !input;
   const scopeLabel  = selectedNote
     ? `${selectedFolder?.name} / ${selectedNote.title}`
     : (selectedFolder?.name ?? 'Ask this Folder / Note');
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => textareaRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   /* ── Auto-scroll to bottom like ChatGPT ── */
   const scrollToBottom = useCallback(() => {
@@ -489,12 +601,20 @@ function ChatViewInner() {
 
   /* ── "New Chat" resets all messages and state ── */
   function newConversation() {
-    stopListening();
+    chatRequestIdRef.current += 1;
+    stopAudioTracks();
+    setIsTranscribing(false);
     setActiveId(null);
     setMessages([]);
     setStreaming('');
+    setSending(false);
+    setThinkingStage(null);
+    setLastSentMsg('');
     setAttached(null);
     setMode(null);
+    setActiveCardId(null);
+    setScopeOpen(false);
+    setThinkingOpen(false);
     setInput('');
     setTimeout(() => textareaRef.current?.focus(), 50);
   }
@@ -561,6 +681,9 @@ function ChatViewInner() {
     }
 
     if (!msg || !user || sending) return;
+    const requestId = ++chatRequestIdRef.current;
+    const quizStudyPlanRequested = activeCard?.id === 'studyplan'
+      || (/\bstudy plan\b/i.test(msg) && /\b(quiz|exam|assessment)\b/i.test(msg));
     if (isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
@@ -578,13 +701,16 @@ function ChatViewInner() {
           ? `[Folder: ${selectedFolder.name}] `
           : '';
         const data = await createConversation(user.id, effectiveMode, prefix + msg.slice(0, 60), attached?.id);
+        if (requestId !== chatRequestIdRef.current) return;
         convId = data.id;
         setActiveId(convId);
       } else {
+        if (requestId !== chatRequestIdRef.current) return;
         await updateConversation(convId, { mode: effectiveMode, source_id: attached?.id ?? null });
       }
 
       const userMsgObj: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: msg, created_at: new Date().toISOString() };
+      if (requestId !== chatRequestIdRef.current) return;
       setMessages(prev => [...prev, userMsgObj]);
 
       let folderContext = '';
@@ -621,6 +747,20 @@ function ChatViewInner() {
         ? `\n\n[CONTEXT SCOPE: ${scopeTitle}]${folderContext}`
         : '';
 
+      let quizHistoryContext = '';
+      if (quizStudyPlanRequested) {
+        try {
+          const examHistory = await fetchExamHistory(user.id);
+          quizHistoryContext = buildExamHistoryContext(examHistory);
+        } catch (historyError) {
+          console.warn('Could not load quiz history for AI study plan:', historyError);
+          quizHistoryContext = `
+
+[QUIZ/EXAM HISTORY]
+The workspace could not load saved exam history for this request. Do not ask the user to paste missed questions; acknowledge that the saved history was unavailable and provide a useful general study-plan framework.`;
+        }
+      }
+
       // Chat prompt construction is handled by the ai-chat Edge Function.
 
       let rawText = '';
@@ -628,9 +768,10 @@ function ChatViewInner() {
         body: {
           conversationId: convId,
           message: msg,
-          context: scopeHint,
+          context: `${scopeHint}${quizHistoryContext}`,
           mode: effectiveMode,
           sourceId: attached?.id,
+          scope: scopeTitle,
         },
       });
       if (edgeErr) throw edgeErr;
@@ -643,8 +784,10 @@ function ChatViewInner() {
       // Add assistant message (with guaranteed string fallback)
       const responseContent = rawText;
 
+      if (requestId !== chatRequestIdRef.current) return;
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: responseContent, created_at: new Date().toISOString() }]);
     } catch (e: unknown) {
+      if (requestId !== chatRequestIdRef.current) return;
       const creditLimit = await reportCreditFunctionError(e);
       await syncCreditsAfterRequest(user?.id);
       // The global credit dialog is the complete response for exhausted
@@ -654,9 +797,11 @@ function ChatViewInner() {
         toast({ title: 'Error sending message', description: message, variant: 'destructive' });
       }
     } finally {
-      setSending(false);
-      setStreaming('');
-      setThinkingStage(null);
+      if (requestId === chatRequestIdRef.current) {
+        setSending(false);
+        setStreaming('');
+        setThinkingStage(null);
+      }
     }
   }
 
@@ -1139,7 +1284,7 @@ function ChatViewInner() {
                       </motion.div>
 
                       {/* Real live audio volume equalizer bars */}
-                      <div className="flex items-center gap-[3px] h-8">
+                      <div className="flex items-center gap-[3px] h-8" data-testid="voice-bars">
                         {volumeBars.map((vol, i) => (
                           <motion.span
                             key={i}
@@ -1187,7 +1332,9 @@ function ChatViewInner() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
-                    className="flex items-center gap-2 w-full"
+                    // Keep attachment, microphone, and send controls anchored to
+                    // the bottom edge while the textarea grows upward.
+                    className="flex items-end gap-2 w-full"
                   >
                     {/* + Attach button */}
                     <input ref={fileRef} type="file" className="hidden" accept={ACCEPT} onChange={e => handleFiles(e.target.files)} />
@@ -1268,12 +1415,13 @@ function ChatViewInner() {
                     </AnimatePresence>
 
                     {/* Textarea + typewriter overlay */}
-                    <div className="relative flex-1 min-w-0 flex items-center">
+                    <div className="relative flex-1 min-w-0 flex items-end">
                       <textarea
                         ref={textareaRef}
                         value={input}
                         onChange={e => {
                           setInput(e.target.value);
+                          resizeComposerTextarea(e.currentTarget);
                         }}
                         onKeyDown={onKey}
                         onFocus={() => setInputFocused(true)}
@@ -1282,16 +1430,21 @@ function ChatViewInner() {
                         className="w-full bg-transparent text-[12.5px] sm:text-[13.5px] text-foreground placeholder-transparent resize-none focus:outline-none leading-relaxed py-0.5 sm:py-1"
                       />
 
-                      {/* Typewriter ghost — only show when not focused AND no input */}
-                      {!input && !inputFocused && (
+                      {/* Home-only rotating suggestions; active conversations use a neutral follow-up hint. */}
+                      {showHomePlaceholder && !inputFocused && (
                         <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/60">
                           <span className="truncate">{typewriterText}</span>
                           <span className="inline-block w-[1.5px] h-[13px] bg-muted-foreground ml-[2px] align-middle animate-pulse shrink-0" />
                         </div>
                       )}
-                      {!input && inputFocused && (
+                      {showHomePlaceholder && inputFocused && (
                         <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/40">
                           Type your question…
+                        </div>
+                      )}
+                      {!showHomePlaceholder && !input && (
+                        <div className="absolute inset-0 flex items-center pointer-events-none select-none text-[12.5px] sm:text-[13.5px] text-muted-foreground/40">
+                          Ask a follow-up question…
                         </div>
                       )}
                     </div>
@@ -1611,8 +1764,9 @@ function Bubble({
 
   const CopyBtn = (
     <button
+      type="button"
       onClick={handleCopy}
-      className="p-1.5 rounded-lg border border-border/50 bg-secondary/40 hover:bg-secondary text-muted-foreground hover:text-foreground transition-all flex items-center justify-center"
+      className="p-1.5 rounded-md hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-all flex items-center justify-center"
       title={copied ? "Copied to clipboard!" : "Copy response"}
       aria-label="Copy response"
     >
@@ -1642,6 +1796,7 @@ function Bubble({
                 </span>
               ) : null}
               <button
+                type="button"
                 onClick={handleCopy}
                 className="p-1 rounded-md hover:bg-card/70 text-muted-foreground/60 hover:text-foreground transition-all flex items-center justify-center"
                 title={copied ? "Copied to clipboard!" : "Copy prompt"}
@@ -1674,9 +1829,9 @@ function Bubble({
             <Markdown text={cleanText + (streaming ? ' ▍' : '')} />
           </div>
 
-          {/* Bottom Action Bar — Copy button at the end of response */}
+          {/* Bottom Action Bar — response actions stay below the answer */}
           {!streaming && (
-            <div className="flex items-center gap-2 pt-2 border-t border-border/40 mt-3 text-muted-foreground">
+            <div className="flex items-center gap-1.5 pt-1 mt-2 text-muted-foreground" aria-label="Assistant response actions" data-testid="assistant-response-actions">
               {CopyBtn}
             </div>
           )}

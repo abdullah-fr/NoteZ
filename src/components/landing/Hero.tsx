@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Sparkles, BookOpen, Brain, Zap, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Sparkles, FolderOpen, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export function Hero() {
@@ -59,7 +59,7 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.2 }}
             className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed"
           >
-            Turn any subject into flashcards, quizzes, and exams — and actually retain it with zero cognitive friction.
+            Create folders, write in a rich editor, and turn your own notes into flashcards, quizzes, and exams. Keep the whole learning loop in one calm workspace.
           </motion.p>
 
           {/* CTA Buttons */}
@@ -91,11 +91,11 @@ export function Hero() {
               transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
             >
               <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <BookOpen className="h-5 w-5 sm:h-6 sm:w-6" />
+                <FolderOpen className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               <div className="text-left hidden sm:block">
-                <p className="text-xs font-semibold text-foreground">Smart Flashcards</p>
-                <p className="text-[11px] text-muted-foreground">Spaced repetition</p>
+                <p className="text-xs font-semibold text-foreground">Folders + Rich Editor</p>
+                <p className="text-[11px] text-muted-foreground">Keep every note in context</p>
               </div>
             </motion.div>
 
@@ -105,11 +105,11 @@ export function Hero() {
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
             >
               <div className="p-2 rounded-xl bg-notez-violet/20 text-notez-violet">
-                <Brain className="h-5 w-5 sm:h-6 sm:w-6" />
+                <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               <div className="text-left hidden sm:block">
-                <p className="text-xs font-semibold text-foreground">Adaptive AI Exams</p>
-                <p className="text-[11px] text-muted-foreground">Real-time feedback</p>
+                <p className="text-xs font-semibold text-foreground">NoteZ AI Chat</p>
+                <p className="text-[11px] text-muted-foreground">Ask your study material</p>
               </div>
             </motion.div>
           </div>

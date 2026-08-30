@@ -14,8 +14,9 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import {
   $getSelection, $isRangeSelection, FORMAT_TEXT_COMMAND, FORMAT_ELEMENT_COMMAND,
   $createParagraphNode, COMMAND_PRIORITY_NORMAL, UNDO_COMMAND, REDO_COMMAND,
-  CAN_UNDO_COMMAND, CAN_REDO_COMMAND,
+  CAN_UNDO_COMMAND, CAN_REDO_COMMAND, $isTextNode,
 } from 'lexical';
+import type { LexicalNode } from 'lexical';
 import { $setBlocksType, $patchStyleText } from '@lexical/selection';
 import { $createHeadingNode, HeadingNode, $createQuoteNode, QuoteNode } from '@lexical/rich-text';
 import {
@@ -24,6 +25,7 @@ import {
 } from '@lexical/list';
 import { CodeNode, $createCodeNode } from '@lexical/code';
 import { LinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
+import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import {
   $generateHtmlFromNodes, $generateNodesFromDOM,
 } from '@lexical/html';
@@ -36,6 +38,62 @@ import {
 } from 'lucide-react';
 import { ClickableLinkPlugin } from '@lexical/react/LexicalClickableLinkPlugin';
 import { htmlToPlainText } from './note-utils';
+
+type InlineTextFormat = 'bold' | 'italic' | 'underline' | 'strikethrough';
+
+function normalizeAiOutput(value: string): string {
+  return value
+    .replace(/<br\s*\/?>(?=\s*)/gi, '\n')
+    .replace(/<\/(?:p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/(\*{1,3}|_{1,3})(?=\S)([\s\S]*?\S)\1/g, '$2')
+    .replace(/\*{2,3}|_{2,3}/g, '')
+    .replace(/^\s*(?:[*+-]|•)\s+/gm, '• ')
+    .trim();
+}
+
+function importInlineElement(element: HTMLElement, format?: InlineTextFormat, styleOverride?: string) {
+  const style = styleOverride || element.getAttribute('style') || '';
+  return {
+    node: null,
+    forChild: (lexicalNode: LexicalNode) => {
+      if (!$isTextNode(lexicalNode)) return lexicalNode;
+      if (format && !lexicalNode.hasFormat(format)) lexicalNode.toggleFormat(format);
+      if (style) {
+        const existingStyle = lexicalNode.getStyle();
+        lexicalNode.setStyle([existingStyle, style].filter(Boolean).join('; '));
+      }
+      return lexicalNode;
+    },
+  };
+}
+
+const preservedHtmlImport = {
+  span: () => ({
+    conversion: (element: HTMLElement) => importInlineElement(element),
+    priority: 4 as const,
+  }),
+  font: () => ({
+    conversion: (element: HTMLElement) => {
+      const style = [
+        element.getAttribute('color') ? `color: ${element.getAttribute('color')}` : '',
+        element.getAttribute('face') ? `font-family: ${element.getAttribute('face')}` : '',
+        element.getAttribute('size') ? `font-size: ${element.getAttribute('size')}pt` : '',
+        element.getAttribute('style') || '',
+      ].filter(Boolean).join('; ');
+      return importInlineElement(element, undefined, style);
+    },
+    priority: 4 as const,
+  }),
+  strong: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'bold'), priority: 4 as const }),
+  b: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'bold'), priority: 4 as const }),
+  em: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'italic'), priority: 4 as const }),
+  i: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'italic'), priority: 4 as const }),
+  u: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'underline'), priority: 4 as const }),
+  s: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'strikethrough'), priority: 4 as const }),
+  del: () => ({ conversion: (element: HTMLElement) => importInlineElement(element, 'strikethrough'), priority: 4 as const }),
+  mark: () => ({ conversion: (element: HTMLElement) => importInlineElement(element), priority: 4 as const }),
+};
 
 /* ── Lexical Rich Theme ── */
 const theme = {
@@ -60,6 +118,10 @@ const theme = {
   code: 'block font-mono text-[12px] bg-slate-900 text-emerald-400 border border-border/80 rounded-xl p-3.5 my-2 leading-relaxed shadow-inner overflow-x-auto selection:bg-primary/30',
   paragraph: 'text-[13px] leading-relaxed text-foreground/90 my-1 min-h-[1.5em]',
   link: 'text-blue-500 font-medium underline underline-offset-2 hover:text-blue-600 cursor-pointer',
+  table: 'note-editor-table',
+  tableCell: 'note-editor-table-cell',
+  tableCellHeader: 'note-editor-table-cell-header',
+  tableRow: 'note-editor-table-row',
 };
 
 const FONTS = [
@@ -94,6 +156,91 @@ interface OutlineHeading {
   id: string;
   text: string;
   level: number;
+}
+
+const OUTLINE_ELEMENT_SELECTOR = 'h1, h2, h3, h4, h5, h6, p';
+
+function getNormalizedElementText(element: Element): string {
+  return (element.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function isBoldTextNode(node: Node, inheritedBold = false): boolean {
+  if (node.nodeType !== Node.ELEMENT_NODE) return inheritedBold;
+  const element = node as HTMLElement;
+  const tag = element.tagName.toLowerCase();
+  const styleWeight = element.style.fontWeight.toLowerCase();
+  const classWeight = Array.from(element.classList).some(className => (
+    className === 'font-bold' || className === 'font-semibold' || className === 'font-medium'
+  ));
+  return inheritedBold
+    || tag === 'strong'
+    || tag === 'b'
+    || styleWeight === 'bold'
+    || styleWeight === '600'
+    || styleWeight === '700'
+    || styleWeight === '800'
+    || styleWeight === '900'
+    || classWeight;
+}
+
+function isFullyBold(element: Element): boolean {
+  let textLength = 0;
+  let boldLength = 0;
+  const visit = (node: Node, inheritedBold = false) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = (node.nodeValue || '').replace(/\s+/g, '').length;
+      textLength += length;
+      if (inheritedBold) boldLength += length;
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const bold = isBoldTextNode(node, inheritedBold);
+    Array.from(node.childNodes).forEach(child => visit(child, bold));
+  };
+  visit(element);
+  return textLength > 0 && boldLength / textLength >= 0.95;
+}
+
+function getLargestInlineFontSize(element: Element): number {
+  let largest = 0;
+  const elements = [element, ...Array.from(element.querySelectorAll('*'))];
+  elements.forEach(child => {
+    const style = child.getAttribute('style') || '';
+    const match = style.match(/font-size\s*:\s*([\d.]+)\s*(pt|px)/i);
+    if (!match) return;
+    const value = Number.parseFloat(match[1]);
+    if (!Number.isFinite(value)) return;
+    const points = match[2].toLowerCase() === 'px' ? value * 0.75 : value;
+    largest = Math.max(largest, points);
+  });
+  return largest;
+}
+
+function isOutlineHeading(element: Element): boolean {
+  const tag = element.tagName.toLowerCase();
+  if (/^h[1-6]$/.test(tag)) return true;
+  if (tag !== 'p' || element.closest('table, li')) return false;
+
+  const text = getNormalizedElementText(element);
+  if (!text || text.length > 140) return false;
+
+  const isNumbered = /^(?:\d+(?:\.\d+)*[.)]?)\s+\S/.test(text);
+  const isLarge = getLargestInlineFontSize(element) >= 15;
+  return isFullyBold(element) && (isNumbered || isLarge || text.length <= 90);
+}
+
+function getOutlineElements(root: ParentNode): Element[] {
+  return Array.from(root.querySelectorAll(OUTLINE_ELEMENT_SELECTOR)).filter(isOutlineHeading);
+}
+
+function getOutlineLevel(element: Element): number {
+  const tag = element.tagName.toLowerCase();
+  if (/^h[1-6]$/.test(tag)) return Math.min(3, Number.parseInt(tag.slice(1), 10));
+
+  const text = getNormalizedElementText(element);
+  const numberMatch = text.match(/^(\d+(?:\.\d+)*)[.)]?\s+/);
+  if (numberMatch) return Math.min(3, numberMatch[1].split('.').length);
+  return getLargestInlineFontSize(element) >= 18 ? 1 : 2;
 }
 
 function hsvToHex(h: number, s: number, v: number): string {
@@ -431,7 +578,7 @@ function ToolbarPlugin({
   };
 
   const animateTextReplacement = async (transformedText: string) => {
-    const cleanText = transformedText.replace(/<[^>]+>/g, '').trim();
+    const cleanText = normalizeAiOutput(transformedText);
     if (!cleanText) return;
 
     const words = cleanText.split(/\s+/);
@@ -539,14 +686,14 @@ function ToolbarPlugin({
           className="h-7 px-2 flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-xs text-foreground font-medium transition-colors"
           title="AI Assist"
         >
-          {loadingAiAction ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" /> : <Sparkles className="h-3.5 w-3.5 text-amber-400" />}
+          {loadingAiAction ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Sparkles className="h-3.5 w-3.5 text-primary" />}
           <span>AI Assist</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
         {aiMenuOpen && (
           <div className="absolute left-0 top-full z-50 mt-1 min-w-[150px] rounded-xl border border-border bg-card p-1 shadow-2xl animate-in fade-in zoom-in-95">
             <button onMouseDown={e => { e.preventDefault(); void handleAiOption('improve'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
-              <Sparkles className="h-3.5 w-3.5 text-amber-400" /> Improve
+              <Sparkles className="h-3.5 w-3.5 text-primary" /> Improve
             </button>
             <button onMouseDown={e => { e.preventDefault(); void handleAiOption('rephrase'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
               <RefreshCw className="h-3.5 w-3.5 text-blue-400" /> Rephrase
@@ -774,9 +921,10 @@ function ToolbarPlugin({
           e.preventDefault();
           if (hasContent && onClearAll) onClearAll();
         }}
-        className="h-7 px-2 flex items-center justify-center rounded-md text-xs font-medium text-muted-foreground hover:bg-secondary/80 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="h-7 px-2.5 flex items-center justify-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 text-xs font-semibold text-primary hover:bg-primary/20 disabled:border-border disabled:bg-secondary/60 disabled:text-muted-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         title="Clear text"
       >
+        <Trash2 className="h-3.5 w-3.5" />
         Clear
       </button>
     </div>
@@ -825,7 +973,7 @@ function SelectionAIBubblePlugin({ onAiTransform }: { onAiTransform?: (action: s
     try {
       const transformed = await onAiTransform(action, selectedText);
       if (transformed) {
-        const cleanText = transformed.replace(/<[^>]+>/g, '').trim();
+        const cleanText = normalizeAiOutput(transformed);
         const words = cleanText.split(/\s+/);
         if (words.length <= 2) {
           editor.update(() => {
@@ -885,7 +1033,7 @@ function SelectionAIBubblePlugin({ onAiTransform }: { onAiTransform?: (action: s
         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
         title="Improve writing style & grammar"
       >
-        {loadingAction === 'improve' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 text-amber-400" />}
+        {loadingAction === 'improve' ? <Loader2 className="w-3 h-3 animate-spin text-primary" /> : <Sparkles className="w-3 h-3 text-primary" />}
         <span>Improve</span>
       </button>
 
@@ -935,8 +1083,10 @@ function SelectionAIBubblePlugin({ onAiTransform }: { onAiTransform?: (action: s
 /* ── HTML loader plugin ── */
 function HtmlLoaderPlugin({ html }: { html: string }) {
   const [editor] = useLexicalComposerContext();
+  const hasLoadedRef = useRef(false);
   useEffect(() => {
-    if (!html) return;
+    if (!html || hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
     editor.update(() => {
       const root = $getRoot();
       if (root.getTextContent().trim()) return;
@@ -947,7 +1097,7 @@ function HtmlLoaderPlugin({ html }: { html: string }) {
       root.select();
       $insertNodes(nodes);
     });
-  }, []);
+  }, [editor, html]);
   return null;
 }
 
@@ -965,15 +1115,15 @@ function HtmlExtractPlugin({ onChange, onHeadingsUpdate }: { onChange: (html: st
           if (onHeadingsUpdate) {
             const parser = new DOMParser();
             const dom = parser.parseFromString(html, 'text/html');
-            const elements = dom.querySelectorAll('h1, h2, h3');
+            const elements = getOutlineElements(dom);
             const list: OutlineHeading[] = [];
             elements.forEach((el, index) => {
-              const text = el.textContent?.trim() || '';
+              const text = getNormalizedElementText(el);
               if (text) {
                 list.push({
                   id: `heading-${index}`,
                   text,
-                  level: parseInt(el.tagName.replace('H', ''), 10),
+                  level: getOutlineLevel(el),
                 });
               }
             });
@@ -995,7 +1145,7 @@ function ClearAllPlugin({ clearTrigger, onCleared }: { clearTrigger: number; onC
       root.clear();
     });
     onCleared();
-  }, [clearTrigger]);
+  }, [clearTrigger, editor, onCleared]);
   return null;
 }
 
@@ -1022,27 +1172,55 @@ export default function NoteEditor({
 }: NoteEditorProps) {
   const [headings, setHeadings] = useState<OutlineHeading[]>([]);
   const [railHovered, setRailHovered] = useState(false);
+  const [railPopoverPosition, setRailPopoverPosition] = useState<{ top: number; left: number } | null>(null);
   const [clearTrigger, setClearTrigger] = useState(0);
   const [hasEditorContent, setHasEditorContent] = useState(() => {
     return htmlToPlainText(initialHtml).trim().length > 0;
   });
+  const railRef = useRef<HTMLElement>(null);
 
   const initialConfig = {
     namespace: 'NoteZEditor',
     theme,
-    nodes: [HeadingNode, ListNode, ListItemNode, CodeNode, QuoteNode, LinkNode],
+    nodes: [HeadingNode, ListNode, ListItemNode, CodeNode, QuoteNode, LinkNode, TableNode, TableCellNode, TableRowNode],
+    html: { import: preservedHtmlImport },
     onError(error: Error) { console.error('Lexical error:', error); },
   };
 
   const scrollToHeading = (index: number) => {
     const editorDom = document.querySelector('[aria-label="Note editor"]');
     if (!editorDom) return;
-    const headingElements = editorDom.querySelectorAll('h1, h2, h3');
+    const headingElements = getOutlineElements(editorDom);
     const target = headingElements[index];
     if (target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
+
+  const updateRailPopoverPosition = useCallback(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const rect = rail.getBoundingClientRect();
+    setRailPopoverPosition({
+      top: rect.top + rect.height / 2,
+      // Keep the card flush with the rail. The card is 16rem wide;
+      // leaving the old 16px gap made the rail fire onMouseLeave
+      // before the pointer could reach the outline.
+      left: Math.max(8, rect.left - 256),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!railHovered) return;
+    updateRailPopoverPosition();
+    const update = () => updateRailPopoverPosition();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [railHovered, updateRailPopoverPosition]);
 
   const handleClearAllInstant = () => {
     setHasEditorContent(false);
@@ -1050,11 +1228,13 @@ export default function NoteEditor({
     onClearAll?.();
   };
 
-  const handleHtmlChange = (html: string) => {
+  const handleHtmlChange = useCallback((html: string) => {
     const plainText = htmlToPlainText(html).trim();
     setHasEditorContent(plainText.length > 0);
     onChange(html);
-  };
+  }, [onChange]);
+
+  const handleCleared = useCallback(() => handleHtmlChange(''), [handleHtmlChange]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-visible bg-background relative">
@@ -1072,13 +1252,13 @@ export default function NoteEditor({
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
-                  className="h-full min-h-full outline-none pl-4 md:pl-6 pr-16 md:pr-20 py-4 text-[13px] text-foreground leading-relaxed"
+                  className="note-editor-content h-full min-h-full outline-none pl-4 md:pl-6 pr-16 md:pr-20 py-4 text-[13px] text-foreground leading-relaxed"
                   style={{ minHeight }}
                   aria-label="Note editor"
                 />
               }
               placeholder={
-                <div className="absolute top-4 left-[19px] md:left-[27px] text-[13px] text-muted-foreground pointer-events-none select-none">
+                <div className="absolute top-4 left-4 md:left-6 text-[13px] leading-relaxed text-muted-foreground pointer-events-none select-none">
                   {placeholder}
                 </div>
               }
@@ -1088,8 +1268,9 @@ export default function NoteEditor({
 
           {/* Floating Vertical Outline Rail & Hover Card */}
           <aside
+            ref={railRef}
             onMouseEnter={() => setRailHovered(true)}
-            onMouseLeave={() => setRailHovered(false)}
+            onMouseLeave={() => { setRailHovered(false); setRailPopoverPosition(null); }}
             className="group absolute right-3 top-0 bottom-0 z-40 flex items-center pr-3 pl-4 cursor-pointer select-none"
           >
             {/* Resting Vertical Dash Indicators */}
@@ -1108,8 +1289,17 @@ export default function NoteEditor({
             </div>
 
             {/* Hover Popover Outline Card */}
-            {railHovered && headings.length > 0 && (
-              <div className="absolute right-8 top-1/2 -translate-y-1/2 w-64 max-h-[75vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl p-2.5 z-50 text-foreground pointer-events-auto animate-in fade-in zoom-in-95">
+            {railHovered && headings.length > 0 && railPopoverPosition && (
+              <div
+                style={{
+                  top: `${railPopoverPosition.top}px`,
+                  left: `${railPopoverPosition.left}px`,
+                  transform: 'translateY(-50%)',
+                }}
+                className="fixed w-64 max-h-[75vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl p-2.5 z-50 text-foreground pointer-events-auto"
+                onMouseEnter={() => setRailHovered(true)}
+                onMouseLeave={() => { setRailHovered(false); setRailPopoverPosition(null); }}
+              >
                 <div className="space-y-1">
                   {headings.map((h, i) => (
                     <button
@@ -1133,7 +1323,7 @@ export default function NoteEditor({
         <ListPlugin />
         <HtmlLoaderPlugin html={initialHtml} />
         <HtmlExtractPlugin onChange={handleHtmlChange} onHeadingsUpdate={setHeadings} />
-        <ClearAllPlugin clearTrigger={clearTrigger} onCleared={() => handleHtmlChange('')} />
+        <ClearAllPlugin clearTrigger={clearTrigger} onCleared={handleCleared} />
       </LexicalComposer>
     </div>
   );

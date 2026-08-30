@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { getSubjectColor } from '@/lib/subjectColors';
 import { supabase } from '@/integrations/supabase/client';
 import {
   fetchActivities, fetchChecklistItems, createActivity,
@@ -374,11 +373,9 @@ export default function ActivitiesView() {
           <div className="flex items-center gap-3">
             <div className="flex-1 h-1 bg-secondary rounded-full overflow-hidden">
               <div
-                className="h-full transition-all duration-300"
+                className="h-full rounded-full bg-primary transition-all duration-300"
                 style={{
                   width: `${pct}%`,
-                  backgroundColor: activity.subject ? getSubjectColor(activity.subject) : 'hsl(var(--foreground))',
-                  opacity: 0.7,
                 }}
               />
             </div>
@@ -604,7 +601,7 @@ export default function ActivitiesView() {
             <span className="text-[12px] font-mono text-foreground">{overall}%</span>
           </div>
           <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-            <div className="h-full bg-foreground transition-all duration-300" style={{ width: `${overall}%` }} />
+            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${overall}%` }} />
           </div>
         </div>
       )}

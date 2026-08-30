@@ -834,11 +834,7 @@ export default function ExamQuizView() {
                                       role="option"
                                       aria-selected={isChecked}
                                       onClick={() => toggleNoteSelection(note.id)}
-                                      className={`flex w-full items-center justify-between gap-2 rounded-lg border p-1.5 text-left text-xs transition-all ${
-                                        isChecked
-                                          ? 'border-primary/50 bg-primary/10 text-foreground font-medium'
-                                          : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-secondary hover:text-foreground'
-                                      }`}
+                                      className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/60 p-1.5 text-left text-xs text-foreground transition-colors hover:bg-secondary"
                                     >
                                       <span className="flex min-w-0 items-center gap-2">
                                         {isChecked ? (
@@ -1151,7 +1147,7 @@ export default function ExamQuizView() {
             <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 min-h-0 max-h-[min(36rem,70vh)] lg:max-h-none lg:overflow-y-auto shadow-xs space-y-2">
               <div className="flex items-center gap-1.5">
                 <Target className="h-3.5 w-3.5 text-primary" />
-                <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
+                <p className="text-[13px] font-mono uppercase tracking-[0.16em] text-foreground font-bold leading-none">
                   Areas to improve
                 </p>
                 <span className="text-[10px] font-mono text-muted-foreground/60 ml-auto">Accuracy + trend</span>
@@ -1204,7 +1200,7 @@ export default function ExamQuizView() {
             {/* 2. Exam history */}
             <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 min-h-[10rem] max-h-[min(36rem,70vh)] lg:max-h-none lg:min-h-0 flex min-h-0 flex-col shadow-xs overflow-hidden">
               <div className="flex items-center justify-between mb-2 shrink-0">
-                <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
+                <p className="text-[13px] font-mono uppercase tracking-[0.16em] text-foreground font-bold leading-none">
                   History
                 </p>
                 <span className="text-[10px] font-mono text-muted-foreground/60">

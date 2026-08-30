@@ -10,11 +10,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import FolderGraphView from './FolderGraphView';
 import NoteEditor from './NoteEditor';
 import TrashView from './TrashView';
+import ConfirmDialog from '@/components/ui/confirm-dialog';
+import { buildWordHtmlDocument, convertDocxToHtml, htmlDocumentToNoteHtml } from './document-utils';
 import { htmlToPlainText } from './note-utils';
 import { useAuth } from '@/lib/auth';
 import { editorAiAssist } from '@/services';
@@ -140,22 +141,24 @@ function NoteForm({
   async function handleUpload(file: File) {
     const isAllowed = /\.(txt|doc|docx)$/i.test(file.name);
     if (!isAllowed) {
-      setActionError('Only TXT and DOC files are allowed.');
+      setActionError('Only TXT, DOC, and DOCX files are allowed.');
       return;
     }
     setUploading(true);
     setActionError('');
     try {
       let importedHtml = '';
-      if (/\.(docx|doc)$/i.test(file.name)) {
+      if (/\.docx$/i.test(file.name)) {
         try {
           const arrayBuffer = await file.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer });
-          importedHtml = result.value || textToHtml(result.messages.map(m => m.message).join('\n'));
+          importedHtml = await convertDocxToHtml(arrayBuffer);
         } catch {
           const text = await file.text();
-          importedHtml = textToHtml(text);
+          importedHtml = htmlDocumentToNoteHtml(text) || textToHtml(text);
         }
+      } else if (/\.doc$/i.test(file.name)) {
+        const text = await file.text();
+        importedHtml = htmlDocumentToNoteHtml(text) || textToHtml(text);
       } else {
         const text = await file.text();
         importedHtml = textToHtml(text);
@@ -173,7 +176,7 @@ function NoteForm({
   }
 
   function downloadWordDocument() {
-    const htmlDocument = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title || 'NoteZ Note')}</title></head><body style="font-family: sans-serif; color: #111; line-height: 1.6;">${content || '<p></p>'}</body></html>`;
+    const htmlDocument = buildWordHtmlDocument(title, content);
     const blob = new Blob([htmlDocument], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -280,9 +283,10 @@ function NoteForm({
             <button
               type="button"
               onClick={onDelete}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-destructive/30 bg-destructive/10 text-[11px] text-destructive hover:bg-destructive/20 transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary/60 text-[11px] text-foreground hover:bg-secondary transition-colors"
+              title="Move note to Trash"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
             </button>
           )}
 
@@ -357,6 +361,8 @@ export default function FolderView({
 
   /* ── Dynamic trash state ── */
   const [hasTrashItems, setHasTrashItems] = useState<boolean>(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteFolderIds, setPendingDeleteFolderIds] = useState<string[]>([]);
 
   useEffect(() => {
     const checkTrash = () => {
@@ -550,11 +556,20 @@ export default function FolderView({
     setSelectMode(false);
   }
 
-  function deleteSelected() {
+  function requestDeleteSelected() {
     if (selectedFolderIds.size === 0) return;
-    const count = selectedFolderIds.size;
-    if (!window.confirm(`Delete ${count} selected folder${count === 1 ? '' : 's'}?`)) return;
-    const targets = folders.filter(f => selectedFolderIds.has(f.id));
+    setPendingDeleteFolderIds(Array.from(selectedFolderIds));
+    setDeleteDialogOpen(true);
+  }
+
+  function closeDeleteDialog() {
+    setDeleteDialogOpen(false);
+    setPendingDeleteFolderIds([]);
+  }
+
+  function deleteSelected() {
+    if (pendingDeleteFolderIds.length === 0) return;
+    const targets = folders.filter(f => pendingDeleteFolderIds.includes(f.id));
     if (targets.length > 0) {
       setTrashItems(prev => [
         ...prev,
@@ -570,9 +585,10 @@ export default function FolderView({
         })),
       ]);
     }
-    setFolders(previous => previous.filter(folder => !selectedFolderIds.has(folder.id)));
+    setFolders(previous => previous.filter(folder => !pendingDeleteFolderIds.includes(folder.id)));
     setSelectedFolderIds(new Set());
     setSelectMode(false);
+    closeDeleteDialog();
   }
 
   /* ── note actions ── */
@@ -787,17 +803,17 @@ export default function FolderView({
                   <button
                     type="button"
                     onClick={() => restoreFolder(folder.id)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-secondary/70 px-2.5 py-1.5 text-[11px] font-medium text-foreground hover:bg-secondary transition-colors"
                   >
                     <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Unarchive
                   </button>
                   <button
                     type="button"
                     onClick={() => deleteFolder(folder.id)}
-                    className="inline-flex shrink-0 items-center justify-center h-7 w-7 rounded-lg border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10 transition-colors"
-                    title="Delete permanently"
+                    className="inline-flex shrink-0 items-center justify-center h-7 w-7 rounded-lg border border-border bg-secondary/70 text-foreground hover:bg-secondary transition-colors"
+                    title="Move to Trash"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </button>
                 </div>
               ))}
@@ -865,7 +881,7 @@ export default function FolderView({
                 ) : visibleNotes.map(note => (
                   <div key={note.id} className={`group mb-1 flex items-center gap-1 rounded-lg transition-colors ${activeNote?.id === note.id ? 'bg-primary/10 border border-primary/40 text-foreground font-semibold' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
                     <button onClick={() => editNote(note)} title={note.title} className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12px]">{note.title || 'Untitled note'}</button>
-                    <button onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} className="mr-1 hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:flex"><Trash2 className="h-3 w-3" /></button>
+                    <button onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} className="mr-1 hidden h-5 w-5 shrink-0 items-center justify-center rounded text-foreground hover:bg-secondary group-hover:flex"><Trash2 className="h-3 w-3 text-destructive" /></button>
                   </div>
                 ))}
               </div>
@@ -1064,7 +1080,7 @@ export default function FolderView({
               <button onClick={archiveSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/70 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
                 <Archive className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Archive
               </button>
-              <button onClick={deleteSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/70 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+              <button onClick={requestDeleteSelected} disabled={selectedFolderIds.size === 0} className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/70 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
                 <Trash2 className="h-3.5 w-3.5 text-destructive" /> Delete
               </button>
               <button onClick={() => { setSelectMode(false); setSelectedFolderIds(new Set()); }} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground">
@@ -1109,9 +1125,9 @@ export default function FolderView({
                 }`}
               >
                 {hasTrashItems ? (
-                  <Trash2 className="h-3.5 w-3.5 text-foreground shrink-0" />
+                  <Trash2 className="h-3.5 w-3.5 text-destructive shrink-0" />
                 ) : (
-                  <Trash className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <Trash className="h-3.5 w-3.5 text-destructive shrink-0" />
                 )}
                 <span className="hidden sm:inline">Trash</span>
               </button>
@@ -1251,7 +1267,7 @@ export default function FolderView({
                     <div className="flex items-center justify-end gap-1">
                       <div className={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${selectMode ? 'pointer-events-none hidden' : ''}`}>
                         <button onClick={e => { e.stopPropagation(); editFolder(folder); }} className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"><Edit3 className="h-3 w-3" /></button>
-                        <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }} className="h-6 w-6 rounded flex items-center justify-center hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="h-3 w-3" /></button>
+                        <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }} title="Move to Trash" className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-foreground transition-colors"><Trash2 className="h-3 w-3 text-destructive" /></button>
                       </div>
                       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-50 transition-opacity group-hover:opacity-100" />
                     </div>
@@ -1278,7 +1294,7 @@ export default function FolderView({
                   </div>
                   <div className={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${selectMode || editingFolderId === folder.id ? 'pointer-events-none hidden' : ''}`}>
                     <button onClick={e => { e.stopPropagation(); editFolder(folder); }} className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit3 className="h-3 w-3" /></button>
-                    <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }} className="h-6 w-6 rounded flex items-center justify-center hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                    <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }} title="Move to Trash" className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-foreground"><Trash2 className="h-3 w-3 text-destructive" /></button>
                   </div>
                 </div>
 
@@ -1300,6 +1316,20 @@ export default function FolderView({
         )}
       </div>
       )}
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={open => {
+          if (open) setDeleteDialogOpen(true);
+          else closeDeleteDialog();
+        }}
+        title={`Delete ${pendingDeleteFolderIds.length} selected folder${pendingDeleteFolderIds.length === 1 ? '' : 's'}?`}
+        description={`The selected folder${pendingDeleteFolderIds.length === 1 ? '' : 's'} will be moved to Trash and can be restored for 7 days.`}
+        confirmLabel="Move to Trash"
+        destructive
+        icon={Trash2}
+        onConfirm={deleteSelected}
+      />
     </div>
   );
 }

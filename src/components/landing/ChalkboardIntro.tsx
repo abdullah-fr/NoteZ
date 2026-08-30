@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, useAnimation } from 'framer-motion';
-import { ChevronDown, Sparkles, RefreshCw } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 interface IntroProps {
   onComplete?: () => void;
@@ -8,7 +8,6 @@ interface IntroProps {
 
 export function ChalkboardIntro({ onComplete }: IntroProps) {
   const [isDone, setIsDone] = useState(false);
-  const [key, setKey] = useState(0);
   const controls = useAnimation();
 
   useEffect(() => {
@@ -26,18 +25,13 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
     };
     runAnimation();
     return () => clearTimeout(timer);
-  }, [key, controls, onComplete]);
+  }, [controls, onComplete]);
 
   const handleScrollDown = () => {
     const heroEl = document.getElementById('hero-section');
     if (heroEl) {
       heroEl.scrollIntoView({ behavior: 'smooth' });
     }
-  };
-
-  const handleReplay = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setKey((prev) => prev + 1);
   };
 
   return (
@@ -80,16 +74,6 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
       {/* Main Container */}
       <div className="relative z-10 flex flex-col items-center justify-center px-4 max-w-4xl text-center">
         
-        {/* Replay action */}
-        <button
-          onClick={handleReplay}
-          className="mb-6 flex items-center gap-2 text-xs font-mono text-muted-foreground hover:text-foreground bg-secondary/40 hover:bg-secondary px-3.5 py-1.5 rounded-full border border-border/60 transition-all backdrop-blur-md shadow-sm"
-          title="Replay Animation"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Replay Intro Animation</span>
-        </button>
-
         {/* Animated Handwriting SVG for "NoteZ" */}
         <div className="relative my-2 w-full max-w-2xl flex justify-center">
           <svg
@@ -259,11 +243,8 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
           transition={{ duration: 0.8 }}
           className="space-y-3 mt-4"
         >
-          <p className="font-display italic text-xl sm:text-2xl text-foreground/90 font-normal tracking-wide">
-            “The AI Study Companion for Serious Learners”
-          </p>
-          <p className="text-xs font-mono text-muted-foreground tracking-widest uppercase">
-            Transform Any Subject Into Flashcards, Quizzes & Exams
+          <p className="font-display italic text-2xl sm:text-3xl text-foreground font-medium tracking-wide">
+            Not your average AI Tutor
           </p>
         </motion.div>
 

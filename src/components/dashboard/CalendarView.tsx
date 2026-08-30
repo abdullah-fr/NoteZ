@@ -1068,9 +1068,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                             </span>
                           )}
                           {ev.priority && (
-                            <span className={`capitalize ${
-                              ev.priority === "high" ? "text-rose-400 font-bold" : ev.priority === "medium" ? "text-amber-400" : "text-muted-foreground"
-                            }`}>
+                            <span className={`capitalize ${cfg.iconColor} ${ev.priority === "high" ? "font-bold" : ""}`}>
                               ♦ {ev.priority}
                             </span>
                           )}
@@ -1119,10 +1117,10 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                         <button
                           type="button"
                           onClick={() => removeEvent(ev.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity"
+                          className="opacity-0 group-hover:opacity-100 rounded-md p-1 text-foreground hover:bg-secondary transition-opacity"
                           title="Delete activity"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </button>
                       </div>
                     </motion.div>

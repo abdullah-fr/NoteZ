@@ -116,6 +116,22 @@ async function upsertTrashToSupabase(userId: string, items: TrashItem[]): Promis
     .upsert({ user_id: userId, data: JSON.parse(JSON.stringify(items)) as object[] }, { onConflict: 'user_id' });
 }
 
+// Trash can be written by both FolderView and its nested TrashView. Serialize
+// those writes so an older request cannot finish after a newer empty/delete
+// operation and put stale items back in the cloud row.
+const trashWriteQueues = new Map<string, Promise<void>>();
+
+function queueTrashWrite(userId: string, items: TrashItem[]): void {
+  const previous = trashWriteQueues.get(userId) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => upsertTrashToSupabase(userId, items));
+  trashWriteQueues.set(userId, next);
+  void next.catch(() => undefined).finally(() => {
+    if (trashWriteQueues.get(userId) === next) trashWriteQueues.delete(userId);
+  });
+}
+
 async function fetchFoldersFromSupabase(userId: string): Promise<FolderItem[] | null> {
   const { data, error } = await supabase
     .from('notez_folders')
@@ -212,7 +228,7 @@ export function useFolderStorage(userId: string | null | undefined): UseFolderSt
         } else {
           const localTrash = parseTrashFromRaw(localStorage.getItem('notez_trash'));
           if (localTrash.length > 0) {
-            void upsertTrashToSupabase(userId!, localTrash);
+            queueTrashWrite(userId!, localTrash);
           }
           setTrashState(localTrash);
         }
@@ -229,13 +245,24 @@ export function useFolderStorage(userId: string | null | undefined): UseFolderSt
     return () => { cancelled = true; };
   }, [userId]);
 
-  // ── Listen for cross-component folder updates ───────────────────────────────
+  // ── Listen for cross-component and cross-tab updates ────────────────────────
   useEffect(() => {
-    const reload = () => {
+    const reloadFolders = () => {
       setFoldersState(parseFoldersFromRaw(localStorage.getItem('notez_folders')));
     };
-    window.addEventListener('notez:folders-updated', reload);
-    return () => window.removeEventListener('notez:folders-updated', reload);
+    const reloadTrash = () => {
+      setTrashState(parseTrashFromRaw(localStorage.getItem('notez_trash')));
+    };
+    window.addEventListener('notez:folders-updated', reloadFolders);
+    window.addEventListener('notez:trash-updated', reloadTrash);
+    window.addEventListener('storage', reloadFolders);
+    window.addEventListener('storage', reloadTrash);
+    return () => {
+      window.removeEventListener('notez:folders-updated', reloadFolders);
+      window.removeEventListener('notez:trash-updated', reloadTrash);
+      window.removeEventListener('storage', reloadFolders);
+      window.removeEventListener('storage', reloadTrash);
+    };
   }, []);
 
   // ── setFolders — optimistic local + async cloud ─────────────────────────────
@@ -270,7 +297,7 @@ export function useFolderStorage(userId: string | null | undefined): UseFolderSt
         } catch { /* quota exceeded — ignore */ }
 
         const uid = userIdRef.current;
-        if (uid) void upsertTrashToSupabase(uid, next);
+        if (uid) queueTrashWrite(uid, next);
 
         return next;
       });

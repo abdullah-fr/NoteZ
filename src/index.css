@@ -147,6 +147,30 @@
 }
 
 @layer utilities {
+  /* Keep the empty editor's caret on the same first baseline as its placeholder. */
+  .note-editor-content > :first-child {
+    margin-top: 0;
+  }
+
+  .note-editor-table {
+    width: 100%;
+    margin: 0.75rem 0;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .note-editor-table-cell {
+    border: 1px solid hsl(var(--border));
+    padding: 0.4rem 0.55rem;
+    vertical-align: top;
+    text-align: start;
+  }
+
+  .note-editor-table-cell-header {
+    background: hsl(var(--secondary));
+    font-weight: 600;
+  }
+
   /* Refined hover lift (no 3D tilt) */
   .card-3d {
     transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
@@ -286,5 +310,42 @@
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* ── Landing testimonial rails ── */
+  @keyframes notez-marquee-left {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(-50%, 0, 0); }
+  }
+
+  @keyframes notez-marquee-right {
+    from { transform: translate3d(-50%, 0, 0); }
+    to { transform: translate3d(0, 0, 0); }
+  }
+
+  .testimonial-marquee-track {
+    width: max-content;
+    animation-duration: 86s;
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+    will-change: transform;
+  }
+
+  .testimonial-marquee-left {
+    animation-name: notez-marquee-left;
+  }
+
+  .testimonial-marquee-right {
+    animation-name: notez-marquee-right;
+  }
+
+  [data-paused="true"] > .testimonial-marquee-track {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .testimonial-marquee-track {
+      animation-play-state: paused;
+    }
   }
 }

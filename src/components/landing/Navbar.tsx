@@ -33,7 +33,6 @@ export function Navbar() {
           {/* Desktop menu */}
           <div className="hidden md:flex items-center gap-1">
             <a href="/#features" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg">Features</a>
-            <a href="/#how-it-works" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg">How it works</a>
             <Link to="/pricing" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg">Pricing</Link>
             <div className="w-px h-5 bg-border/60 mx-2" />
             <button
@@ -71,7 +70,6 @@ export function Navbar() {
           >
             <div className="container mx-auto px-4 py-4 flex flex-col gap-1">
               <a href="/#features" className="py-3 px-2 text-sm text-muted-foreground hover:text-foreground transition-colors" onClick={() => setIsOpen(false)}>Features</a>
-              <a href="/#how-it-works" className="py-3 px-2 text-sm text-muted-foreground hover:text-foreground transition-colors" onClick={() => setIsOpen(false)}>How it works</a>
               <Link to="/pricing" className="py-3 px-2 text-sm text-muted-foreground hover:text-foreground transition-colors" onClick={() => setIsOpen(false)}>Pricing</Link>
               <div className="h-px bg-border/60 my-2" />
               <button

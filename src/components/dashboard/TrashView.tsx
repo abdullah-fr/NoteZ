@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, RotateCcw, FileText, Folder, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/lib/auth';
 import { useFolderStorage } from '@/hooks/useFolderStorage';
 import type { TrashItem } from '@/hooks/useFolderStorage';
+import ConfirmDialog from '@/components/ui/confirm-dialog';
 
 export type { TrashItem };
 
@@ -19,19 +20,17 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { folders, setFolders, trashItems: allTrashItems, setTrashItems } = useFolderStorage(user?.id);
+  const [emptyTrashDialogOpen, setEmptyTrashDialogOpen] = useState(false);
 
-  // Auto-purge expired items on mount / when trash list loads
-  const [items, setItems] = useState<TrashItem[]>([]);
+  const items = allTrashItems.filter(
+    item => Date.now() - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS,
+  );
 
   useEffect(() => {
-    const now = Date.now();
-    const valid = allTrashItems.filter(
-      item => now - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS
-    );
+    const valid = allTrashItems.filter(item => Date.now() - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS);
     if (valid.length !== allTrashItems.length) {
       setTrashItems(valid);
     }
-    setItems(valid);
   }, [allTrashItems, setTrashItems]);
 
   function restoreItem(trashEntry: TrashItem) {
@@ -97,29 +96,13 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
     }
 
     // Remove from trash
-    const updated = items.filter(i => i.id !== trashEntry.id);
-    setItems(updated);
-    setTrashItems(updated);
-  }
-
-  function permanentDelete(id: string) {
-    const updated = items.filter(i => i.id !== id);
-    setItems(updated);
-    setTrashItems(updated);
+    setTrashItems(previous => previous.filter(item => item.id !== trashEntry.id));
   }
 
   function emptyTrash() {
-    if (!window.confirm(t('tools.trash.emptyTrashConfirm'))) return;
-    setItems([]);
     setTrashItems([]);
+    setEmptyTrashDialogOpen(false);
   }
-
-  // keep local items in sync if trash changes from outside (e.g. cross-tab)
-  useEffect(() => {
-    setItems(allTrashItems.filter(
-      item => Date.now() - new Date(item.deletedAt).getTime() < SEVEN_DAYS_MS
-    ));
-  }, [allTrashItems]);
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -144,10 +127,10 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
         </div>
         {items.length > 0 && (
           <button
-            onClick={emptyTrash}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors"
+            onClick={() => setEmptyTrashDialogOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary/70 text-foreground text-xs font-medium hover:bg-secondary transition-colors"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
             {t('tools.trash.emptyTrash')}
           </button>
         )}
@@ -157,7 +140,7 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
       <div className="rounded-2xl border border-border bg-secondary p-5">
         {items.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-12 text-center">
-            <Trash2 className="h-10 w-10 text-muted-foreground/40" />
+            <Trash2 className="h-10 w-10 text-destructive/40" />
             <div>
               <p className="text-[13px] font-semibold text-foreground">{t('tools.trash.empty')}</p>
               <p className="text-xs text-muted-foreground mt-1">{t('tools.trash.emptyDesc')}</p>
@@ -209,13 +192,6 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
                         <RotateCcw className="h-3 w-3 text-emerald-500" />
                         {t('tools.trash.restore')}
                       </button>
-                      <button
-                        onClick={() => permanentDelete(item.id)}
-                        className="flex items-center justify-center h-7 w-7 rounded-lg border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10 transition-colors"
-                        title={t('tools.trash.deletePermanently')}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
                     </div>
 
                     {days <= 3 && (
@@ -231,6 +207,17 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={emptyTrashDialogOpen}
+        onOpenChange={setEmptyTrashDialogOpen}
+        title={t('tools.trash.emptyTrash')}
+        description={t('tools.trash.emptyTrashConfirm')}
+        confirmLabel={t('tools.trash.emptyTrash')}
+        destructive
+        icon={Trash2}
+        onConfirm={emptyTrash}
+      />
     </div>
   );
 }

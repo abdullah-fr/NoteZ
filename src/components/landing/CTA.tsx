@@ -5,40 +5,39 @@ import { Link } from 'react-router-dom';
 
 export function CTA() {
   return (
-    <section className="relative overflow-hidden py-20 md:py-28">
-      <div className="container mx-auto px-4 relative z-10">
+    <section className="relative overflow-hidden py-16 sm:py-20 md:py-28" aria-labelledby="landing-onboarding-title">
+      <div className="container relative z-10 mx-auto px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="relative max-w-5xl mx-auto rounded-3xl border border-primary/20 bg-card/40 backdrop-blur-xl overflow-hidden p-8 md:p-16"
+          className="relative mx-auto max-w-5xl overflow-hidden rounded-3xl border border-border bg-card p-8 text-center shadow-xl sm:p-14 md:p-16"
         >
-          {/* Glow accents */}
-          <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-notez-violet/15 blur-3xl pointer-events-none" />
+          <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden="true">
+            <div className="absolute inset-x-10 top-8 border-t border-dashed border-border/60" />
+            <div className="absolute inset-x-10 bottom-8 border-t border-dashed border-border/60" />
+          </div>
 
-          <div className="relative text-center max-w-2xl mx-auto">
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full glass text-xs font-medium text-muted-foreground mb-6">
-              <Sparkles className="h-3 w-3 text-primary" /> Free forever for students
+          <div className="relative mx-auto max-w-3xl">
+            <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-border/80 bg-secondary/40 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              <Sparkles className="h-3 w-3 text-primary" /> NoteZ / Start here
             </span>
-            <h2 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold mb-5 tracking-tight leading-[1.05]">
-              Your best semester <span className="gradient-text">starts tonight.</span>
+            <h2 id="landing-onboarding-title" className="mb-5 font-display text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl md:text-6xl">
+              Bring your material.<br /><span className="text-primary">Build your momentum.</span>
             </h2>
-            <p className="text-base md:text-lg text-muted-foreground mb-8 leading-relaxed">
-              Sign up in ten seconds. No credit card. Cancel anything you don’t love.
+            <p className="mx-auto mb-8 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg">
+              Create a folder, write or import your notes, and turn them into focused practice in one calm workspace.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button asChild size="lg" className="text-base px-8 h-12 glow-purple">
+            <div className="flex justify-center">
+              <Button asChild size="lg" className="h-12 px-8 text-base">
                 <Link to="/signup">
-                  Get started free
+                  Create your workspace
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg" className="text-base px-8 h-12 border-border/60">
-                <Link to="/pricing">See pricing</Link>
-              </Button>
             </div>
+            <p className="mt-6 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">Folders · Rich editor · AI study tools</p>
           </div>
         </motion.div>
       </div>

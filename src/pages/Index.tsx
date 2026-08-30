@@ -2,7 +2,8 @@ import { Navbar } from '@/components/landing/Navbar';
 import { ChalkboardIntro } from '@/components/landing/ChalkboardIntro';
 import { Hero } from '@/components/landing/Hero';
 import { Features } from '@/components/landing/Features';
-import { HowItWorks } from '@/components/landing/HowItWorks';
+import { CTA } from '@/components/landing/CTA';
+import { Testimonials } from '@/components/landing/Testimonials';
 
 const Index = () => {
   return (
@@ -17,13 +18,14 @@ const Index = () => {
         {/* 2. Main Hero Section */}
         <Hero />
 
-        {/* 3. Sticky Features Showcase ("One app. One solution.") */}
+        {/* 3. Interactive core-section showcase */}
         <Features />
 
-        {/* 4. Creative How It Works Onboarding */}
-        <div id="how-it-works">
-          <HowItWorks />
-        </div>
+        {/* 4. Three independently pausing testimonial rails */}
+        <Testimonials />
+
+        {/* 5. NoteZ onboarding call to action */}
+        <CTA />
       </main>
     </div>
   );

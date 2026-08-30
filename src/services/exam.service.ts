@@ -24,6 +24,32 @@ export interface GenerateExamResult {
   questions: ExamQuestion[];
 }
 
+export interface ExamHistoryEntry {
+  id: string;
+  subject: string;
+  score: number;
+  total_questions: number;
+  difficulty: string;
+  created_at: string;
+  questions: unknown;
+}
+
+export async function fetchExamHistory(
+  userId: string,
+  limit = 12,
+): Promise<ExamHistoryEntry[]> {
+  const safeLimit = Math.min(Math.max(Math.round(limit), 1), 30);
+  const { data, error } = await supabase
+    .from('exam_results')
+    .select('id, subject, score, total_questions, difficulty, created_at, questions')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+
+  if (error) throw error;
+  return (data ?? []) as unknown as ExamHistoryEntry[];
+}
+
 async function readExamFunctionError(error: unknown): Promise<string | null> {
   const context = (error as { context?: unknown } | null)?.context;
   if (!(context instanceof Response)) return null;
