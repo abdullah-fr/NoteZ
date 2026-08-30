@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircleHeart, Star, Send, Check, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '@/lib/auth';
+import { readUserStorage, writeUserStorage } from '@/lib/user-storage';
 
 type FeedbackCategory = 'bug' | 'feature' | 'general';
 
@@ -14,6 +16,7 @@ interface FeedbackEntry {
 }
 
 export default function FeedbackView() {
+  const { user } = useAuth();
   const { t } = useTranslation();
   const [category, setCategory] = useState<FeedbackCategory>('general');
   const [rating, setRating] = useState(0);
@@ -23,11 +26,11 @@ export default function FeedbackView() {
   const [submitted, setSubmitted] = useState(false);
 
   function handleSubmit() {
-    if (!message.trim() || rating === 0) return;
+    if (!user || !message.trim() || rating === 0) return;
     setSubmitting(true);
 
     try {
-      const existing: FeedbackEntry[] = JSON.parse(localStorage.getItem('notez_feedback') || '[]');
+      const existing = readUserStorage<FeedbackEntry[]>(user.id, 'feedback', []);
       existing.push({
         id: crypto.randomUUID(),
         category,
@@ -35,7 +38,7 @@ export default function FeedbackView() {
         message: message.trim(),
         createdAt: new Date().toISOString(),
       });
-      localStorage.setItem('notez_feedback', JSON.stringify(existing));
+      writeUserStorage(user.id, 'feedback', existing);
     } catch {
       // Silent fail
     }

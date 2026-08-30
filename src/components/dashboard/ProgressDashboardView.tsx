@@ -4,7 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { useTimer } from '@/lib/timer';
 import { useCalendar, dayLabel } from '@/lib/calendar';
+import { useFolderStorage } from '@/hooks/useFolderStorage';
+import type { FolderItem } from '@/hooks/useFolderStorage';
 import { supabase } from '@/integrations/supabase/client';
+import { readUserStorage, writeUserStorage } from '@/lib/user-storage';
 import {
   fetchProgressData, subscribeToProgressUpdates,
   type UserProgress, type ExamResult, type StudySession,
@@ -23,7 +26,7 @@ import CardDisplay, { type CardDisplayItem } from './widgets/CardDisplay';
    WEEKLY RECAP
    Dismissible for the session; reappears next week.
 ══════════════════════════════════════════════════════════════ */
-const RECAP_STORAGE_KEY = 'notez_recap_shown_week';
+const RECAP_STORAGE_KEY = 'recap-shown-week';
 
 function getISOWeek(d: Date) {
   const jan4 = new Date(d.getFullYear(), 0, 4);
@@ -55,7 +58,7 @@ function WeeklyRecap({
 
   useEffect(() => {
     const thisWeek = `${new Date().getFullYear()}-W${getISOWeek(new Date())}`;
-    const shown = localStorage.getItem(RECAP_STORAGE_KEY);
+    const shown = readUserStorage<string | null>(userId, RECAP_STORAGE_KEY, null);
     if (shown === thisWeek || fetchedRef.current) return;
     if (sessions.length === 0 && examResults.length === 0) return;
     fetchedRef.current = true;
@@ -104,10 +107,10 @@ function WeeklyRecap({
       } else {
         setRecap(generateClientFallbackRecap());
       }
-      localStorage.setItem(RECAP_STORAGE_KEY, thisWeek);
+      writeUserStorage(userId, RECAP_STORAGE_KEY, thisWeek);
     }).catch(() => {
       setRecap(generateClientFallbackRecap());
-      localStorage.setItem(RECAP_STORAGE_KEY, thisWeek);
+      writeUserStorage(userId, RECAP_STORAGE_KEY, thisWeek);
     }).finally(() => setLoading(false));
   }, [userId, sessions, examResults, progress]);
 
@@ -665,68 +668,22 @@ interface EngagementFeature {
   total: number;
 }
 
-function getStoredNoteCount(): number {
-  if (typeof window === 'undefined') return 0;
-
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem('notez_folders') || '[]');
-    if (!Array.isArray(raw)) return 0;
-
-    return raw.reduce((folderTotal, folder) => {
-      if (!folder || typeof folder !== 'object') return folderTotal;
-      const categories = (folder as { categories?: unknown }).categories;
-      if (!Array.isArray(categories)) return folderTotal;
-
-      return folderTotal + categories.reduce((categoryTotal, category) => {
-        if (!category || typeof category !== 'object') return categoryTotal;
-        const notes = (category as { notes?: unknown }).notes;
-        return categoryTotal + (Array.isArray(notes) ? notes.length : 0);
-      }, 0);
-    }, 0);
-  } catch {
-    return 0;
-  }
+function getStoredNoteCount(folders: FolderItem[]): number {
+  return folders.reduce(
+    (total, folder) => total + folder.categories.reduce((count, category) => count + category.notes.length, 0),
+    0,
+  );
 }
 
-function getStoredFolderCount(): number {
-  if (typeof window === 'undefined') return 0;
-
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem('notez_folders') || '[]');
-    return Array.isArray(raw) ? raw.length : 0;
-  } catch {
-    return 0;
-  }
+function getStoredFolderCount(folders: FolderItem[]): number {
+  return folders.length;
 }
 
-function getStoredNoteDates(): string[] {
-  if (typeof window === 'undefined') return [];
-
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem('notez_folders') || '[]');
-    if (!Array.isArray(raw)) return [];
-
-    return raw.flatMap(folder => {
-      if (!folder || typeof folder !== 'object') return [];
-      const categories = (folder as { categories?: unknown }).categories;
-      if (!Array.isArray(categories)) return [];
-
-      return categories.flatMap(category => {
-        if (!category || typeof category !== 'object') return [];
-        const notes = (category as { notes?: unknown }).notes;
-        if (!Array.isArray(notes)) return [];
-
-        return notes.flatMap(note => {
-          if (!note || typeof note !== 'object') return [];
-          const candidate = (note as { updatedAt?: unknown; createdAt?: unknown }).updatedAt
-            ?? (note as { createdAt?: unknown }).createdAt;
-          return typeof candidate === 'string' ? [candidate] : [];
-        });
-      });
-    });
-  } catch {
-    return [];
-  }
+function getStoredNoteDates(folders: FolderItem[]): string[] {
+  return folders.flatMap(folder => folder.categories.flatMap(category => category.notes.flatMap(note => {
+    const candidate = note.updatedAt ?? note.createdAt;
+    return candidate instanceof Date ? [candidate.toISOString()] : [];
+  })));
 }
 
 function getLastThirtyDays(): Date[] {
@@ -748,6 +705,7 @@ function AdvancedEngagementReport({
   flashcards,
   progress,
   noteCount,
+  folders,
 }: {
   sessions: StudySession[];
   examResults: ExamResult[];
@@ -756,6 +714,7 @@ function AdvancedEngagementReport({
   flashcards: FlashcardActivity[];
   progress: UserProgress;
   noteCount: number;
+  folders: FolderItem[];
 }) {
   const days = useMemo(() => getLastThirtyDays(), []);
   const dayKeys = useMemo(() => days.map(day => format(day, 'yyyy-MM-dd')), [days]);
@@ -773,7 +732,7 @@ function AdvancedEngagementReport({
       cells[feature][index] += Math.max(1, amount);
     };
 
-    getStoredNoteDates().forEach(timestamp => addAction('notes', timestamp));
+    getStoredNoteDates(folders).forEach(timestamp => addAction('notes', timestamp));
     examResults.forEach(exam => addAction('exams', exam.created_at));
     sessions.forEach(session => {
       addAction('focus', session.started_at, Math.max(1, Math.ceil((session.duration_minutes || 0) / 25)));
@@ -814,7 +773,7 @@ function AdvancedEngagementReport({
       totalMinutes,
       examCount: examResults.length,
     };
-  }, [activities, checklists, dayKeys, examResults, flashcards, noteCount, progress, sessions]);
+  }, [activities, checklists, dayKeys, examResults, flashcards, folders, noteCount, progress, sessions]);
 
   const maxCellValue = Math.max(1, ...features.flatMap(feature => feature.cells));
   const intensityAlpha = [0.06, 0.2, 0.38, 0.62, 0.88];
@@ -929,6 +888,7 @@ function formatMinutes(min: number): string {
 ══════════════════════════════════════════════════════════════ */
 export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const { user } = useAuth();
+  const { folders } = useFolderStorage(user?.id);
   const [progress, setProgress] = useState<UserProgress>({
     xp: 0, level: 1, streak_days: 0, total_study_minutes: 0,
     exams_completed: 0, flashcards_reviewed: 0, quizzes_completed: 0,
@@ -939,8 +899,8 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
   const [checklistsList, setChecklistsList] = useState<ChecklistItem[]>([]);
   const [flashcardsList, setFlashcardsList] = useState<FlashcardActivity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [noteCount, setNoteCount] = useState(getStoredNoteCount);
-  const [folderCount, setFolderCount] = useState(getStoredFolderCount);
+  const [noteCount, setNoteCount] = useState(0);
+  const [folderCount, setFolderCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -964,18 +924,9 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
   }, [user]);
 
   useEffect(() => {
-    const refreshFolderMetrics = () => {
-      setNoteCount(getStoredNoteCount());
-      setFolderCount(getStoredFolderCount());
-    };
-
-    window.addEventListener('notez:folders-updated', refreshFolderMetrics);
-    window.addEventListener('storage', refreshFolderMetrics);
-    return () => {
-      window.removeEventListener('notez:folders-updated', refreshFolderMetrics);
-      window.removeEventListener('storage', refreshFolderMetrics);
-    };
-  }, []);
+    setNoteCount(getStoredNoteCount(folders));
+    setFolderCount(getStoredFolderCount(folders));
+  }, [folders]);
 
   /* ── first-run check ── */
   const isFirstRun = progress.total_study_minutes === 0 && progress.exams_completed === 0;
@@ -1091,6 +1042,7 @@ export default function ProgressDashboardView({ onNavigate }: { onNavigate?: (vi
         flashcards={flashcardsList}
         progress={progress}
         noteCount={noteCount}
+        folders={folders}
       />
     </div>
   );

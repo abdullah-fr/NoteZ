@@ -9,6 +9,8 @@ import {
 } from "react";
 import { logCompletedSession } from "@/services/timer.service";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
+import { readUserStorage, writeUserStorage } from "@/lib/user-storage";
 
 export const TIMER_OPTIONS = [15, 25, 30, 45, 60];
 
@@ -198,7 +200,7 @@ function playChime() {
       if (Notification.permission === "granted") {
         new Notification("Focus Session Complete! 🎉", {
           body: "Great work! Time for a well-deserved break.",
-          icon: "/favicon.svg",
+          icon: "/NoteZ%20logo2.png",
         });
       }
     }
@@ -235,7 +237,7 @@ function playBreakChime() {
       if (Notification.permission === "granted") {
         new Notification("Break Finished! ⚡", {
           body: "Ready to start your next focused session?",
-          icon: "/favicon.svg",
+          icon: "/NoteZ%20logo2.png",
         });
       }
     }
@@ -310,14 +312,12 @@ const SK_ROUTINES   = "notez_ft_routines";
 const SK_SESSIONS   = "notez_ft_sessions";
 const SK_DAILY_GOAL = "notez_ft_daily_goal";
 
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch { return fallback; }
+function loadJson<T>(userId: string | null | undefined, key: string, fallback: T): T {
+  return readUserStorage(userId, key, fallback);
 }
-function saveJson(key: string, val: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+
+function saveJson(userId: string | null | undefined, key: string, val: unknown): void {
+  writeUserStorage(userId, key, val);
 }
 
 /** Timer data blob shape stored in Supabase (one row per user). */
@@ -331,6 +331,21 @@ async function saveTimerDataToCloud(userId: string, data: TimerCloudData): Promi
   await supabase
     .from('notez_timer_data')
     .upsert({ user_id: userId, data: data as unknown as Record<string, unknown> }, { onConflict: 'user_id' });
+}
+
+// Keep full timer snapshots in order so a slower partial snapshot cannot
+// overwrite a newer session/routine update for the same account.
+const timerWriteQueues = new Map<string, Promise<void>>();
+
+function queueTimerWrite(userId: string, data: TimerCloudData): void {
+  const previous = timerWriteQueues.get(userId) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => saveTimerDataToCloud(userId, data));
+  timerWriteQueues.set(userId, next);
+  void next.catch(() => undefined).finally(() => {
+    if (timerWriteQueues.get(userId) === next) timerWriteQueues.delete(userId);
+  });
 }
 
 async function fetchTimerDataFromCloud(userId: string): Promise<TimerCloudData | null> {
@@ -427,14 +442,14 @@ function calcAnalytics(sessions: FocusSession[]) {
 ───────────────────────────────────────────────────────────── */
 export function TimerProvider({ children }: { children: ReactNode }) {
   /* ── auth ── */
-  const [userId, setUserId] = useState<string | null>(null);
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setUserId(s?.user?.id ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const userIdRef = useRef<string | null>(userId);
+  userIdRef.current = userId;
+  // Do not let initial defaults/local cache write over cloud data before the
+  // current account has finished hydrating.
+  const dataReadyRef = useRef(false);
+  const loadRequestRef = useRef(0);
 
   /* ── Focus-enhanced state ── */
   const [selectedMinutes, setSelectedMinutes] = useState(25);
@@ -445,32 +460,32 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   const [activeGoal, setActiveGoalState]      = useState<FocusGoal | null>(null);
   const [activeRoutine, setActiveRoutineState] = useState<Routine | null>(null);
   const [autoStart, setAutoStartState]        = useState<boolean>(() => {
-    return localStorage.getItem("notez_ft_autostart") === "true";
+    return loadJson(userId, "timer-autostart", false);
   });
 
   const setAutoStart = useCallback((enabled: boolean) => {
     setAutoStartState(enabled);
-    try { localStorage.setItem("notez_ft_autostart", enabled ? "true" : "false"); } catch {}
+    if (userIdRef.current && dataReadyRef.current) {
+      saveJson(userIdRef.current, "timer-autostart", enabled);
+    }
   }, []);
 
   // routines
   const [routines, setRoutines] = useState<Routine[]>(() => {
-    const saved = loadJson<Routine[]>(SK_ROUTINES, []);
+    const saved = loadJson<Routine[]>(userId, SK_ROUTINES, []);
     return saved.length > 0 ? saved : DEFAULT_ROUTINES;
   });
 
   // session history
   const [sessionHistory, setSessionHistory] = useState<FocusSession[]>(
-    () => loadJson<FocusSession[]>(SK_SESSIONS, [])
+    () => loadJson<FocusSession[]>(userId, SK_SESSIONS, [])
   );
 
   // daily goal
   const [dailyGoal, setDailyGoalState] = useState<DailyGoalSettings>(
-    () => loadJson<DailyGoalSettings>(SK_DAILY_GOAL, { dailyMins: 120, weeklyMins: 600 })
+    () => loadJson<DailyGoalSettings>(userId, SK_DAILY_GOAL, { dailyMins: 120, weeklyMins: 600 })
   );
 
-  // Track whether cloud data has been loaded for this session
-  const cloudLoadedRef = useRef(false);
   // Refs to always have latest values in sync effects without stale closures
   const sessionsRef  = useRef(sessionHistory);
   const routinesRef  = useRef(routines);
@@ -479,58 +494,59 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   useEffect(() => { routinesRef.current  = routines; },      [routines]);
   useEffect(() => { dailyGoalRef.current = dailyGoal; },     [dailyGoal]);
 
-  // Load from Supabase on mount — cloud wins over localStorage
+  // Load from Supabase whenever the authenticated identity changes.
   useEffect(() => {
-    if (!userId || cloudLoadedRef.current) return;
-    cloudLoadedRef.current = true;
+    const requestId = ++loadRequestRef.current;
+    dataReadyRef.current = false;
+
+    if (!userId) return;
 
     fetchTimerDataFromCloud(userId).then(cloud => {
-      if (!cloud) {
-        // No cloud row yet — migrate existing localStorage data up
-        const localData: TimerCloudData = {
-          sessions: loadJson<FocusSession[]>(SK_SESSIONS, []),
-          routines: loadJson<Routine[]>(SK_ROUTINES, []),
-          dailyGoal: loadJson<DailyGoalSettings>(SK_DAILY_GOAL, { dailyMins: 120, weeklyMins: 600 }),
-        };
-        if (localData.sessions.length > 0 || localData.routines.length > 0) {
-          void saveTimerDataToCloud(userId, localData);
-        }
-        return;
+      if (requestId !== loadRequestRef.current || userIdRef.current !== userId) return;
+
+      if (cloud) {
+        // Cloud is authoritative, including explicit empty arrays. Never keep
+        // values from the previous account when this account has no records.
+        const nextSessions = Array.isArray(cloud.sessions) ? cloud.sessions : [];
+        const nextRoutines = Array.isArray(cloud.routines) && cloud.routines.length > 0
+          ? cloud.routines
+          : DEFAULT_ROUTINES;
+        const nextDailyGoal = cloud.dailyGoal ?? { dailyMins: 120, weeklyMins: 600 };
+        setSessionHistory(nextSessions);
+        setRoutines(nextRoutines);
+        setDailyGoalState(nextDailyGoal);
+        saveJson(userId, SK_SESSIONS, nextSessions);
+        saveJson(userId, SK_ROUTINES, nextRoutines);
+        saveJson(userId, SK_DAILY_GOAL, nextDailyGoal);
+      } else {
+        // If the row does not exist or the network is unavailable, only the
+        // cache keyed by this exact user ID may be used. No legacy migration.
+        setSessionHistory(loadJson<FocusSession[]>(userId, SK_SESSIONS, []));
+        const cachedRoutines = loadJson<Routine[]>(userId, SK_ROUTINES, []);
+        setRoutines(cachedRoutines.length > 0 ? cachedRoutines : DEFAULT_ROUTINES);
+        setDailyGoalState(loadJson<DailyGoalSettings>(userId, SK_DAILY_GOAL, { dailyMins: 120, weeklyMins: 600 }));
       }
-      // Cloud wins — update state and localStorage cache
-      if (cloud.sessions?.length) {
-        setSessionHistory(cloud.sessions);
-        saveJson(SK_SESSIONS, cloud.sessions);
-      }
-      if (cloud.routines?.length) {
-        setRoutines(cloud.routines);
-        saveJson(SK_ROUTINES, cloud.routines);
-      }
-      if (cloud.dailyGoal) {
-        setDailyGoalState(cloud.dailyGoal);
-        saveJson(SK_DAILY_GOAL, cloud.dailyGoal);
-      }
+      dataReadyRef.current = true;
+    }).catch(() => {
+      if (requestId !== loadRequestRef.current || userIdRef.current !== userId) return;
+      dataReadyRef.current = true;
     });
   }, [userId]);
 
-  // Sync to localStorage + Supabase whenever any of the three pieces change
+  // Sync one complete, user-scoped snapshot after hydration.
   useEffect(() => {
-    saveJson(SK_SESSIONS, sessionHistory);
-    if (userId) void saveTimerDataToCloud(userId, { sessions: sessionHistory, routines: routinesRef.current, dailyGoal: dailyGoalRef.current });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionHistory]);
+    if (!userId || !dataReadyRef.current) return;
+    const snapshot = { sessions: sessionHistory, routines, dailyGoal };
+    saveJson(userId, SK_SESSIONS, sessionHistory);
+    saveJson(userId, SK_ROUTINES, routines);
+    saveJson(userId, SK_DAILY_GOAL, dailyGoal);
+    queueTimerWrite(userId, snapshot);
+  }, [dailyGoal, routines, sessionHistory, userId]);
 
   useEffect(() => {
-    saveJson(SK_ROUTINES, routines);
-    if (userId) void saveTimerDataToCloud(userId, { sessions: sessionsRef.current, routines, dailyGoal: dailyGoalRef.current });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routines]);
-
-  useEffect(() => {
-    saveJson(SK_DAILY_GOAL, dailyGoal);
-    if (userId) void saveTimerDataToCloud(userId, { sessions: sessionsRef.current, routines: routinesRef.current, dailyGoal });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyGoal]);
+    if (!userId || !dataReadyRef.current) return;
+    saveJson(userId, "timer-autostart", autoStart);
+  }, [autoStart, userId]);
 
   /* ── Focus countdown ── */
   const focus = useCountdown(25 * 60);

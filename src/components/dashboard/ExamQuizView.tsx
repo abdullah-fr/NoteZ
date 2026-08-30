@@ -4,6 +4,8 @@ import { useAuth } from '@/lib/auth';
 import { generateExamWithGemini, saveExamResult, type ExamQuestion } from '@/services';
 import { toast } from 'sonner';
 import { useUpgradeModal, parseLimitError } from '@/hooks/use-upgrade-modal';
+import { useFolderStorage } from '@/hooks/useFolderStorage';
+import type { FolderItem } from '@/hooks/useFolderStorage';
 import UpgradeModal from '@/components/dashboard/UpgradeModal';
 import { useTimer } from '@/lib/timer';
 import { getExamModerationMessage } from '@/lib/exam-safety';
@@ -54,6 +56,19 @@ interface LocalFolderData {
   id: string;
   name: string;
   notes: FolderNote[];
+}
+
+function toLocalFolderData(folders: FolderItem[]): LocalFolderData[] {
+  return folders.map(folder => ({
+    id: folder.id,
+    name: folder.name || 'Folder',
+    notes: folder.categories.flatMap(category => category.notes.map(note => ({
+      id: note.id,
+      title: note.title || 'Untitled Note',
+      content: note.content || '',
+      categoryName: category.name || 'Notes',
+    }))),
+  }));
 }
 
 interface RecentExam {
@@ -258,6 +273,7 @@ function HistoryResultModal({ exam, onClose }: { exam: RecentExam; onClose: () =
 
 export default function ExamQuizView() {
   const { user } = useAuth();
+  const { folders } = useFolderStorage(user?.id);
   const { upgradeModal, handleLimitError, closeUpgradeModal } = useUpgradeModal();
   const { setExamMinutes, startExam, pauseExam, resetExam: resetTimerState, examTimeLeft, examRunning, examCompleted: timerExamCompleted } = useTimer();
 
@@ -315,40 +331,7 @@ export default function ExamQuizView() {
     loadRecent();
   }, [user, examCompleted]);
 
-  // Load folders and notes from localStorage
-  const localFoldersData: LocalFolderData[] = (() => {
-    try {
-      const raw: unknown = JSON.parse(localStorage.getItem('notez_folders') || '[]');
-      if (!Array.isArray(raw)) return [];
-
-      return raw.flatMap((folder): LocalFolderData[] => {
-        if (!isRecord(folder) || typeof folder.id !== 'string') return [];
-        const categories = Array.isArray(folder.categories) ? folder.categories : [];
-        const notes = categories.flatMap((category): FolderNote[] => {
-          if (!isRecord(category)) return [];
-          const categoryName = typeof category.name === 'string' ? category.name : 'Notes';
-          const categoryNotes = Array.isArray(category.notes) ? category.notes : [];
-          return categoryNotes.flatMap((note): FolderNote[] => {
-            if (!isRecord(note) || typeof note.id !== 'string') return [];
-            return [{
-              id: note.id,
-              title: typeof note.title === 'string' && note.title ? note.title : 'Untitled Note',
-              content: typeof note.content === 'string' ? note.content : '',
-              categoryName,
-            }];
-          });
-        });
-
-        return [{
-          id: folder.id,
-          name: typeof folder.name === 'string' && folder.name ? folder.name : 'Folder',
-          notes,
-        }];
-      });
-    } catch {
-      return [];
-    }
-  })();
+  const localFoldersData = useMemo(() => toLocalFolderData(folders), [folders]);
 
   const currentFolder = localFoldersData.find(f => f.id === selectedFolderId);
 

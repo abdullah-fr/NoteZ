@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Sparkles, Twitter, Github, Linkedin } from 'lucide-react';
+import { Twitter, Github, Linkedin } from 'lucide-react';
 
 const links = {
   Product: [
@@ -25,9 +25,7 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 md:gap-12 mb-12">
           <div className="col-span-2">
             <Link to="/" className="inline-flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-purple flex items-center justify-center">
-                <Sparkles className="h-5 w-5 text-primary-foreground" />
-              </div>
+              <img src="/NoteZ%20logo2.png" alt="NoteZ" className="h-8 w-8 rounded-lg object-cover shrink-0" />
               <span className="font-display text-xl font-bold tracking-tight">NoteZ</span>
             </Link>
             <p className="text-sm text-muted-foreground max-w-xs leading-relaxed mb-6">

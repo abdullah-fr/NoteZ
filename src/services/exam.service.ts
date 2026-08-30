@@ -147,8 +147,12 @@ export async function saveExamResult(
   if (error) console.error('Failed to save exam result:', error);
 }
 
-export async function deleteExamResult(id: string): Promise<void> {
-  const { error } = await supabase.from('exam_results').delete().eq('id', id);
+export async function deleteExamResult(userId: string, id: string): Promise<void> {
+  const { error } = await supabase
+    .from('exam_results')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
   if (error) {
     console.error('Failed to delete exam result:', error);
     throw error;

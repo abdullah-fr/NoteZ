@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { isSameDay, isToday, isTomorrow, differenceInCalendarDays, format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
+import {
+  dispatchUserStorageEvent,
+  getUserStorageKey,
+  isUserStorageEventFor,
+  readUserStorage,
+  writeUserStorage,
+} from '@/lib/user-storage';
 
 export type EventType = 'task' | 'deadline' | 'event';
 export type EventPriority = 'low' | 'medium' | 'high';
@@ -35,25 +43,21 @@ const CalendarContext = createContext<CalendarContextType | undefined>(undefined
 
 /* ── Storage helpers ─────────────────────────────────────────────── */
 
-const LS_KEY = 'notez_calendar_events';
-
 function deserialize(raw: unknown[]): CalendarEvent[] {
   return raw.map((e) => ({ ...(e as CalendarEvent), date: new Date((e as Record<string, unknown>).date as string) }));
 }
 
-function readLocal(): CalendarEvent[] {
+function readScopedEvents(userId: string | null | undefined): CalendarEvent[] {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return deserialize(parsed);
-    }
-  } catch {}
-  return sampleEvents();
+    const parsed = readUserStorage<unknown[]>(userId, 'calendar-events', []);
+    return Array.isArray(parsed) ? deserialize(parsed) : [];
+  } catch {
+    return [];
+  }
 }
 
-function writeLocal(events: CalendarEvent[]): void {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(events)); } catch {}
+function writeScopedEvents(userId: string, events: CalendarEvent[]): void {
+  writeUserStorage(userId, 'calendar-events', events);
 }
 
 async function readCloud(userId: string): Promise<CalendarEvent[] | null> {
@@ -74,83 +78,69 @@ async function writeCloud(userId: string, events: CalendarEvent[]): Promise<void
     .upsert({ user_id: userId, data: JSON.parse(JSON.stringify(events)) }, { onConflict: 'user_id' });
 }
 
-function sampleEvents(): CalendarEvent[] {
-  const today = new Date();
-  const d1 = new Date(today); d1.setDate(d1.getDate() + 2);
-  const d2 = new Date(today); d2.setDate(d2.getDate() + 3);
-  const d3 = new Date(today); d3.setDate(d3.getDate() + 5);
-  return [
-    { id: 'sample-1', date: today, type: 'task',     title: 'Physics — Chapter 4 Revision', subject: 'Physics Notes',    priority: 'high',   focusDurationMins: 60, hour: 7,  minute: 0,  ampm: 'PM', completed: true  },
-    { id: 'sample-2', date: today, type: 'deadline', title: 'Math Assignment Problems',      subject: 'Maths Folder',     priority: 'medium', focusDurationMins: 45, hour: 11, minute: 59, ampm: 'PM', completed: false },
-    { id: 'sample-3', date: d1,    type: 'deadline', title: 'Physics Midterm Exam',           subject: 'Physics Notes',    priority: 'high',   focusDurationMins: 90, hour: 9,  minute: 0,  ampm: 'AM', completed: false },
-    { id: 'sample-4', date: d2,    type: 'task',     title: 'Chemistry Lab Report',           subject: 'Chemistry',        priority: 'medium', focusDurationMins: 60, hour: 2,  minute: 30, ampm: 'PM', completed: false },
-    { id: 'sample-5', date: d3,    type: 'event',    title: 'Group Study & Project Sync',     subject: 'Computer Science', priority: 'low',    focusDurationMins: 45, hour: 4,  minute: 0,  ampm: 'PM', link: 'https://meet.google.com/abc-defg-hij', completed: false },
-  ];
-}
-
 /* ── Provider ────────────────────────────────────────────────────── */
 
 export function CalendarProvider({ children }: { children: ReactNode }) {
-  const [events, setEventsRaw] = useState<CalendarEvent[]>(readLocal);
-  const userIdRef = useRef<string | null>(null);
-  const cloudLoadedRef = useRef(false);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const userIdRef = useRef<string | null>(userId);
+  userIdRef.current = userId;
+  const loadRequestRef = useRef(0);
+  const [events, setEventsRaw] = useState<CalendarEvent[]>([]);
 
-  // Get userId once and watch for auth changes
+  // Reset immediately on identity changes, then load only the new user's data.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      userIdRef.current = data.user?.id ?? null;
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      const newId = session?.user?.id ?? null;
-      if (newId !== userIdRef.current) {
-        userIdRef.current = newId;
-        cloudLoadedRef.current = false; // trigger reload for new user
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    const requestId = ++loadRequestRef.current;
+    setEventsRaw([]);
+    if (!userId) return;
 
-  // Load from Supabase when userId is available (cloud always wins)
-  useEffect(() => {
     let cancelled = false;
     async function load() {
-      // Poll briefly for userId if not set yet (auth loads async)
-      let uid = userIdRef.current;
-      if (!uid) {
-        const { data } = await supabase.auth.getUser();
-        uid = data.user?.id ?? null;
-        userIdRef.current = uid;
-      }
-      if (!uid || cloudLoadedRef.current) return;
-      cloudLoadedRef.current = true;
-
-      const cloud = await readCloud(uid);
-      if (cancelled) return;
+      const cloud = await readCloud(userId);
+      if (cancelled || requestId !== loadRequestRef.current || userIdRef.current !== userId) return;
 
       if (cloud !== null) {
         setEventsRaw(cloud);
-        writeLocal(cloud);
+        writeScopedEvents(userId, cloud);
+        dispatchUserStorageEvent('notez:calendar-updated', userId);
       } else {
-        // No cloud row — migrate local data up (skip sample events)
-        const local = readLocal();
-        const isOnlySamples = local.every(e => e.id.startsWith('sample-'));
-        if (!isOnlySamples) void writeCloud(uid, local);
+        // A local cache can only belong to this exact authenticated ID.
+        setEventsRaw(readScopedEvents(userId));
       }
     }
     void load();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [userId]);
 
-  // Persist: write localStorage + Supabase together
+  useEffect(() => {
+    if (!userId) return;
+    const storageKey = getUserStorageKey(userId, 'calendar-events');
+    const reload = (event?: Event) => {
+      if (event?.type === 'storage' && (event as StorageEvent).key !== storageKey) return;
+      if (event?.type !== 'storage' && event && !isUserStorageEventFor(event, userId)) return;
+      setEventsRaw(readScopedEvents(userId));
+    };
+    window.addEventListener('notez:calendar-updated', reload);
+    window.addEventListener('storage', reload);
+    return () => {
+      window.removeEventListener('notez:calendar-updated', reload);
+      window.removeEventListener('storage', reload);
+    };
+  }, [userId]);
+
+  // Persist only under the current account's cache key and database row.
   function persist(next: CalendarEvent[]) {
-    writeLocal(next);
-    if (userIdRef.current) void writeCloud(userIdRef.current, next);
+    const uid = userIdRef.current;
+    if (!uid) return;
+    writeScopedEvents(uid, next);
+    dispatchUserStorageEvent('notez:calendar-updated', uid);
+    void writeCloud(uid, next);
   }
 
   function setEvents(updater: CalendarEvent[] | ((prev: CalendarEvent[]) => CalendarEvent[])) {
     setEventsRaw(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (!userIdRef.current) return prev;
       persist(next);
       return next;
     });

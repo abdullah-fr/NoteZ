@@ -162,8 +162,12 @@ export async function addFlashcard(
   return normalizeCard(legacyResult.data as unknown as FlashcardRow);
 }
 
-export async function deleteFlashcard(id: string): Promise<void> {
-  const { error } = await supabase.from('flashcards').delete().eq('id', id);
+export async function deleteFlashcard(userId: string, id: string): Promise<void> {
+  const { error } = await supabase
+    .from('flashcards')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
@@ -176,7 +180,7 @@ export async function deleteFlashcard(id: string): Promise<void> {
  * @param rating  Again=1, Hard=2, Good=3, Easy=4
  * @returns The updated card row.
  */
-export async function reviewCard(card: Flashcard, rating: Rating): Promise<Flashcard> {
+export async function reviewCard(userId: string, card: Flashcard, rating: Rating): Promise<Flashcard> {
   const fsrsCard: FSRSCard = {
     due:            new Date(card.due_at),
     stability:      card.stability,
@@ -206,6 +210,7 @@ export async function reviewCard(card: Flashcard, rating: Rating): Promise<Flash
     .from('flashcards')
     .update(patch)
     .eq('id', card.id)
+    .eq('user_id', userId)
     .select()
     .single();
   if (!modernResult.error) return normalizeCard(modernResult.data as unknown as FlashcardRow);

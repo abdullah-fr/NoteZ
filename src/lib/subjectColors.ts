@@ -22,23 +22,17 @@ export const SUBJECT_COLORS = [
  * The same string always maps to the same colour — even before a matching
  * Folder exists — so colour-coded subject labels are stable across views.
  *
- * If a matching folder is found in localStorage (name match, case-insensitive),
- * that folder's exact colour is returned instead, keeping things pixel-perfect.
+ * Pass the current user's already-loaded folders when an exact folder colour
+ * should win. This helper intentionally does not read browser storage because
+ * a synchronous global key cannot be associated safely with an account.
  */
-export function getSubjectColor(subjectName: string): string {
+export function getSubjectColor(
+  subjectName: string,
+  folders: readonly { name: string; color: string }[] = [],
+): string {
   // Prefer the folder colour when the subject name matches a folder exactly.
-  try {
-    const raw = localStorage.getItem('notez_folders');
-    if (raw) {
-      const folders: { name: string; color: string }[] = JSON.parse(raw);
-      const match = folders.find(
-        f => f.name.toLowerCase() === subjectName.toLowerCase(),
-      );
-      if (match?.color) return match.color;
-    }
-  } catch {
-    // localStorage unavailable or parse failure — fall through to hash
-  }
+  const match = folders.find(f => f.name.toLowerCase() === subjectName.toLowerCase());
+  if (match?.color) return match.color;
 
   // Deterministic hash → palette index
   let hash = 0;

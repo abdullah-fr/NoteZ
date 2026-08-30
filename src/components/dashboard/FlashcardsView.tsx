@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Rating } from 'ts-fsrs';
 import { useAuth } from '@/lib/auth';
+import { useFolderStorage } from '@/hooks/useFolderStorage';
+import type { FolderItem } from '@/hooks/useFolderStorage';
 import {
   fetchFlashcards, addFlashcard, deleteFlashcard,
   reviewCard, generateFlashcardsFromNotes, type Flashcard,
@@ -49,6 +51,19 @@ interface LocalFolderData {
   notes: FolderNote[];
 }
 
+function toLocalFolderData(folders: FolderItem[]): LocalFolderData[] {
+  return folders.map(folder => ({
+    id: folder.id,
+    name: folder.name || 'Folder',
+    notes: folder.categories.flatMap(category => category.notes.map(note => ({
+      id: note.id,
+      title: note.title || 'Untitled Note',
+      content: note.content || '',
+      categoryName: category.name || 'Notes',
+    }))),
+  }));
+}
+
 const GENERATE_STEPS = [
   'Reading your notes…',
   'Extracting key concepts…',
@@ -58,6 +73,7 @@ const GENERATE_STEPS = [
 
 export default function FlashcardsView() {
   const { user } = useAuth();
+  const { folders } = useFolderStorage(user?.id);
   const [allCards, setAllCards]       = useState<Flashcard[]>([]);
   const [queue, setQueue]            = useState<Flashcard[]>([]);
   const [currentIdx, setCurrentIdx]  = useState(0);
@@ -71,8 +87,7 @@ export default function FlashcardsView() {
   // Navigation direction state for distinct card change animation ('next' = 1, 'prev' = -1)
   const [slideDirection, setSlideDirection] = useState<number>(1);
 
-  // Dynamic folders state
-  const [foldersData, setFoldersData] = useState<LocalFolderData[]>([]);
+  const foldersData = useMemo(() => toLocalFolderData(folders), [folders]);
 
   // Generate from Notes state
   const [showGeneratePanel, setShowGeneratePanel] = useState(false);
@@ -83,37 +98,6 @@ export default function FlashcardsView() {
   const [genCardCount, setGenCardCount] = useState(10);
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Load folders from localStorage
-  const loadLocalFolders = useCallback(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem('notez_folders') || '[]');
-      const parsed: LocalFolderData[] = raw.map((f: any) => {
-        const notes: FolderNote[] = [];
-        (f.categories || []).forEach((cat: any) => {
-          (cat.notes || []).forEach((n: any) => {
-            notes.push({
-              id: n.id,
-              title: n.title || 'Untitled Note',
-              content: n.content || '',
-              categoryName: cat.name || 'Notes',
-            });
-          });
-        });
-        return { id: f.id, name: f.name || 'Folder', notes };
-      });
-      setFoldersData(parsed);
-    } catch {
-      setFoldersData([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadLocalFolders();
-    const handleUpdate = () => loadLocalFolders();
-    window.addEventListener('notez:folders-updated', handleUpdate);
-    return () => window.removeEventListener('notez:folders-updated', handleUpdate);
-  }, [loadLocalFolders]);
 
   const currentFolder = foldersData.find(f => f.id === selectedFolderId);
 
@@ -191,7 +175,8 @@ export default function FlashcardsView() {
   async function handleDelete() {
     if (!currentCard) return;
     try {
-      await deleteFlashcard(currentCard.id);
+      if (!user) return;
+      await deleteFlashcard(user.id, currentCard.id);
       const newQueue = queue.filter(c => c.id !== currentCard.id);
       setQueue(newQueue);
       setAllCards(prev => prev.filter(c => c.id !== currentCard.id));
@@ -344,7 +329,6 @@ export default function FlashcardsView() {
       <div className="flex items-center justify-end mb-5 gap-2 flex-wrap">
         <button
           onClick={() => {
-            loadLocalFolders();
             setShowGeneratePanel(v => !v);
             if (showAddForm) setShowAddForm(false);
           }}
@@ -383,7 +367,6 @@ export default function FlashcardsView() {
                 <button
                   type="button"
                   onClick={() => {
-                    loadLocalFolders();
                     setFolderDropdownOpen(v => !v);
                   }}
                   className="w-full h-10 px-3 rounded-xl bg-secondary/60 border border-border/80 text-xs text-foreground flex items-center justify-between font-medium hover:bg-secondary transition-colors outline-none focus:border-primary"

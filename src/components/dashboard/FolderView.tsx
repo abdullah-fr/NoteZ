@@ -346,7 +346,7 @@ export default function FolderView({
   onToggleSidebar?: () => void;
 }) {
   const { user, signOut } = useAuth();
-  const { folders, setFolders, setTrashItems, loading: foldersLoading } = useFolderStorage(user?.id);
+  const { folders, setFolders, setTrashItems, trashItems, loading: foldersLoading } = useFolderStorage(user?.id);
   const [view, setView] = useState<'folders' | 'notes' | 'trash'>('folders');
   const [folderScope, setFolderScope] = useState<'active' | 'archived'>(initialScope);
   const [activeFolder,   setActiveFolder]   = useState<FolderItem | null>(null);
@@ -360,26 +360,9 @@ export default function FolderView({
   const [listMode, setListMode] = useState<FolderListMode>('list');
 
   /* ── Dynamic trash state ── */
-  const [hasTrashItems, setHasTrashItems] = useState<boolean>(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingDeleteFolderIds, setPendingDeleteFolderIds] = useState<string[]>([]);
-
-  useEffect(() => {
-    const checkTrash = () => {
-      try {
-        setHasTrashItems(JSON.parse(localStorage.getItem('notez_trash') || '[]').length > 0);
-      } catch {
-        setHasTrashItems(false);
-      }
-    };
-    checkTrash();
-    window.addEventListener('notez:trash-updated', checkTrash);
-    window.addEventListener('notez:folders-updated', checkTrash);
-    return () => {
-      window.removeEventListener('notez:trash-updated', checkTrash);
-      window.removeEventListener('notez:folders-updated', checkTrash);
-    };
-  }, []);
+  const hasTrashItems = trashItems.length > 0;
 
   useEffect(() => {
     if (!initialFolderId) return;
@@ -691,7 +674,7 @@ export default function FolderView({
       const source = await uploadSourceFile(user.id, file);
       await triggerProcessSource(source.id);
       for (let attempt = 0; attempt < 15; attempt += 1) {
-        const sources = await fetchSources();
+        const sources = await fetchSources(user.id);
         const current = sources.find(item => item.id === source.id);
         if (current?.status === 'ready') return current.extracted_text ?? current.summary ?? '';
         if (current?.status === 'failed') break;

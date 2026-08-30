@@ -73,6 +73,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Clear the in-memory identity before awaiting the network request. This
+    // forces user-scoped providers/routes to unmount immediately, so the
+    // previous account's private data cannot remain visible during sign-out.
+    setSession(null);
+    setUser(null);
     await supabase.auth.signOut();
   };
 

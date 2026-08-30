@@ -60,26 +60,28 @@ export async function createActivity(
 ): Promise<Activity> {
   const { data, error } = await supabase
     .from('activities')
-    .insert({ user_id: userId, ...payload, progress: 0 })
+    .insert({ ...payload, user_id: userId, progress: 0 })
     .select()
     .single();
   if (error) throw error;
   return data as Activity;
 }
 
-export async function updateActivityProgress(activityId: string, progress: number): Promise<void> {
+export async function updateActivityProgress(userId: string, activityId: string, progress: number): Promise<void> {
   const { error } = await supabase
     .from('activities')
     .update({ progress })
-    .eq('id', activityId);
+    .eq('id', activityId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
-export async function updateActivityCompleted(activityId: string, completed: boolean): Promise<void> {
+export async function updateActivityCompleted(userId: string, activityId: string, completed: boolean): Promise<void> {
   const { error } = await supabase
     .from('activities')
     .update({ completed })
-    .eq('id', activityId);
+    .eq('id', activityId)
+    .eq('user_id', userId);
   if (!error) return;
 
   // A remote project that was created before the completion migration returns
@@ -93,15 +95,24 @@ export async function updateActivityCompleted(activityId: string, completed: boo
   throw error;
 }
 
-export async function deleteActivity(activityId: string): Promise<void> {
-  const { error } = await supabase.from('activities').delete().eq('id', activityId);
+export async function deleteActivity(userId: string, activityId: string): Promise<void> {
+  const { error } = await supabase
+    .from('activities')
+    .delete()
+    .eq('id', activityId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
 export async function addChecklistItems(
-  rows: { activity_id: string; user_id: string; label: string; position: number }[],
+  userId: string,
+  rows: { activity_id: string; label: string; position: number }[],
 ): Promise<void> {
-  const { error } = await supabase.from('activity_checklist_items').insert(rows);
+  // The account boundary is derived from the authenticated caller, not from
+  // a user_id field supplied by a draft or imported document.
+  const { error } = await supabase
+    .from('activity_checklist_items')
+    .insert(rows.map(row => ({ ...row, user_id: userId })));
   if (error) throw error;
 }
 
@@ -120,27 +131,30 @@ export async function addChecklistItem(
   return data as ChecklistItem;
 }
 
-export async function toggleChecklistItem(itemId: string, done: boolean): Promise<void> {
+export async function toggleChecklistItem(userId: string, itemId: string, done: boolean): Promise<void> {
   const { error } = await supabase
     .from('activity_checklist_items')
     .update({ done })
-    .eq('id', itemId);
+    .eq('id', itemId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
-export async function updateChecklistItemLabel(itemId: string, label: string): Promise<void> {
+export async function updateChecklistItemLabel(userId: string, itemId: string, label: string): Promise<void> {
   const { error } = await supabase
     .from('activity_checklist_items')
     .update({ label })
-    .eq('id', itemId);
+    .eq('id', itemId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
-export async function deleteChecklistItem(itemId: string): Promise<void> {
+export async function deleteChecklistItem(userId: string, itemId: string): Promise<void> {
   const { error } = await supabase
     .from('activity_checklist_items')
     .delete()
-    .eq('id', itemId);
+    .eq('id', itemId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 

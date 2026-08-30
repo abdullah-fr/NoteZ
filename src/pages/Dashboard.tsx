@@ -5,6 +5,7 @@ import { useTimer, type FocusGoal } from "@/lib/timer";
 import type { CalendarEvent } from "@/lib/calendar";
 
 import { useTranslation } from "react-i18next";
+import { readUserStorage, writeUserStorage } from "@/lib/user-storage";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -91,7 +92,7 @@ export default function Dashboard() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [timerWidgetClosed, setTimerWidgetClosed] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('notez_sidebar') !== 'closed');
+  const [sidebarOpen, setSidebarOpen] = useState(() => readUserStorage(user?.id, 'sidebar', 'open') !== 'closed');
   const [folderResetKey, setFolderResetKey] = useState(0);
   const [chatResetKey, setChatResetKey] = useState(0);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -107,8 +108,8 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('notez_sidebar', sidebarOpen ? 'open' : 'closed');
-  }, [sidebarOpen]);
+    writeUserStorage(user?.id, 'sidebar', sidebarOpen ? 'open' : 'closed');
+  }, [sidebarOpen, user?.id]);
 
   // Listen to open-settings custom event
   useEffect(() => {
@@ -250,7 +251,7 @@ export default function Dashboard() {
 
   const Brand = () => (
     <div className="flex items-center gap-2 select-none">
-      <img src="/favicon.svg" alt="NoteZ" className="h-6 w-6 rounded-sm object-cover shrink-0" />
+      <img src="/NoteZ%20logo2.png" alt="NoteZ" className="h-6 w-6 rounded-sm object-cover shrink-0" />
       <div className="flex items-baseline gap-1">
         <span className="font-serif text-[15px] tracking-tight">NoteZ</span>
         <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-muted-foreground">

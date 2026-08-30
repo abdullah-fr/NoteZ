@@ -22,30 +22,33 @@ export interface AttachedSource {
   error?: string | null;
 }
 
-export async function fetchConversations(): Promise<Conversation[]> {
+export async function fetchConversations(userId: string): Promise<Conversation[]> {
   const { data, error } = await supabase
     .from('chat_conversations')
     .select('id, title, mode, source_id, updated_at')
+    .eq('user_id', userId)
     .order('updated_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as Conversation[];
 }
 
-export async function fetchMessages(conversationId: string): Promise<ChatMessage[]> {
+export async function fetchMessages(userId: string, conversationId: string): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from('chat_messages')
     .select('id, role, content, created_at')
     .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
     .order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as ChatMessage[];
 }
 
-export async function fetchSourceById(sourceId: string): Promise<AttachedSource | null> {
+export async function fetchSourceById(userId: string, sourceId: string): Promise<AttachedSource | null> {
   const { data } = await supabase
     .from('sources')
     .select('id, title, status, error')
     .eq('id', sourceId)
+    .eq('user_id', userId)
     .maybeSingle();
   return data as AttachedSource | null;
 }
@@ -66,6 +69,7 @@ export async function createConversation(
 }
 
 export async function updateConversation(
+  userId: string,
   conversationId: string,
   patch: { mode?: string | null; source_id?: string | null },
 ): Promise<void> {
@@ -76,15 +80,17 @@ export async function updateConversation(
   const { error } = await supabase
     .from('chat_conversations')
     .update(patchData)
-    .eq('id', conversationId);
+    .eq('id', conversationId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
-export async function deleteConversation(conversationId: string): Promise<void> {
+export async function deleteConversation(userId: string, conversationId: string): Promise<void> {
   const { error } = await supabase
     .from('chat_conversations')
     .delete()
-    .eq('id', conversationId);
+    .eq('id', conversationId)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
@@ -106,6 +112,9 @@ export async function createSourceRecord(
   kind: string,
   filePath: string,
 ): Promise<AttachedSource> {
+  if (!filePath.startsWith(`${userId}/`)) {
+    throw new Error('Source file ownership mismatch');
+  }
   const { data, error } = await supabase
     .from('sources')
     .insert({ user_id: userId, title, kind, file_path: filePath, status: 'pending' })
@@ -127,14 +136,16 @@ export async function getStreamingToken(): Promise<string | null> {
 
 export function subscribeToSourceUpdates(
   sourceId: string,
+  userId: string,
   onUpdate: (patch: { status: string; error: string | null }) => void,
 ) {
   const channel = supabase
-    .channel(`chat-source-${sourceId}`)
+    .channel(`chat-source-${userId}-${sourceId}`)
     .on(
       'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'sources', filter: `id=eq.${sourceId}` },
+      { event: 'UPDATE', schema: 'public', table: 'sources', filter: `user_id=eq.${userId}` },
       (payload: any) => {
+        if (payload.new?.id !== sourceId || payload.new?.user_id !== userId) return;
         onUpdate({ status: payload.new.status, error: payload.new.error });
       },
     )

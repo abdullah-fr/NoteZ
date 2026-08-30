@@ -7,7 +7,7 @@ import { isTempEmail } from '@/lib/temp-email-domains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sparkles, Mail, Lock, User, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -103,9 +103,7 @@ export default function Signup() {
         <div className="glass rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-card overflow-hidden">
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center gap-2 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-gradient-purple flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-primary-foreground" />
-              </div>
+              <img src="/NoteZ%20logo2.png" alt="NoteZ" className="h-10 w-10 rounded-xl object-cover shrink-0" />
               <span className="text-2xl font-bold">NoteZ</span>
             </Link>
             <h1 className="text-2xl font-bold mb-2">{t('auth.createAccount')}</h1>

@@ -17,10 +17,11 @@ export interface Source {
   created_at: string;
 }
 
-export async function fetchSources(): Promise<Source[]> {
+export async function fetchSources(userId: string): Promise<Source[]> {
   const { data, error } = await supabase
     .from('sources')
     .select('*')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as Source[];
@@ -74,11 +75,31 @@ export async function createPastedSource(
   return data as Source;
 }
 
-export async function deleteSource(source: Source): Promise<void> {
-  if (source.file_path) {
-    await supabase.storage.from('uploads').remove([source.file_path]);
+export async function deleteSource(source: Source, userId: string): Promise<void> {
+  // Resolve the path from an owner-scoped row before touching Storage. The
+  // Source object is client supplied, so trusting its file_path could let a
+  // caller attempt to remove another user's upload.
+  const { data: ownedSource, error: lookupError } = await supabase
+    .from('sources')
+    .select('file_path')
+    .eq('id', source.id)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (!ownedSource) throw new Error('Source not found');
+
+  const filePath = ownedSource.file_path as string | null;
+  if (filePath && !filePath.startsWith(`${userId}/`)) {
+    throw new Error('Source file ownership mismatch');
   }
-  const { error } = await supabase.from('sources').delete().eq('id', source.id);
+  if (filePath) {
+    await supabase.storage.from('uploads').remove([filePath]);
+  }
+  const { error } = await supabase
+    .from('sources')
+    .delete()
+    .eq('id', source.id)
+    .eq('user_id', userId);
   if (error) throw error;
 }
 
@@ -109,7 +130,7 @@ export async function generateFromSource(
 
 export function subscribeToSourceChanges(userId: string, onChange: () => void) {
   const channel = supabase
-    .channel('sources-changes')
+    .channel(`sources-changes-${userId}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'sources', filter: `user_id=eq.${userId}` },

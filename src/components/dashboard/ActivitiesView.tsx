@@ -56,7 +56,12 @@ export default function ActivitiesView() {
 
         // Poll for processed text (max 30s)
         for (let attempt = 0; attempt < 12; attempt++) {
-          const { data } = await supabase.from('sources').select('status, extracted_text, summary, error').eq('id', source.id).single();
+          const { data } = await supabase
+            .from('sources')
+            .select('status, extracted_text, summary, error')
+            .eq('id', source.id)
+            .eq('user_id', user.id)
+            .single();
           if (data?.status === 'ready') {
             docText = data.extracted_text || data.summary || '';
             break;
@@ -100,8 +105,8 @@ export default function ActivitiesView() {
           description: draft.description || null,
         });
         if (draft.tasks.length) {
-          await addChecklistItems(draft.tasks.map((label, idx) => ({
-            activity_id: act.id, user_id: user.id, label, position: idx,
+          await addChecklistItems(user.id, draft.tasks.map((label, idx) => ({
+            activity_id: act.id, label, position: idx,
           })));
         }
       }
@@ -143,7 +148,8 @@ export default function ActivitiesView() {
   }, [itemsByActivity]);
 
   const persistProgress = async (activityId: string, value: number) => {
-    await updateActivityProgress(activityId, value);
+    if (!user) return;
+    await updateActivityProgress(user.id, activityId, value);
     setActivities(prev => prev.map(a => a.id === activityId ? { ...a, progress: value } : a));
   };
 
@@ -162,9 +168,9 @@ export default function ActivitiesView() {
     });
     if (draftTasks.length) {
       await addChecklistItems(
+        user.id,
         draftTasks.map((label, idx) => ({
           activity_id: data.id,
-          user_id: user.id,
           label,
           position: idx,
         })),
@@ -179,7 +185,8 @@ export default function ActivitiesView() {
     const newDone = !item.done;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, done: newDone } : i));
     try {
-      await toggleChecklistItem(item.id, newDone);
+      if (!user) return;
+      await toggleChecklistItem(user.id, item.id, newDone);
       const list = (itemsByActivity[item.activity_id] || []).map(i => i.id === item.id ? { ...i, done: newDone } : i);
       const pct = list.length ? Math.round((list.filter(i => i.done).length / list.length) * 100) : 0;
       await persistProgress(item.activity_id, pct);
@@ -214,7 +221,8 @@ export default function ActivitiesView() {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, label } : i));
     cancelEditingTask();
     try {
-      await updateChecklistItemLabel(item.id, label);
+      if (!user) return;
+      await updateChecklistItemLabel(user.id, item.id, label);
     } catch {
       await load();
       toast.error('Could not rename this task. Please try again.');
@@ -234,7 +242,8 @@ export default function ActivitiesView() {
   };
 
   const deleteItem = async (item: ChecklistItem) => {
-    await deleteChecklistItem(item.id);
+    if (!user) return;
+    await deleteChecklistItem(user.id, item.id);
     setItems(prev => prev.filter(i => i.id !== item.id));
     const list = (itemsByActivity[item.activity_id] || []).filter(i => i.id !== item.id);
     const pct = list.length ? Math.round((list.filter(i => i.done).length / list.length) * 100) : 0;
@@ -242,7 +251,8 @@ export default function ActivitiesView() {
   };
 
   const deleteActivityHandler = async (id: string) => {
-    await deleteActivity(id);
+    if (!user) return;
+    await deleteActivity(user.id, id);
     setActivities(prev => prev.filter(a => a.id !== id));
     setItems(prev => prev.filter(i => i.activity_id !== id));
     if (pendingCompletionActivityId === id) setPendingCompletionActivityId(null);
@@ -271,7 +281,8 @@ export default function ActivitiesView() {
   const moveToCompleted = async () => {
     if (!pendingCompletionActivity) return;
     try {
-      await updateActivityCompleted(pendingCompletionActivity.id, true);
+      if (!user) return;
+      await updateActivityCompleted(user.id, pendingCompletionActivity.id, true);
       setActivities(prev => prev.map(a => a.id === pendingCompletionActivity.id ? { ...a, completed: true } : a));
       setPendingCompletionActivityId(null);
       setExpanded(null);

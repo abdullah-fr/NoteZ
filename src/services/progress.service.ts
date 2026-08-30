@@ -97,7 +97,7 @@ export function subscribeToProgressUpdates(
   onChange: () => void,
 ) {
   const channel = supabase
-    .channel('dashboard-realtime')
+    .channel(`dashboard-realtime-${userId}`)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'study_sessions',
       filter: `user_id=eq.${userId}`,

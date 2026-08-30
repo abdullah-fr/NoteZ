@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/lib/auth';
+import { useFolderStorage } from '@/hooks/useFolderStorage';
+import type { FolderItem } from '@/hooks/useFolderStorage';
 import { supabase } from '@/integrations/supabase/client';
 import {
   createConversation, updateConversation,
@@ -76,6 +78,19 @@ const THINKING_LEVELS: { id: ThinkingLevel; label: string; desc: string }[] = [
 interface QuickTask { id: string; label: string; icon: any; desc: string; prompt: string; accent: string }
 interface LocalNote { id: string; title: string; content: string }
 interface LocalFolder { id: string; name: string; color: string; notes: LocalNote[] }
+
+function toLocalFolders(folders: FolderItem[]): LocalFolder[] {
+  return folders.map(folder => ({
+    id: folder.id,
+    name: folder.name,
+    color: folder.color,
+    notes: folder.categories.flatMap(category => category.notes.map(note => ({
+      id: note.id,
+      title: note.title || 'Untitled Note',
+      content: note.content || '',
+    }))),
+  }));
+}
 
 /* ─── constants ─── */
 const MODES: { id: Mode; label: string; icon: any; tag: string }[] = [
@@ -231,6 +246,8 @@ function ChatViewInner() {
   const { user } = useAuth();
   const { upgradeModal, closeUpgradeModal } = useUpgradeModal();
   const { getUpcoming } = useCalendar();
+  const { folders } = useFolderStorage(user?.id);
+  const localFolders = useMemo(() => toLocalFolders(folders), [folders]);
   const [activeId, setActiveId]           = useState<string | null>(null);
   const [messages, setMessages]           = useState<ChatMessage[]>([]);
   const [streaming, setStreaming]         = useState('');
@@ -249,36 +266,6 @@ function ChatViewInner() {
   const [inputFocused, setInputFocused]   = useState(false);
   const [activeCardId, setActiveCardId]   = useState<string | null>(null);
   const [lastSentMsg, setLastSentMsg]     = useState('');
-
-  function readLocalFolders(): LocalFolder[] {
-    try {
-      const raw = localStorage.getItem('notez_folders');
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return parsed.map((f: any) => {
-        const allNotes: LocalNote[] = [];
-        if (Array.isArray(f.categories)) {
-          for (const cat of f.categories) {
-            if (Array.isArray(cat.notes)) {
-              for (const n of cat.notes) {
-                allNotes.push({
-                  id: n.id,
-                  title: n.title || 'Untitled Note',
-                  content: n.content || '',
-                });
-              }
-            }
-          }
-        }
-        return {
-          id: f.id,
-          name: f.name,
-          color: f.color || '#8B5CF6',
-          notes: allNotes,
-        };
-      });
-    } catch { return []; }
-  }
 
   const isListeningRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
@@ -470,7 +457,6 @@ function ChatViewInner() {
     };
   }, [stopAudioTracks]);
 
-  const [localFolders, setLocalFolders] = useState<LocalFolder[]>(readLocalFolders);
   const selectedFolder = localFolders.find(f => f.id === selectedFolderId) ?? null;
   const selectedNote = selectedFolder?.notes.find(n => n.id === selectedNoteId) ?? null;
 
@@ -519,26 +505,16 @@ function ChatViewInner() {
   }, []);
 
   useEffect(() => {
-    const refreshFolders = () => setLocalFolders(readLocalFolders());
-    window.addEventListener('storage', refreshFolders);
-    window.addEventListener('notez:folders-updated', refreshFolders);
-    return () => {
-      window.removeEventListener('storage', refreshFolders);
-      window.removeEventListener('notez:folders-updated', refreshFolders);
-    };
-  }, []);
-
-  useEffect(() => {
     scrollToBottom();
   }, [messages, streaming, scrollToBottom]);
 
   useEffect(() => {
-    if (!attached?.id) return;
-    return subscribeToSourceUpdates(attached.id, ({ status, error }) => {
+    if (!attached?.id || !user?.id) return;
+    return subscribeToSourceUpdates(attached.id, user.id, ({ status, error }) => {
       setAttached(a => a?.id === attached.id ? { ...a, status: status as AttachedSource['status'], error } : a);
       if (status === 'failed') toast({ title: 'Attachment failed', description: error || 'Could not process file', variant: 'destructive' });
     });
-  }, [attached?.id]);
+  }, [attached?.id, user?.id]);
 
   const thinkingStageStartedAt = useRef(0);
   useEffect(() => {
@@ -706,7 +682,7 @@ function ChatViewInner() {
         setActiveId(convId);
       } else {
         if (requestId !== chatRequestIdRef.current) return;
-        await updateConversation(convId, { mode: effectiveMode, source_id: attached?.id ?? null });
+        await updateConversation(user.id, convId, { mode: effectiveMode, source_id: attached?.id ?? null });
       }
 
       const userMsgObj: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: msg, created_at: new Date().toISOString() };

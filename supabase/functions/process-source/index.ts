@@ -152,7 +152,18 @@ serve(async (req) => {
       .from("sources").select("*").eq("id", sourceId).eq("user_id", userId).maybeSingle();
     if (sErr || !source) throw new Error("Source not found");
 
-    await admin.from("sources").update({ status: "processing", error: null }).eq("id", sourceId);
+    // Storage uses the account id as the first path segment. Keep this check
+    // next to the service-role download so a malformed/legacy row cannot make
+    // the processor read another account's upload.
+    if (source.file_path && !source.file_path.startsWith(`${userId}/`)) {
+      throw new Error("Source file ownership mismatch");
+    }
+
+    await admin
+      .from("sources")
+      .update({ status: "processing", error: null })
+      .eq("id", sourceId)
+      .eq("user_id", userId);
 
     let text = source.extracted_text || "";
 
@@ -245,14 +256,18 @@ serve(async (req) => {
         status: "ready",
         extracted_text: text.slice(0, 100000),
         summary,
-      }).eq("id", sourceId);
+      }).eq("id", sourceId).eq("user_id", userId);
 
       return new Response(JSON.stringify({ ok: true, summary }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (innerErr) {
       const msg = innerErr instanceof Error ? innerErr.message : "Unknown error";
-      await admin.from("sources").update({ status: "failed", error: msg }).eq("id", sourceId);
+      await admin
+        .from("sources")
+        .update({ status: "failed", error: msg })
+        .eq("id", sourceId)
+        .eq("user_id", userId);
       throw innerErr;
     }
   } catch (e) {

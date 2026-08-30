@@ -78,6 +78,22 @@ serve(async (req) => {
       });
     }
 
+    // The conversation id is client supplied. Verify that it belongs to the
+    // signed-in user (or to a workspace the user belongs to) before reading
+    // history or writing messages. RLS protects the query, but this explicit
+    // relationship check also prevents an assistant request from attaching
+    // data to an unrelated conversation when the service evolves.
+    const { data: conversation, error: conversationError } = await supabase
+      .from("chat_conversations")
+      .select("id, user_id, workspace_id")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (conversationError || !conversation) {
+      return new Response(JSON.stringify({ error: "Conversation not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const GEMINI_API_KEY = getGeminiApiKey("GEMINI_CHAT_API_KEY");
     const creditResult = await checkAndDeductServer(
       user.id,
@@ -203,7 +219,8 @@ serve(async (req) => {
             await supabase
               .from("chat_conversations")
               .update({ updated_at: new Date().toISOString() })
-              .eq("id", conversationId);
+              .eq("id", conversationId)
+              .eq("user_id", conversation.user_id);
           } else if (chargedUserId) {
             await refundServer(
               chargedUserId,
