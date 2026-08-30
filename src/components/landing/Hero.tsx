@@ -33,7 +33,7 @@ export function Hero() {
             transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border/80 bg-card/60 backdrop-blur-md text-xs font-medium text-muted-foreground mb-8 shadow-sm"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <Sparkles className="w-3.5 h-3.5 text-foreground" />
             <span>The AI Study Companion for Serious Learners</span>
           </motion.div>
 

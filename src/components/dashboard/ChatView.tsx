@@ -284,7 +284,7 @@ function ChatViewInner() {
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [volumeBars, setVolumeBars] = useState<number[]>(IDLE_VOLUME_BARS);
-  
+
   const recognitionRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -298,7 +298,7 @@ function ChatViewInner() {
     isListeningRef.current = false;
     setIsListening(false);
     setVolumeBars(IDLE_VOLUME_BARS);
-    
+
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
@@ -870,7 +870,7 @@ The workspace could not load saved exam history for this request. Do not ask the
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.97 }}
                     transition={{ duration: 0.12 }}
-                    className="absolute top-full mt-1.5 left-0 z-50 w-80 sm:w-96 rounded-2xl border border-border bg-card shadow-2xl p-2.5"
+                    className="absolute top-full mt-1.5 left-0 z-50 w-[calc(100vw-1.5rem)] sm:w-96 rounded-2xl border border-border bg-card shadow-2xl p-2.5"
                   >
                     <div className="border-b border-border/70 px-2.5 pb-2 mb-1.5">
                       <p className="text-[12px] font-semibold text-foreground">Ask this Folder or Note</p>
@@ -1032,7 +1032,7 @@ The workspace could not load saved exam history for this request. Do not ask the
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.97 }}
                     transition={{ duration: 0.12 }}
-                    className="absolute top-full mt-1.5 left-0 z-50 w-56 sm:w-60 rounded-xl border border-border bg-card shadow-2xl p-1.5 space-y-0.5"
+                    className="absolute top-full mt-1.5 left-auto right-0 z-50 w-56 sm:left-0 sm:right-auto sm:w-60 rounded-xl border border-border bg-card shadow-2xl p-1.5 space-y-0.5"
                   >
                     <div className="px-3 py-1.5 border-b border-border/80 mb-1">
                       <p className="text-[11.5px] font-semibold text-foreground flex items-center gap-1.5">
@@ -1155,11 +1155,12 @@ The workspace could not load saved exam history for this request. Do not ask the
                           whileHover={{ y: -2 }}
                           whileTap={{ scale: 0.98 }}
                           onClick={() => pickCard(card)}
+                          data-card-id={card.id}
                           className={`group text-left p-3 sm:p-4 rounded-xl border border-l-2 ${card.accent} transition-all flex flex-col justify-between ${
                             isSelected
                               ? 'border-primary bg-primary/10 shadow-sm'
                               : 'border-border bg-card/60 hover:bg-secondary/70'
-                          }`}
+                          } ai-agent-card`}
                         >
                           <div>
                             <div className="flex items-start justify-between mb-2 sm:mb-3">
@@ -1242,8 +1243,8 @@ The workspace could not load saved exam history for this request. Do not ask the
         <div className="px-3 sm:px-6 pb-3 sm:pb-4 pt-2 bg-background/90 backdrop-blur-md shrink-0 w-full">
           <div ref={composerRef} className="max-w-3xl lg:max-w-4xl mx-auto relative w-full">
 
-            {/* ── Input bar — Seamless, no border box ── */}
-            <div className="relative flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-card shadow-xs transition-all duration-200 ease-out">
+            {/* ── Input bar ── */}
+            <div className="relative flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-card border border-border/80 shadow-xs transition-all duration-200 ease-out">
 
               <AnimatePresence mode="wait">
                 {isListening ? (
@@ -1485,7 +1486,7 @@ The workspace could not load saved exam history for this request. Do not ask the
             </div>
 
             <p className="text-[9px] sm:text-[10px] text-muted-foreground/60 text-center mt-1.5 select-none hidden sm:block font-mono">
-              ↵ send · Shift+↵ newline · Attachments available on Pro plan
+              ↵ send · Shift+↵ newline
             </p>
           </div>
         </div>

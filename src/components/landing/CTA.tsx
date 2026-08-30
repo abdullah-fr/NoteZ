@@ -24,7 +24,7 @@ export function CTA() {
               <Sparkles className="h-3 w-3 text-primary" /> NoteZ / Start here
             </span>
             <h2 id="landing-onboarding-title" className="mb-5 font-display text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl md:text-6xl">
-              Bring your material.<br /><span className="text-primary">Build your momentum.</span>
+              Make your notes.<br /><span className="text-primary">Master what matters.</span>
             </h2>
             <p className="mx-auto mb-8 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base md:text-lg">
               Create a folder, write or import your notes, and turn them into focused practice in one calm workspace.

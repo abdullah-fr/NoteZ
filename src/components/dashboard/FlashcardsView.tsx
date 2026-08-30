@@ -404,7 +404,7 @@ export default function FlashcardsView() {
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 4 }}
-                      className="absolute right-0 left-0 top-full mt-1.5 z-50 rounded-xl border border-border bg-card p-1.5 shadow-2xl max-h-60 overflow-y-auto space-y-0.5"
+                      className="relative z-50 mt-1.5 w-full rounded-xl border border-border bg-card p-1.5 shadow-2xl max-h-60 overflow-y-auto space-y-0.5"
                     >
                       {foldersData.length === 0 ? (
                         <p className="text-[11px] text-muted-foreground px-2.5 py-2">No folders found. Create a folder and add notes first.</p>

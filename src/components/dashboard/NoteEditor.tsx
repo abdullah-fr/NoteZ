@@ -34,7 +34,7 @@ import { mergeRegister } from '@lexical/utils';
 import {
   Bold, Italic, Underline, Strikethrough,
   Undo2, Redo2, Sparkles, RefreshCw, AlignLeft, AlignCenter, AlignRight, AlignJustify, Lightbulb, Zap, Loader2,
-  Palette, Highlighter, Code2, Link, ChevronDown, Minus, Plus, Type, Trash2
+  Palette, Highlighter, Code2, Link, ChevronDown, Minus, Plus, Type, Eraser
 } from 'lucide-react';
 import { ClickableLinkPlugin } from '@lexical/react/LexicalClickableLinkPlugin';
 import { htmlToPlainText } from './note-utils';
@@ -686,14 +686,14 @@ function ToolbarPlugin({
           className="h-7 px-2 flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 hover:bg-secondary text-xs text-foreground font-medium transition-colors"
           title="AI Assist"
         >
-          {loadingAiAction ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Sparkles className="h-3.5 w-3.5 text-primary" />}
+          {loadingAiAction ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" /> : <Sparkles className="h-3.5 w-3.5 text-amber-400" />}
           <span>AI Assist</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
         {aiMenuOpen && (
           <div className="absolute left-0 top-full z-50 mt-1 min-w-[150px] rounded-xl border border-border bg-card p-1 shadow-2xl animate-in fade-in zoom-in-95">
             <button onMouseDown={e => { e.preventDefault(); void handleAiOption('improve'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
-              <Sparkles className="h-3.5 w-3.5 text-primary" /> Improve
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" /> Improve
             </button>
             <button onMouseDown={e => { e.preventDefault(); void handleAiOption('rephrase'); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-foreground hover:bg-secondary transition-colors">
               <RefreshCw className="h-3.5 w-3.5 text-blue-400" /> Rephrase
@@ -924,7 +924,7 @@ function ToolbarPlugin({
         className="h-7 px-2.5 flex items-center justify-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 text-xs font-semibold text-primary hover:bg-primary/20 disabled:border-border disabled:bg-secondary/60 disabled:text-muted-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         title="Clear text"
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        <Eraser className="h-3.5 w-3.5" />
         Clear
       </button>
     </div>
@@ -1033,7 +1033,7 @@ function SelectionAIBubblePlugin({ onAiTransform }: { onAiTransform?: (action: s
         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
         title="Improve writing style & grammar"
       >
-        {loadingAction === 'improve' ? <Loader2 className="w-3 h-3 animate-spin text-primary" /> : <Sparkles className="w-3 h-3 text-primary" />}
+        {loadingAction === 'improve' ? <Loader2 className="w-3 h-3 animate-spin text-amber-400" /> : <Sparkles className="w-3 h-3 text-amber-400" />}
         <span>Improve</span>
       </button>
 

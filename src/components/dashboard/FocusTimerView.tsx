@@ -928,7 +928,7 @@ export default function FocusTimerView() {
       {/* ══════════════════════════════════════════════════════════════
           2. MAIN BODY (2-COLUMN GRID ON DESKTOP, FLOW ON MOBILE)
       ══════════════════════════════════════════════════════════════ */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(310px,36%)] xl:grid-cols-[minmax(0,1fr)_minmax(350px,35%)] gap-3 sm:gap-4 px-3 sm:px-6 lg:px-7 pb-3 lg:pb-2 overflow-y-visible lg:overflow-hidden">
+      <div className="flex-none lg:flex-1 lg:min-h-0 grid grid-cols-1 content-start lg:content-stretch lg:grid-cols-[minmax(0,1fr)_minmax(310px,36%)] xl:grid-cols-[minmax(0,1fr)_minmax(350px,35%)] gap-3 sm:gap-4 px-3 sm:px-6 lg:px-7 pb-3 lg:pb-2 overflow-y-visible lg:overflow-hidden">
 
         {/* ── LEFT COLUMN ──────────────────────────────────────── */}
         <div className="flex flex-col min-h-0 lg:overflow-hidden gap-3 sm:gap-3.5">
@@ -1126,7 +1126,7 @@ export default function FocusTimerView() {
         </div>{/* End left column */}
 
         {/* ── RIGHT COLUMN (Today Overview + EXPANDED Recent Sessions) ── */}
-        <div className="flex flex-col min-h-0 gap-3 sm:gap-3.5 lg:overflow-hidden h-full">
+        <div className="flex flex-col lg:min-h-0 gap-3 sm:gap-3.5 lg:overflow-hidden lg:h-full">
 
           {/* 1. Today Overview Card */}
           <div className="rounded-2xl border border-border/60 bg-card/80 p-3.5 shrink-0 shadow-xs">

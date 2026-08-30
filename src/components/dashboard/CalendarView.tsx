@@ -238,12 +238,12 @@ function ActivityModal({ initial, defaultDate, defaultType = "task", onSave, onC
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto p-4 bg-black/60 backdrop-blur-xs">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
-        className="w-full max-w-md rounded-3xl border border-border bg-card p-5 sm:p-6 space-y-4 shadow-2xl overflow-hidden"
+        className="w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-3xl border border-border bg-card p-5 sm:p-6 space-y-4 shadow-2xl overflow-x-hidden overflow-y-auto"
       >
         <div className="flex items-center justify-between border-b border-border/60 pb-3">
           <div>
@@ -647,7 +647,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
       {/* ══════════════════════════════════════════════════════════════
           2. MAIN BODY (2-COLUMN ON DESKTOP, RESPONSIVE FLOW ON MOBILE)
       ══════════════════════════════════════════════════════════════ */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,36%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,35%)] gap-3 sm:gap-4 overflow-y-visible lg:overflow-hidden">
+      <div className="flex-none lg:flex-1 lg:min-h-0 grid grid-cols-1 content-start lg:content-stretch lg:grid-cols-[minmax(0,1fr)_minmax(320px,36%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,35%)] gap-3 sm:gap-4 overflow-y-visible lg:overflow-hidden">
 
         {/* ── LEFT COLUMN: Calendar Display (Month / Week / Day) + Upcoming Important ── */}
         <div className="flex flex-col min-h-0 lg:overflow-hidden gap-3 sm:gap-3.5">
@@ -949,7 +949,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
         </div>{/* End left column */}
 
         {/* ── RIGHT COLUMN: Today's Progress + Today's Plan + Quick Actions ── */}
-        <div className="flex flex-col min-h-0 gap-3 sm:gap-3.5 lg:overflow-hidden h-full">
+        <div className="flex flex-col lg:min-h-0 gap-3 sm:gap-3.5 lg:overflow-hidden lg:h-full">
 
           {/* 1. Selected Date Title & Activity Count Header */}
           <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs flex items-center justify-between">

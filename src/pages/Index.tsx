@@ -21,7 +21,7 @@ const Index = () => {
         {/* 3. Interactive core-section showcase */}
         <Features />
 
-        {/* 4. Three independently pausing testimonial rails */}
+        {/* 4. Two independently pausing testimonial rails */}
         <Testimonials />
 
         {/* 5. NoteZ onboarding call to action */}

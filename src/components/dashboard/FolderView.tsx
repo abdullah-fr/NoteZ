@@ -228,7 +228,7 @@ function NoteForm({
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full sm:w-auto max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {saveSuccessMsg && (
             <span className="text-xs font-medium text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg animate-in fade-in">
               {saveSuccessMsg}
@@ -628,6 +628,9 @@ export default function FolderView({
     setNoteContent(n.content);
     setEditingNoteId(n.id);
     setActiveNote(n);
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      setNotesSidebarOpen(false);
+    }
     setView('notes');
     setShowNoteForm(true);
     onFolderOpen?.();
@@ -673,6 +676,9 @@ export default function FolderView({
     setNoteTitle('');
     setNoteContent('');
     setEditingNoteId(null);
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      setNotesSidebarOpen(false);
+    }
     setShowNoteForm(true);
     setView('notes');
     onFolderOpen?.();
@@ -1035,7 +1041,7 @@ export default function FolderView({
               <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${sortOpen ? 'rotate-180' : ''}`} />
             </button>
             {sortOpen && (
-              <div role="menu" className="absolute right-0 top-full z-30 mt-1 min-w-[150px] rounded-xl border border-border bg-card p-1.5 shadow-lg">
+              <div role="menu" className="absolute left-0 top-full z-30 mt-1 min-w-[150px] rounded-xl border border-border bg-card p-1.5 shadow-lg sm:left-auto sm:right-0">
                 {([
                   ['newest', 'Newest'],
                   ['modified', 'Recently modified'],

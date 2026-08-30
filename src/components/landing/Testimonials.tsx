@@ -1,4 +1,4 @@
-import { Quote, Star } from 'lucide-react';
+import { Quote } from 'lucide-react';
 
 const testimonials = [
   { name: 'Sarah Chen', profession: 'Third-Year Medical Student', review: 'The folders keep my lecture notes together, and turning them into flashcards makes revision feel much more deliberate.' },
@@ -29,9 +29,6 @@ function TestimonialCard({ name, profession, review }: typeof testimonials[numbe
   return (
     <article className="flex w-[min(22rem,82vw)] shrink-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-[0_1px_0_hsl(var(--foreground)/0.03)_inset,0_2px_8px_hsl(var(--foreground)/0.12)] sm:w-80">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex gap-0.5" aria-label="5 out of 5 stars">
-          {[0, 1, 2, 3, 4].map((star) => <Star key={star} className="h-3 w-3 fill-amber-400 text-amber-400" />)}
-        </div>
         <Quote className="h-4 w-4 text-border" />
       </div>
       <p className="line-clamp-3 text-[12px] leading-relaxed text-muted-foreground">{review}</p>
@@ -55,7 +52,7 @@ function TestimonialRow({ items, direction, label }: { items: typeof testimonial
 }
 
 export function Testimonials() {
-  const rows = [testimonials.slice(0, 6), testimonials.slice(6, 12), testimonials.slice(12, 18)];
+  const rows = [testimonials.slice(0, 9), testimonials.slice(9, 18)];
 
   return (
     <section className="relative overflow-hidden py-20 sm:py-28">
@@ -69,7 +66,6 @@ export function Testimonials() {
       <div className="space-y-4">
         <TestimonialRow items={rows[0]} direction="left" label="Student testimonials, moving right to left" />
         <TestimonialRow items={rows[1]} direction="right" label="Student testimonials, moving left to right" />
-        <TestimonialRow items={rows[2]} direction="left" label="Student testimonials, moving right to left" />
       </div>
     </section>
   );

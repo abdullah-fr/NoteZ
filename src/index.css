@@ -8,60 +8,60 @@
   :root,
   [data-theme="warm-paper"],
   [data-theme="light"] {
-    /* Warm Paper is the zero-configuration default. */
-    --background: 38 30% 94%;
-    --foreground: 25 30% 18%;
-    --card: 38 25% 98%;
-    --card-foreground: 25 30% 18%;
-    --popover: 38 25% 98%;
-    --popover-foreground: 25 30% 18%;
-    --primary: 25 30% 22%;
-    --primary-foreground: 38 30% 97%;
-    --secondary: 38 20% 88%;
-    --secondary-foreground: 25 30% 18%;
-    --muted: 38 18% 86%;
-    --muted-foreground: 25 15% 46%;
-    --accent: 32 55% 42%;
-    --accent-foreground: 38 30% 97%;
+    /* Light mode uses a clean white-and-black palette. */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 35%;
+    --accent: 0 0% 0%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 8 62% 48%;
-    --destructive-foreground: 38 30% 97%;
-    --border: 38 18% 78%;
-    --input: 38 18% 74%;
-    --ring: 32 50% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 82%;
+    --input: 0 0% 76%;
+    --ring: 0 0% 0%;
 
     --radius: 0.375rem;
 
     /* Brand tones */
-    --notez-purple: 32 55% 42%;
-    --notez-purple-glow: 32 58% 52%;
-    --notez-purple-dark: 28 38% 30%;
-    --notez-violet: 30 42% 65%;
-    --notez-indigo: 200 18% 48%;
-    --notez-surface: 38 25% 98%;
-    --notez-surface-hover: 38 25% 91%;
-    --notez-success: 145 35% 45%;
-    --notez-warning: 32 70% 55%;
+    --notez-purple: 0 0% 0%;
+    --notez-purple-glow: 0 0% 24%;
+    --notez-purple-dark: 0 0% 0%;
+    --notez-violet: 0 0% 38%;
+    --notez-indigo: 0 0% 35%;
+    --notez-surface: 0 0% 100%;
+    --notez-surface-hover: 0 0% 94%;
+    --notez-success: 0 0% 0%;
+    --notez-warning: 0 0% 0%;
 
     /* Gradients */
-    --gradient-purple: linear-gradient(135deg, hsl(32 55% 42%), hsl(30 42% 65%));
+    --gradient-purple: linear-gradient(135deg, hsl(0 0% 0%), hsl(0 0% 38%));
     --gradient-dark: linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
-    --gradient-glow: radial-gradient(ellipse at center, hsl(32 55% 42% / 0.08), transparent 70%);
-    --gradient-card: linear-gradient(145deg, hsl(38 25% 98%), hsl(38 25% 92%));
+    --gradient-glow: radial-gradient(ellipse at center, hsl(0 0% 0% / 0.08), transparent 70%);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(0 0% 96%));
 
     /* Shadows */
-    --shadow-glow: 0 1px 0 hsl(0 0% 100% / 0.65) inset, 0 8px 24px hsl(25 30% 18% / 0.12);
-    --shadow-card: 0 1px 0 hsl(0 0% 100% / 0.7) inset, 0 1px 3px hsl(25 30% 18% / 0.1);
-    --shadow-card-hover: 0 1px 0 hsl(0 0% 100% / 0.75) inset, 0 8px 24px hsl(25 30% 18% / 0.14);
+    --shadow-glow: 0 1px 0 hsl(0 0% 100% / 0.8) inset, 0 8px 24px hsl(0 0% 0% / 0.12);
+    --shadow-card: 0 1px 0 hsl(0 0% 100% / 0.8) inset, 0 1px 3px hsl(0 0% 0% / 0.1);
+    --shadow-card-hover: 0 1px 0 hsl(0 0% 100% / 0.85) inset, 0 8px 24px hsl(0 0% 0% / 0.14);
 
     /* Sidebar */
-    --sidebar-background: 38 28% 91%;
-    --sidebar-foreground: 25 30% 18%;
-    --sidebar-primary: 32 50% 45%;
-    --sidebar-primary-foreground: 38 30% 97%;
-    --sidebar-accent: 38 20% 86%;
-    --sidebar-accent-foreground: 25 30% 18%;
-    --sidebar-border: 38 18% 78%;
-    --sidebar-ring: 32 50% 50%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 0%;
+    --sidebar-primary: 0 0% 0%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 94%;
+    --sidebar-accent-foreground: 0 0% 0%;
+    --sidebar-border: 0 0% 82%;
+    --sidebar-ring: 0 0% 0%;
     --timer-purple: 270 50% 55%;
   }
 }
@@ -200,6 +200,22 @@
     color: hsl(var(--foreground));
   }
 
+  /* Keep the handwritten wordmark luminous in dark mode, but crisp on the
+     white theme where the glow makes the black strokes look soft. */
+  .hero-wordmark {
+    filter: drop-shadow(0 0 25px rgb(255 255 255 / 0.25));
+  }
+
+  [data-theme="warm-paper"] .hero-wordmark,
+  [data-theme="light"] .hero-wordmark {
+    filter: none;
+  }
+
+  [data-theme="warm-paper"] .hero-wordmark-glow,
+  [data-theme="light"] .hero-wordmark-glow {
+    filter: none;
+  }
+
   .animated-bg {
     background:
       linear-gradient(hsl(var(--background)), hsl(var(--background))),
@@ -209,6 +225,38 @@
         hsl(var(--border) / 0.35) 31px 32px
       );
     background-blend-mode: normal;
+  }
+
+  /* Landing media is captured from the dark app. Re-map it to the monochrome
+     light palette at render time so theme changes also affect the demos. */
+  .theme-adaptive-media {
+    transition: filter 220ms ease;
+  }
+
+  [data-theme="warm-paper"] .theme-adaptive-media,
+  [data-theme="light"] .theme-adaptive-media {
+    filter: invert(1) grayscale(1) contrast(1.02);
+  }
+
+  /* Preserve the original feature accents on the left edge in light mode. */
+  [data-theme="warm-paper"] .ai-agent-card[data-card-id="explain"],
+  [data-theme="light"] .ai-agent-card[data-card-id="explain"] {
+    border-left-color: hsl(30 28% 70%);
+  }
+
+  [data-theme="warm-paper"] .ai-agent-card[data-card-id="summarize"],
+  [data-theme="light"] .ai-agent-card[data-card-id="summarize"] {
+    border-left-color: hsl(200 18% 48%);
+  }
+
+  [data-theme="warm-paper"] .ai-agent-card[data-card-id="calendar"],
+  [data-theme="light"] .ai-agent-card[data-card-id="calendar"] {
+    border-left-color: hsl(145 35% 45%);
+  }
+
+  [data-theme="warm-paper"] .ai-agent-card[data-card-id="studyplan"],
+  [data-theme="light"] .ai-agent-card[data-card-id="studyplan"] {
+    border-left-color: hsl(32 70% 55%);
   }
 
   /* Fade animations */
@@ -344,6 +392,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .theme-adaptive-media {
+      transition: none;
+    }
+
     .testimonial-marquee-track {
       animation-play-state: paused;
     }

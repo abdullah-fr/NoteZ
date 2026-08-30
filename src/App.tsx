@@ -11,6 +11,7 @@ import { CreditsProvider } from "@/contexts/CreditsContext";
 import LimitModal from "@/components/credits/LimitModal";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useEffect } from "react";
+import { applyTheme } from "@/hooks/use-theme";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -24,10 +25,7 @@ const queryClient = new QueryClient();
 function ThemeInitializer() {
   useEffect(() => {
     const stored = localStorage.getItem('notez_theme');
-    document.documentElement.setAttribute(
-      'data-theme',
-      stored === 'midnight' ? 'midnight' : 'warm-paper',
-    );
+    applyTheme(stored === 'dark' || stored === 'midnight' ? 'dark' : 'light');
   }, []);
   return null;
 }

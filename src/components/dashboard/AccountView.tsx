@@ -158,7 +158,7 @@ export default function AccountView() {
       </div>
 
       {/* Modern Clean Tab Navigation Bar */}
-      <div className="flex items-center gap-1 sm:gap-2 border-b border-border/40 overflow-x-auto no-scrollbar">
+      <div className="flex flex-wrap items-center gap-1 sm:gap-2 border-b border-border/40">
         {tabs.map((t) => {
           const Icon = t.icon;
           const isActive = activeTab === t.id;

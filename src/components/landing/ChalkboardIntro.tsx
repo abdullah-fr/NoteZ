@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { motion, useAnimation } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 
@@ -10,21 +10,27 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
   const [isDone, setIsDone] = useState(false);
   const controls = useAnimation();
 
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
+  useLayoutEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+    let cancelled = false;
     const runAnimation = async () => {
       setIsDone(false);
-      await controls.start('hidden');
       await controls.start('visible');
-      setIsDone(true);
-      if (onComplete) {
+      if (!cancelled) {
+        setIsDone(true);
+      }
+      if (!cancelled && onComplete) {
         timer = setTimeout(() => {
           onComplete();
         }, 1000);
       }
     };
     runAnimation();
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      controls.stop();
+      if (timer) clearTimeout(timer);
+    };
   }, [controls, onComplete]);
 
   const handleScrollDown = () => {
@@ -36,7 +42,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
 
   return (
     <section
-      className="relative w-full min-h-[90vh] sm:min-h-screen flex flex-col items-center justify-center bg-[#090a0d] text-[#f4f3ef] overflow-hidden select-none border-b border-border/40"
+      className="relative w-full min-h-[90vh] sm:min-h-screen flex flex-col items-center justify-center bg-background text-foreground overflow-hidden select-none border-b border-border/40"
     >
       {/* Premium Ambient Background Lighting */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -47,7 +53,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
           transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
         />
         <motion.div
-          className="absolute bottom-1/4 right-1/4 w-[28rem] h-[28rem] rounded-full bg-amber-500/10 blur-[100px]"
+          className="absolute bottom-1/4 right-1/4 w-[28rem] h-[28rem] rounded-full bg-notez-warning/10 blur-[100px]"
           animate={{ scale: [1.2, 1, 1.2], opacity: [0.2, 0.5, 0.2] }}
           transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
         />
@@ -56,7 +62,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
         <div
           className="absolute inset-0 opacity-[0.15]"
           style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)`,
+            backgroundImage: `radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.15) 1px, transparent 0)`,
             backgroundSize: '32px 32px',
           }}
         />
@@ -68,7 +74,6 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
           <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
           NoteZ Studio Intro
         </span>
-        <span className="hidden sm:inline">AI Study Companion • 2026 Edition</span>
       </div>
 
       {/* Main Container */}
@@ -78,7 +83,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
         <div className="relative my-2 w-full max-w-2xl flex justify-center">
           <svg
             viewBox="0 0 850 240"
-            className="w-full h-auto drop-shadow-[0_0_25px_rgba(255,255,255,0.25)]"
+            className="hero-wordmark w-full h-auto"
           >
             {/* Ambient Stroke Glow Shadow */}
             <defs>
@@ -95,7 +100,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
             <motion.path
               d="M 70 200 L 75 50 L 180 190 L 185 45"
               fill="none"
-              stroke="#F4F3EF"
+              stroke="currentColor"
               strokeWidth="14"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -106,6 +111,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
               initial="hidden"
               animate={controls}
               transition={{ duration: 1.1, ease: "easeInOut" }}
+              className="hero-wordmark-glow"
               filter="url(#neon-glow)"
             />
 
@@ -113,7 +119,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
             <motion.path
               d="M 235 145 C 215 90, 315 90, 295 150 C 280 200, 215 195, 235 145 Z M 290 135 C 305 120, 330 140, 340 140"
               fill="none"
-              stroke="#F4F3EF"
+              stroke="currentColor"
               strokeWidth="13"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -124,6 +130,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
               initial="hidden"
               animate={controls}
               transition={{ duration: 0.9, delay: 0.8, ease: "easeInOut" }}
+              className="hero-wordmark-glow"
               filter="url(#neon-glow)"
             />
 
@@ -131,7 +138,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
             <motion.path
               d="M 370 65 L 365 195 C 365 205, 385 200, 395 190"
               fill="none"
-              stroke="#F4F3EF"
+              stroke="currentColor"
               strokeWidth="13"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -142,13 +149,14 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
               initial="hidden"
               animate={controls}
               transition={{ duration: 0.8, delay: 1.6, ease: "easeInOut" }}
+              className="hero-wordmark-glow"
               filter="url(#neon-glow)"
             />
             {/* Crossbar of 't' */}
             <motion.path
               d="M 330 125 L 405 120"
               fill="none"
-              stroke="#F4F3EF"
+              stroke="currentColor"
               strokeWidth="12"
               strokeLinecap="round"
               variants={{
@@ -164,7 +172,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
             <motion.path
               d="M 430 145 L 495 135 C 490 90, 420 100, 430 155 C 440 195, 490 190, 510 175"
               fill="none"
-              stroke="#F4F3EF"
+              stroke="currentColor"
               strokeWidth="13"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -175,6 +183,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
               initial="hidden"
               animate={controls}
               transition={{ duration: 0.9, delay: 2.6, ease: "easeInOut" }}
+              className="hero-wordmark-glow"
               filter="url(#neon-glow)"
             />
 
@@ -182,7 +191,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
             <motion.path
               d="M 545 55 L 685 55 L 565 195 L 705 195"
               fill="none"
-              stroke="#F4F3EF"
+              stroke="currentColor"
               strokeWidth="15"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -193,6 +202,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
               initial="hidden"
               animate={controls}
               transition={{ duration: 1.0, delay: 3.4, ease: "easeInOut" }}
+              className="hero-wordmark-glow"
               filter="url(#neon-glow)"
             />
 
@@ -213,9 +223,9 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
             />
             <defs>
               <linearGradient id="flourish-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#f4f3ef" />
-                <stop offset="50%" stopColor="#e2dfd2" />
-                <stop offset="100%" stopColor="#d4af37" />
+                <stop offset="0%" stopColor="currentColor" />
+                <stop offset="50%" stopColor="currentColor" />
+                <stop offset="100%" stopColor="hsl(var(--notez-warning))" />
               </linearGradient>
             </defs>
 
@@ -224,7 +234,7 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
               cx="745"
               cy="65"
               r="6"
-              fill="#d4af37"
+              fill="hsl(var(--notez-warning))"
               variants={{
                 hidden: { scale: 0, opacity: 0 },
                 visible: { scale: 1, opacity: 1 },
@@ -244,7 +254,10 @@ export function ChalkboardIntro({ onComplete }: IntroProps) {
           className="space-y-3 mt-4"
         >
           <p className="font-display italic text-2xl sm:text-3xl text-foreground font-medium tracking-wide">
-            Not your average AI Tutor
+            Not your average tutor
+          </p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground sm:text-xs">
+            TRANSFORM ANY SUBJECT INTO FLASHCARDS, QUIZZES &amp; EXAMS
           </p>
         </motion.div>
 
