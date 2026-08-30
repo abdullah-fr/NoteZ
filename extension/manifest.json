@@ -3,7 +3,7 @@
   "name": "Save to NoteZ",
   "version": "1.0.0",
   "description": "Clip the current page or selected text into your NoteZ folder in two clicks.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",

@@ -32,7 +32,13 @@ import { toast } from "sonner";
 function normalizeLink(raw: string) {
   const t = raw.trim();
   if (!t) return "";
-  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  const candidate = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function getCurrentTimeDefaults() {
@@ -1075,9 +1081,9 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                         </div>
 
                         {/* Meeting Join Link */}
-                        {ev.link && (
+                        {ev.link && normalizeLink(ev.link) && (
                           <a
-                            href={ev.link}
+                            href={normalizeLink(ev.link)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-primary hover:underline"

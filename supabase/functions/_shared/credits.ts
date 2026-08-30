@@ -68,7 +68,7 @@ export async function checkAndDeductServer(
     });
 
     if (error) {
-      console.error("[credits] check_and_deduct_credits RPC failed:", error.message);
+      console.error("[credits] deduction RPC failed");
       return { allowed: false, code: "CREDITS_UNAVAILABLE", required: cost };
     }
 
@@ -85,8 +85,8 @@ export async function checkAndDeductServer(
       resetDate: res?.reset_date,
       tier: res?.tier || "free",
     };
-  } catch (err) {
-    console.error("[credits] check_and_deduct_credits RPC exception:", err);
+  } catch {
+    console.error("[credits] deduction RPC exception");
     return { allowed: false, code: "CREDITS_UNAVAILABLE", required: cost };
   }
 }
@@ -115,8 +115,8 @@ export async function refundServer(
       p_reason: reason,
       p_metadata: {},
     });
-  } catch (err) {
-    console.warn("[credits] Failed to refund credits:", err);
+  } catch {
+    console.warn("[credits] refund failed");
   }
 }
 

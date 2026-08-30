@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { getSafeClientErrorMessage, reportClientError } from '@/lib/client-logging';
 import {
   createEmptyCard,
   fsrs,
@@ -220,7 +221,7 @@ export async function reviewCard(userId: string, card: Flashcard, rating: Rating
   return { ...card, ...patch, due_at: patch.due_at };
 }
 
-/* ── Generate flashcards from notes via Gemini ── */
+/* ── Generate flashcards from notes via the private AI service ── */
 export interface GenerateFlashcardsPayload {
   sourceText: string;
   subject: string;
@@ -258,9 +259,9 @@ export async function generateFlashcardsFromNotes(
 
     throw new Error('No flashcards returned from AI service.');
   } catch (err: any) {
-    console.error('Flashcard service error:', err);
+    reportClientError('flashcard-service');
     await reportCreditFunctionError(err);
     await syncCreditsAfterRequest(effectiveUserId);
-    throw new Error(err?.message || 'Unable to generate flashcards. Please try again in a moment.');
+    throw new Error(getSafeClientErrorMessage(err, 'Unable to generate flashcards. Please try again in a moment.'));
   }
 }

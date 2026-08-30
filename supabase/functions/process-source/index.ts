@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
+import { geminiModelUrl, geminiResponseError, getGeminiApiKey, publicSourceError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,8 +64,7 @@ async function callGemini(apiKey: string, sysPrompt: string, userContent: string
       }),
     },
   );
-  if (res.status === 429) throw new Error("Rate limited. Try again in a moment.");
-  if (!res.ok) throw new Error(`Gemini error ${res.status}`);
+  if (!res.ok) throw geminiResponseError(res.status);
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 }
@@ -86,10 +85,10 @@ async function extractDocumentWithGemini(apiKey: string, file: Blob, mimeType: s
       body: bytes,
     },
   );
-  if (!uploadRes.ok) throw new Error(`Gemini document upload failed: ${uploadRes.status}`);
+  if (!uploadRes.ok) throw geminiResponseError(uploadRes.status);
   const uploadData = await uploadRes.json();
   const fileUri = uploadData?.file?.uri;
-  if (!fileUri) throw new Error("Gemini did not return a document URI");
+  if (!fileUri) throw new Error("AI_PROVIDER_FAILED");
   const fileName = uploadData?.file?.name;
   if (fileName) {
     for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -97,7 +96,7 @@ async function extractDocumentWithGemini(apiKey: string, file: Blob, mimeType: s
       if (infoResponse.ok) {
         const info = await infoResponse.json();
         if (info.state === "ACTIVE" || !info.state) break;
-        if (info.state === "FAILED") throw new Error("Gemini could not process this document");
+        if (info.state === "FAILED") throw new Error("AI_PROVIDER_FAILED");
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
@@ -119,7 +118,7 @@ async function extractDocumentWithGemini(apiKey: string, file: Blob, mimeType: s
       }),
     },
   );
-  if (!response.ok) throw new Error(`Gemini document extraction failed: ${response.status}`);
+  if (!response.ok) throw geminiResponseError(response.status);
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 }
@@ -204,10 +203,10 @@ serve(async (req) => {
               body: buf,
             },
           );
-          if (!uploadRes.ok) throw new Error(`Gemini file upload failed: ${uploadRes.status}`);
+          if (!uploadRes.ok) throw geminiResponseError(uploadRes.status);
           const uploadData = await uploadRes.json();
           const fileUri    = uploadData?.file?.uri;
-          if (!fileUri) throw new Error("Gemini did not return a file URI");
+          if (!fileUri) throw new Error("AI_PROVIDER_FAILED");
 
           // 2. Transcribe via generate-content with the file part
           const transcribeRes = await fetch(
@@ -226,7 +225,7 @@ serve(async (req) => {
               }),
             },
           );
-          if (!transcribeRes.ok) throw new Error(`Gemini transcription failed: ${transcribeRes.status}`);
+          if (!transcribeRes.ok) throw geminiResponseError(transcribeRes.status);
           const transcribeData = await transcribeRes.json();
           text = transcribeData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
           if (!text) throw new Error("Transcription returned empty — try a shorter clip");
@@ -262,7 +261,7 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (innerErr) {
-      const msg = innerErr instanceof Error ? innerErr.message : "Unknown error";
+      const msg = publicSourceError(innerErr);
       await admin
         .from("sources")
         .update({ status: "failed", error: msg })
@@ -271,7 +270,7 @@ serve(async (req) => {
       throw innerErr;
     }
   } catch (e) {
-    console.error("process-source error:", e);
+    console.error("process-source request failed");
     return new Response(JSON.stringify({ error: "An unexpected error occurred." }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

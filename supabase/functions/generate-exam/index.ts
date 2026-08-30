@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
 import { EXAM_TOPIC_BLOCK_MESSAGE, getExamModerationMessage } from "../_shared/exam-safety.ts";
-import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
+import { geminiModelUrl, geminiRefundReason, geminiResponseError, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,7 +28,7 @@ async function callGemini(apiKey: string, prompt: string, userMsg: string): Prom
     },
   );
   if (res.status === 429) throw new Error("RATE_LIMITED");
-  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw geminiResponseError(res.status);
   const data = await res.json();
   const candidate = data.candidates?.[0];
   if (data.promptFeedback?.blockReason || candidate?.finishReason === "SAFETY") {
@@ -118,19 +118,11 @@ Return ONLY valid JSON — no markdown fences, no extra text:
   ]
 }${sourceBlock}`;
 
-    let content: string;
-    try {
-      content = await callGemini(
-        GEMINI_API_KEY,
-        systemPrompt,
-        `Generate ${safeCount} ${safeDifficulty}-difficulty exam questions about ${safeSubject}${safeSpec ? ` focusing on ${safeSpec}` : ""}.`,
-      );
-    } catch (e: any) {
-      if (e.message === "RATE_LIMITED") {
-        throw e;
-      }
-      throw e;
-    }
+    const content = await callGemini(
+      GEMINI_API_KEY,
+      systemPrompt,
+      `Generate ${safeCount} ${safeDifficulty}-difficulty exam questions about ${safeSubject}${safeSpec ? ` focusing on ${safeSpec}` : ""}.`,
+    );
 
     if (getExamModerationMessage(content)) {
       throw new Error("TOPIC_NOT_ALLOWED");
@@ -142,7 +134,7 @@ Return ONLY valid JSON — no markdown fences, no extra text:
       const jsonStr = jsonMatch ? jsonMatch[1].trim() : content.trim();
       parsed = JSON.parse(jsonStr);
     } catch {
-      console.error("Failed to parse Gemini response:", content);
+      console.error("generate-exam returned an invalid response");
       throw new Error("Failed to generate exam. Please try again.");
     }
     if (!parsed?.questions || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
@@ -153,18 +145,18 @@ Return ONLY valid JSON — no markdown fences, no extra text:
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
-    console.error("generate-exam error:", e);
+    console.error("generate-exam request failed");
+    const isRateLimit = e?.message === "RATE_LIMITED";
     if (chargedUserId) {
       await refundServer(
         chargedUserId,
         1,
         "generate_exam",
-        e?.message || "Exam generation failed",
+        geminiRefundReason(e),
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       );
     }
-    const isRateLimit = e?.message === "RATE_LIMITED";
     const isBlockedTopic = e?.message === "TOPIC_NOT_ALLOWED";
     return new Response(JSON.stringify({
       error: isRateLimit

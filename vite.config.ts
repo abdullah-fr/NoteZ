@@ -9,6 +9,12 @@ export default defineConfig(({ mode }) => {
       host: "::",
       port: 8080,
     },
+    // Keep the browser environment allowlist explicit. Server-only secrets
+    // must never be made available through Vite's import.meta.env replacement.
+    envPrefix: ["VITE_"],
+    build: {
+      sourcemap: false,
+    },
     plugins: [react()],
     resolve: {
       alias: {

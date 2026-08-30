@@ -1,40 +1,13 @@
 // NoteZ Save-to-NoteZ extension popup
 // Authenticates against the same Supabase session as the web app.
-// Uses the stored JWT from localStorage (same origin as the NoteZ app).
+// Reads the active NoteZ tab's session only for the current request.
 
 const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co"; // replace at build time
 const NOTEZ_ORIGIN = "https://notez.app";               // replace with real domain
 
-async function getSession() {
-  // Ask the NoteZ tab for the Supabase session via scripting
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return null;
-  try {
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        // Look for Supabase session in localStorage under any sb- key
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith("sb-") && k.endsWith("-auth-token")) {
-            try { return JSON.parse(localStorage.getItem(k)); } catch {}
-          }
-        }
-        return null;
-      },
-    });
-    return result?.result ?? null;
-  } catch { return null; }
-}
-
-async function getStoredSession() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(["sb_session"], r => resolve(r.sb_session ?? null));
-  });
-}
-
 async function resolveToken() {
-  // 1. Try active NoteZ tab
+  // Read the token only from the active NoteZ tab. Never retain a session
+  // token in the extension's persistent storage.
   const [tab] = await chrome.tabs.query({ url: NOTEZ_ORIGIN + "/*" });
   if (tab?.id) {
     try {
@@ -56,9 +29,7 @@ async function resolveToken() {
       if (r?.result) return r.result;
     } catch {}
   }
-  // 2. Fall back to locally stored token
-  const stored = await getStoredSession();
-  return stored?.access_token ?? null;
+  return null;
 }
 
 async function loadFolders(token) {

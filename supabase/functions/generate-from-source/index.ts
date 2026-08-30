@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkAndDeductServer, creditLimitResponse, refundServer, MeteredAction } from "../_shared/credits.ts";
-import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
+import { geminiModelUrl, geminiRefundReason, geminiResponseError, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,7 +55,7 @@ async function callGemini(apiKey: string, prompt: string, userContent: string): 
     },
   );
   if (res.status === 429) throw new Error("RATE_LIMITED");
-  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw geminiResponseError(res.status);
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
@@ -118,19 +118,11 @@ serve(async (req) => {
     chargedUserId = userId;
     chargedAction = creditAction;
 
-    let content: string;
-    try {
-      content = await callGemini(
-        GEMINI_API_KEY,
-        buildPrompt(mode, n),
-        `Source title: ${source.title}\n\nSource content:\n${source.extracted_text.slice(0, 30000)}`,
-      );
-    } catch (e: any) {
-      if (e.message === "RATE_LIMITED") {
-        throw e;
-      }
-      throw e;
-    }
+    const content = await callGemini(
+      GEMINI_API_KEY,
+      buildPrompt(mode, n),
+      `Source title: ${source.title}\n\nSource content:\n${source.extracted_text.slice(0, 30000)}`,
+    );
 
     // ── notes ──────────────────────────────────────────────────────────────
     if (mode === "notes") {
@@ -192,13 +184,13 @@ serve(async (req) => {
     });
 
   } catch (e: any) {
-    console.error("generate-from-source error:", e);
+    console.error("generate-from-source request failed");
     if (chargedUserId && chargedAction) {
       await refundServer(
         chargedUserId,
         1,
         chargedAction,
-        e?.message || "Source generation failed",
+        geminiRefundReason(e),
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       );

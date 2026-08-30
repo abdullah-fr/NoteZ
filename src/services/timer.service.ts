@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { reportClientError } from '@/lib/client-logging';
 
 export type SessionType = 'focus' | 'task' | 'exam';
 
@@ -30,7 +31,7 @@ export async function logCompletedSession(
   });
 
   if (error) {
-    console.error('[timer.service] Failed to log session:', error.message);
+    reportClientError('timer-service');
     return;
   }
 

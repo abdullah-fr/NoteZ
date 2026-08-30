@@ -19,9 +19,10 @@ import { buildWordHtmlDocument, convertDocxToHtml, htmlDocumentToNoteHtml } from
 import { htmlToPlainText } from './note-utils';
 import { useAuth } from '@/lib/auth';
 import { editorAiAssist } from '@/services';
-import { createConversation, getStreamingToken } from '@/services/chat.service';
+import { createConversation } from '@/services/chat.service';
 import { fetchSources, triggerProcessSource, uploadSourceFile } from '@/services/sources.service';
 import { useFolderStorage } from '@/hooks/useFolderStorage';
+import { reportClientError } from '@/lib/client-logging';
 
 // Configure pdfjs worker source
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -167,8 +168,8 @@ function NoteForm({
       if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ''));
       setContent(importedHtml);
       setEditorRevision(value => value + 1);
-    } catch (error) {
-      console.error('File upload error:', error);
+    } catch {
+      reportClientError('document-import');
       setActionError('Error uploading document.');
     } finally {
       setUploading(false);

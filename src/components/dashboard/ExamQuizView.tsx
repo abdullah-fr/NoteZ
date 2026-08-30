@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { generateExamWithGemini, saveExamResult, type ExamQuestion } from '@/services';
+import { generateExam, saveExamResult, type ExamQuestion } from '@/services';
 import { toast } from 'sonner';
 import { useUpgradeModal, parseLimitError } from '@/hooks/use-upgrade-modal';
 import { useFolderStorage } from '@/hooks/useFolderStorage';
@@ -16,6 +16,7 @@ import {
   Edit2, ChevronRight,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { getSafeClientErrorMessage, reportClientError } from '@/lib/client-logging';
 
 /* Shared exam mark used in the setup header, CTA, and empty state. */
 function ExamIcon({ className = "h-5 w-5" }: { className?: string }) {
@@ -488,7 +489,7 @@ export default function ExamQuizView() {
         return;
       }
 
-      const data = await generateExamWithGemini({
+      const data = await generateExam({
         subject: targetSubject,
         difficulty,
         questionCount: effectiveQuestionCount,
@@ -516,7 +517,7 @@ export default function ExamQuizView() {
         resetTimerState();
       }
     } catch (e: unknown) {
-      console.error(e);
+      reportClientError('exam-quiz');
       const limitErr = parseLimitError(e);
       if (limitErr) {
         handleLimitError(limitErr.field, limitErr.limit, {
@@ -525,7 +526,7 @@ export default function ExamQuizView() {
           resetDate: limitErr.resetDate,
         });
       } else {
-        toast.error(e instanceof Error ? e.message : 'The exam service encountered an issue. Please try again.');
+        toast.error(getSafeClientErrorMessage(e, 'The exam service encountered an issue. Please try again.'));
       }
     } finally {
       setLoading(false);

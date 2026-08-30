@@ -251,7 +251,7 @@ export default function Dashboard() {
 
   const Brand = () => (
     <div className="flex items-center gap-2 select-none">
-      <img src="/NoteZ%20logo2.png" alt="NoteZ" className="h-6 w-6 rounded-sm object-cover shrink-0" />
+      <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="h-6 w-6 object-contain shrink-0" />
       <div className="flex items-baseline gap-1">
         <span className="font-serif text-[15px] tracking-tight">NoteZ</span>
         <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-muted-foreground">

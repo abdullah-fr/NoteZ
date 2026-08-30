@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { getSafeClientErrorMessage, reportClientError } from '@/lib/client-logging';
 import { EXAM_TOPIC_BLOCK_MESSAGE } from '@/lib/exam-safety';
 
 export interface ExamQuestion {
@@ -57,13 +58,15 @@ async function readExamFunctionError(error: unknown): Promise<string | null> {
   try {
     const payload = await context.clone().json() as { code?: unknown; error?: unknown };
     if (payload.code === 'TOPIC_NOT_ALLOWED') return EXAM_TOPIC_BLOCK_MESSAGE;
-    return typeof payload.error === 'string' ? payload.error : null;
+    if (typeof payload.error !== 'string') return null;
+    const safeMessage = getSafeClientErrorMessage(new Error(payload.error), '');
+    return safeMessage || null;
   } catch {
     return null;
   }
 }
 
-export async function generateExamWithGemini(
+export async function generateExam(
   payload: GenerateExamPayload,
 ): Promise<GenerateExamResult> {
   const { data: authData } = await supabase.auth.getUser();
@@ -117,11 +120,11 @@ export async function generateExamWithGemini(
 
     throw new Error('The exam service did not return questions for this topic.');
   } catch (err: unknown) {
-    console.error('Exam service error:', err);
+    reportClientError('exam-service');
     await reportCreditFunctionError(err);
     await syncCreditsAfterRequest(userId);
     const serverMessage = await readExamFunctionError(err);
-    const errorMessage = err instanceof Error ? err.message : null;
+    const errorMessage = getSafeClientErrorMessage(err, '');
     throw new Error(serverMessage || errorMessage || 'Unable to generate exam at this time. Please try again.');
   }
 }
@@ -144,7 +147,7 @@ export async function saveExamResult(
     difficulty: payload.difficulty,
     questions: JSON.stringify(payload.questions),
   });
-  if (error) console.error('Failed to save exam result:', error);
+  if (error) reportClientError('exam-result-save');
 }
 
 export async function deleteExamResult(userId: string, id: string): Promise<void> {
@@ -154,7 +157,7 @@ export async function deleteExamResult(userId: string, id: string): Promise<void
     .eq('id', id)
     .eq('user_id', userId);
   if (error) {
-    console.error('Failed to delete exam result:', error);
+    reportClientError('exam-result-delete');
     throw error;
   }
 }

@@ -5,6 +5,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { reportClientError } from '@/lib/client-logging';
 
 export async function editorAiAssist(action: string, selectedText: string, userId?: string): Promise<string> {
   if (!selectedText.trim()) return selectedText;
@@ -29,8 +30,8 @@ export async function editorAiAssist(action: string, selectedText: string, userI
     }
 
     return selectedText;
-  } catch (err: any) {
-    console.error('Editor AI error:', err);
+  } catch (err: unknown) {
+    reportClientError('editor-ai-service');
     await reportCreditFunctionError(err);
     await syncCreditsAfterRequest(effectiveUserId);
     return selectedText;

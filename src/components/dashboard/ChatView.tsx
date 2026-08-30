@@ -9,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   createConversation, updateConversation,
   uploadChatFile, createSourceRecord, invokeProcessSource,
-  getStreamingToken, subscribeToSourceUpdates, fetchExamHistory,
+  subscribeToSourceUpdates, fetchExamHistory,
   type ChatMessage, type AttachedSource, type ExamHistoryEntry,
 } from '@/services';
 import { toast } from '@/hooks/use-toast';
@@ -19,6 +19,7 @@ import { format } from 'date-fns';
 import { htmlToPlainText } from './note-utils';
 import { useCalendar, dayLabel, type CalendarEvent } from '@/lib/calendar';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { getSafeClientErrorMessage, reportClientError, reportClientWarning } from '@/lib/client-logging';
 import {
   Sparkles, GraduationCap, FlaskConical, ScrollText,
   Loader2, Plus, FileText, X, BarChart3, HeartHandshake,
@@ -37,17 +38,17 @@ type ThinkingLevel = 'low' | 'high' | 'max';
 /* ─── Error Boundary to prevent black screen crashes ─── */
 class ChatErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: React.ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean }
 > {
   constructor(props: any) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
+  static getDerivedStateFromError() {
+    return { hasError: true };
   }
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[ChatView ErrorBoundary]', error, info);
+  componentDidCatch() {
+    reportClientError('chat-renderer');
   }
   render() {
     if (this.state.hasError) {
@@ -56,7 +57,7 @@ class ChatErrorBoundary extends React.Component<
           <div className="space-y-3">
             <p className="text-foreground text-sm font-medium">Something went wrong rendering the chat.</p>
             <button
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={() => this.setState({ hasError: false })}
               className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-all"
             >
               Try Again
@@ -392,8 +393,8 @@ function ChatViewInner() {
           };
           updateVolumeBars();
         }
-      } catch (e) {
-        console.warn('AudioContext visualization setup note:', e);
+      } catch {
+        reportClientWarning('audio-visualizer');
       }
 
       // 3. Native Web Speech API
@@ -426,8 +427,8 @@ function ChatViewInner() {
         }
       };
 
-      recognition.onerror = (err: any) => {
-        console.warn('Speech recognition status:', err?.error);
+      recognition.onerror = () => {
+        reportClientWarning('speech-recognition');
       };
 
       recognition.onend = () => {
@@ -438,8 +439,8 @@ function ChatViewInner() {
 
       recognitionRef.current = recognition;
       recognition.start();
-    } catch (micErr) {
-      console.error('Microphone access error:', micErr);
+    } catch {
+      reportClientError('microphone-access');
       toast({
         title: 'Microphone Access Required',
         description: 'Please grant microphone permissions in your browser to use voice dictation.',
@@ -728,8 +729,8 @@ function ChatViewInner() {
         try {
           const examHistory = await fetchExamHistory(user.id);
           quizHistoryContext = buildExamHistoryContext(examHistory);
-        } catch (historyError) {
-          console.warn('Could not load quiz history for AI study plan:', historyError);
+        } catch {
+          reportClientWarning('exam-history');
           quizHistoryContext = `
 
 [QUIZ/EXAM HISTORY]
@@ -769,7 +770,7 @@ The workspace could not load saved exam history for this request. Do not ask the
       // The global credit dialog is the complete response for exhausted
       // allowances. Avoid stacking a generic red error toast underneath it.
       if (!creditLimit) {
-        const message = e instanceof Error ? e.message : 'Please try sending your message again.';
+        const message = getSafeClientErrorMessage(e, 'Please try sending your message again.');
         toast({ title: 'Error sending message', description: message, variant: 'destructive' });
       }
     } finally {

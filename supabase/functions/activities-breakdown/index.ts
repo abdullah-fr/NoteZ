@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
-import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
+import { geminiModelUrl, geminiRefundReason, geminiResponseError, getGeminiApiKey } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +22,7 @@ async function callAi(apiKey: string, prompt: string): Promise<string> {
     }),
   });
   if (res.status === 429) throw new Error("RATE_LIMITED");
-  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw geminiResponseError(res.status);
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 }
@@ -125,19 +125,18 @@ Output strict JSON with this exact schema:
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: unknown) {
-    const errorMessage = e instanceof Error ? e.message : String(e);
-    console.error("activities-breakdown error:", e);
+    console.error("activities-breakdown request failed");
     if (chargedUserId) {
       await refundServer(
         chargedUserId,
         1,
         "activities_breakdown",
-        errorMessage || "Syllabus breakdown failed",
+        geminiRefundReason(e),
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       );
     }
-    const isRateLimit = errorMessage === "RATE_LIMITED";
+    const isRateLimit = e instanceof Error && e.message === "RATE_LIMITED";
     return new Response(JSON.stringify({
       error: isRateLimit ? "Rate limited. Please try again in a moment." : "An unexpected error occurred.",
     }), {

@@ -139,6 +139,7 @@ export default function Login() {
                         <Input
                           id="forgotEmail"
                           type="email"
+                          autoComplete="email"
                           placeholder="you@example.com"
                           value={forgotEmail}
                           onChange={(e) => setForgotEmail(e.target.value)}
@@ -162,7 +163,7 @@ export default function Login() {
               >
                 <div className="text-center mb-8">
                   <Link to="/" className="inline-flex items-center gap-2 mb-6">
-                    <img src="/NoteZ%20logo2.png" alt="NoteZ" className="h-10 w-10 rounded-xl object-cover shrink-0" />
+                    <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="h-10 w-10 object-contain shrink-0" />
                     <span className="text-2xl font-bold">NoteZ</span>
                   </Link>
                   <h1 className="text-2xl font-bold mb-2">{t('auth.welcomeBack')}</h1>
@@ -201,6 +202,7 @@ export default function Login() {
                       <Input
                         id="email"
                         type="email"
+                        autoComplete="email"
                         placeholder="you@example.com"
                         value={email}
                         onChange={(e) => { setEmail(e.target.value); if (errors.email) setErrors(p => ({ ...p, email: undefined })); }}
@@ -227,6 +229,7 @@ export default function Login() {
                       <Input
                         id="password"
                         type="password"
+                        autoComplete="current-password"
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => { setPassword(e.target.value); if (errors.password) setErrors(p => ({ ...p, password: undefined })); }}

@@ -378,8 +378,15 @@ function sanitizeHtmlTree(root: HTMLElement): void {
   root.querySelectorAll('*').forEach(element => {
     Array.from(element.attributes).forEach(attribute => {
       if (attribute.name.toLowerCase().startsWith('on')) element.removeAttribute(attribute.name);
-      if ((attribute.name === 'href' || attribute.name === 'src') && /^javascript:/i.test(attribute.value)) {
-        element.removeAttribute(attribute.name);
+      if (attribute.name === 'href' || attribute.name === 'src') {
+        try {
+          const url = new URL(attribute.value, document.baseURI);
+          const allowed = url.protocol === 'http:' || url.protocol === 'https:' ||
+            (attribute.name === 'href' && url.protocol === 'mailto:');
+          if (!allowed) element.removeAttribute(attribute.name);
+        } catch {
+          element.removeAttribute(attribute.name);
+        }
       }
       if (attribute.name === 'style') {
         element.setAttribute('style', attribute.value.replace(/expression\s*\([^)]*\)|url\s*\(\s*["']?javascript:[^)]*\)/gi, ''));

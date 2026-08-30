@@ -18,6 +18,7 @@ import {
   fetchUserCreditsSummary,
   PLANS,
 } from '@/lib/credits';
+import { reportClientWarning } from '@/lib/client-logging';
 
 export interface LimitModalState {
   open: boolean;
@@ -77,8 +78,8 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
     try {
       const data = await fetchUserCreditsSummary(user.id);
       setSummary(data);
-    } catch (err) {
-      console.warn('[CreditsProvider] Failed to refresh credits:', err);
+    } catch {
+      reportClientWarning('credits-provider');
     } finally {
       setLoading(false);
     }

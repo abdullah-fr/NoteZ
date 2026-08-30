@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { getSafeClientErrorMessage, getSafeSourceErrorMessage } from '@/lib/client-logging';
 
 export type SourceKind = 'pdf' | 'docx' | 'txt' | 'url' | 'youtube' | 'text' | 'audio' | 'video';
 export type SourceStatus = 'pending' | 'processing' | 'ready' | 'failed';
@@ -24,7 +25,10 @@ export async function fetchSources(userId: string): Promise<Source[]> {
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as Source[];
+  return ((data ?? []) as Source[]).map(source => ({
+    ...source,
+    error: source.error ? getSafeSourceErrorMessage(source.error) : null,
+  }));
 }
 
 export async function uploadSourceFile(userId: string, file: File): Promise<Source> {
@@ -105,7 +109,7 @@ export async function deleteSource(source: Source, userId: string): Promise<void
 
 export async function triggerProcessSource(sourceId: string): Promise<void> {
   const { error } = await supabase.functions.invoke('process-source', { body: { sourceId } });
-  if (error) throw error;
+  if (error) throw new Error(getSafeClientErrorMessage(error, 'Unable to process this source. Please try again.'));
 }
 
 export async function generateFromSource(
@@ -124,7 +128,7 @@ export async function generateFromSource(
   } catch (error) {
     await reportCreditFunctionError(error);
     await syncCreditsAfterRequest(authData.user?.id);
-    throw error;
+    throw new Error(getSafeClientErrorMessage(error, 'Unable to generate content from this source. Please try again.'));
   }
 }
 

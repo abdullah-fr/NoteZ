@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
+import { getSafeClientErrorMessage, reportClientError } from '@/lib/client-logging';
 
 export interface Activity {
   id: string;
@@ -206,9 +207,9 @@ export async function generateActivitiesFromDoc(
 
     throw new Error('No activities returned from document breakdown service.');
   } catch (err: unknown) {
-    console.error('Activities service error:', err);
+    reportClientError('activities-service');
     await reportCreditFunctionError(err);
     await syncCreditsAfterRequest(effectiveUserId);
-    throw new Error(err instanceof Error ? err.message : 'Unable to analyze document and generate activities. Please try again.');
+    throw new Error(getSafeClientErrorMessage(err, 'Unable to analyze document and generate activities. Please try again.'));
   }
 }

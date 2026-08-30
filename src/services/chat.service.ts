@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getSafeClientErrorMessage, getSafeSourceErrorMessage } from '@/lib/client-logging';
 
 export interface Conversation {
   id: string;
@@ -50,7 +51,9 @@ export async function fetchSourceById(userId: string, sourceId: string): Promise
     .eq('id', sourceId)
     .eq('user_id', userId)
     .maybeSingle();
-  return data as AttachedSource | null;
+  return data
+    ? { ...data, error: data.error ? getSafeSourceErrorMessage(data.error) : null } as AttachedSource
+    : null;
 }
 
 export async function createConversation(
@@ -126,12 +129,7 @@ export async function createSourceRecord(
 
 export async function invokeProcessSource(sourceId: string): Promise<void> {
   const { error } = await supabase.functions.invoke('process-source', { body: { sourceId } });
-  if (error) throw error;
-}
-
-export async function getStreamingToken(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+  if (error) throw new Error(getSafeClientErrorMessage(error, 'Unable to process this source. Please try again.'));
 }
 
 export function subscribeToSourceUpdates(
@@ -146,7 +144,10 @@ export function subscribeToSourceUpdates(
       { event: 'UPDATE', schema: 'public', table: 'sources', filter: `user_id=eq.${userId}` },
       (payload: any) => {
         if (payload.new?.id !== sourceId || payload.new?.user_id !== userId) return;
-        onUpdate({ status: payload.new.status, error: payload.new.error });
+        onUpdate({
+          status: payload.new.status,
+          error: payload.new.error ? getSafeSourceErrorMessage(payload.new.error) : null,
+        });
       },
     )
     .subscribe();

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { ClickableLinkPlugin } from '@lexical/react/LexicalClickableLinkPlugin';
 import { htmlToPlainText } from './note-utils';
+import { reportClientError } from '@/lib/client-logging';
 
 type InlineTextFormat = 'bold' | 'italic' | 'underline' | 'strikethrough';
 
@@ -571,7 +572,15 @@ function ToolbarPlugin({
 
   const insertLink = () => {
     if (!linkUrl.trim()) return;
-    const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
+    const candidate = /^https?:\/\//i.test(linkUrl.trim()) ? linkUrl.trim() : `https://${linkUrl.trim()}`;
+    let url: string;
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+      url = parsed.href;
+    } catch {
+      return;
+    }
     editor.dispatchCommand(TOGGLE_LINK_COMMAND, url);
     setLinkUrl('');
     setLinkInputOpen(false);
@@ -653,8 +662,8 @@ function ToolbarPlugin({
       if (result) {
         await animateTextReplacement(result);
       }
-    } catch (err) {
-      console.error('AI toolbar action error:', err);
+    } catch {
+      reportClientError('editor-ai-toolbar');
     } finally {
       setLoadingAiAction(null);
     }
@@ -1011,8 +1020,8 @@ function SelectionAIBubblePlugin({ onAiTransform }: { onAiTransform?: (action: s
           });
         }
       }
-    } catch (err) {
-      console.error('AI selection action:', err);
+    } catch {
+      reportClientError('editor-ai-selection');
     } finally {
       setLoadingAction(null);
       setSelectedText('');
@@ -1184,7 +1193,7 @@ export default function NoteEditor({
     theme,
     nodes: [HeadingNode, ListNode, ListItemNode, CodeNode, QuoteNode, LinkNode, TableNode, TableCellNode, TableRowNode],
     html: { import: preservedHtmlImport },
-    onError(error: Error) { console.error('Lexical error:', error); },
+    onError() { reportClientError('note-editor'); },
   };
 
   const scrollToHeading = (index: number) => {

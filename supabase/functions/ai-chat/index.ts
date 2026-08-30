@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkAndDeductServer, creditLimitResponse, refundServer } from "../_shared/credits.ts";
-import { geminiModelUrl, getGeminiApiKey } from "../_shared/gemini.ts";
+import { geminiModelUrl, geminiRefundReason, geminiResponseError, getGeminiApiKey, isGeminiRateLimited } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,8 +150,8 @@ serve(async (req) => {
       parts: [{ text: m.content }],
     }));
 
-    // Gemini streaming via SSE. geminiModelUrl always targets
-    // gemini-3.1-flash-lite; do not fall back to retired model IDs.
+    // Provider streaming happens entirely inside this Edge Function. The
+    // browser only receives the generated text stream.
     const geminiRes = await fetch(
       `${geminiModelUrl(GEMINI_API_KEY, "streamGenerateContent")}&alt=sse`,
       {
@@ -171,7 +171,7 @@ serve(async (req) => {
       throw new Error("RATE_LIMITED");
     }
     if (!geminiRes.ok || !geminiRes.body) {
-      throw new Error(`Gemini streaming error ${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
+      throw geminiResponseError(geminiRes.status);
     }
 
     let fullText = "";
@@ -206,8 +206,8 @@ serve(async (req) => {
               }
             }
           }
-        } catch (e) {
-          console.error("Stream error", e);
+        } catch {
+          console.error("ai-chat stream failed");
         } finally {
           if (fullText) {
             await supabase.from("chat_messages").insert({
@@ -244,28 +244,24 @@ serve(async (req) => {
       },
     });
   } catch (e) {
-    console.error("ai-chat error", e);
-    const code = e instanceof Error ? e.message : String(e);
-    const providerUnavailable = code === "GEMINI_ACCESS_DENIED";
+    console.error("ai-chat request failed");
+    const isRateLimit = isGeminiRateLimited(e);
     if (chargedUserId) {
       await refundServer(
         chargedUserId,
         1,
         "ai_chat",
-        code || "AI chat failed",
+        geminiRefundReason(e),
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       );
     }
     return new Response(JSON.stringify({
-      error: providerUnavailable
-        ? "AI provider access is unavailable. Check the Gemini API project key."
-        : code === "RATE_LIMITED"
+      error: isRateLimit
         ? "Rate limit exceeded. Try again shortly."
-        : "An unexpected error occurred.",
-      code: providerUnavailable ? code : undefined,
+        : "The AI service is temporarily unavailable. Please try again.",
     }), {
-      status: providerUnavailable ? 503 : code === "RATE_LIMITED" ? 429 : 500,
+      status: isRateLimit ? 429 : 503,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

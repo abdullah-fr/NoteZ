@@ -10,7 +10,7 @@ A minimal Manifest V3 clipper that saves the current tab's URL into your NoteZ f
 
 ## How it works
 
-1. Reads the Supabase JWT from the active NoteZ tab's localStorage (no separate auth flow).
+1. Reads the Supabase JWT from the active NoteZ tab only for the current request (no separate auth flow or extension token storage).
 2. Creates a `sources` row via the Supabase REST API, then calls the `process-source` edge function.
 3. All existing SSRF protections in `process-source` apply — the extension cannot bypass them.
 

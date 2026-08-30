@@ -68,8 +68,8 @@ serve(async (req) => {
     if (deleteError) throw new Error(`Could not delete account: ${deleteError.message}`);
 
     return json({ deleted: true });
-  } catch (error) {
-    console.error("delete-account failed", { userId, error });
+  } catch {
+    console.error("delete-account failed", { userId: Boolean(userId) });
     return json({ error: "Account deletion could not be completed. Please try again or contact support." }, 500);
   }
 });

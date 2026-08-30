@@ -7,6 +7,9 @@
 
 export const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
+export const GEMINI_RATE_LIMITED = "RATE_LIMITED";
+export const GEMINI_PROVIDER_FAILED = "AI_PROVIDER_FAILED";
+
 const FALLBACK_KEY_NAMES = [
   "GEMINI_API_KEY",
   "GOOGLE_GEMINI_API_KEY",
@@ -27,9 +30,46 @@ export function getGeminiApiKey(...preferredNames: string[]): string {
     if (value) return value;
   }
 
-  throw new Error("GEMINI_API_KEY is not configured");
+  // Keep configuration failures opaque to callers. The exact missing secret
+  // name must never be returned in an HTTP response or persisted as a reason.
+  throw new Error(GEMINI_PROVIDER_FAILED);
 }
 
 export function geminiModelUrl(apiKey: string, operation: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:${operation}?key=${apiKey}`;
+}
+
+/** Convert a provider response into an internal, non-sensitive error code. */
+export function geminiResponseError(status: number): Error {
+  return new Error(status === 429 ? GEMINI_RATE_LIMITED : GEMINI_PROVIDER_FAILED);
+}
+
+export function isGeminiRateLimited(error: unknown): boolean {
+  return error instanceof Error && error.message === GEMINI_RATE_LIMITED;
+}
+
+/** Safe reason for the server-side credit ledger; never store provider text. */
+export function geminiRefundReason(error: unknown): string {
+  return isGeminiRateLimited(error) ? "AI provider rate limited" : "AI request failed";
+}
+
+/** Safe status text for a failed source record. */
+export function publicSourceError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (message === GEMINI_RATE_LIMITED) return "AI processing is temporarily busy. Please try again.";
+  if (message === GEMINI_PROVIDER_FAILED) return "We could not process this source. Please try again.";
+
+  const safeMessages = [
+    /^Invalid URL$/,
+    /^Only http\(s\) URLs are allowed$/,
+    /^URL refers to a private network address$/,
+    /^Source not found$/,
+    /^Could not read uploaded file$/,
+    /^Could not extract meaningful text from source$/,
+    /^File too large — max 120 MB for audio\/video$/,
+    /^Transcription returned empty — try a shorter clip$/,
+  ];
+  return safeMessages.some(pattern => pattern.test(message))
+    ? message
+    : "We could not process this source. Please try again.";
 }

@@ -25,7 +25,7 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 md:gap-12 mb-12">
           <div className="col-span-2">
             <Link to="/" className="inline-flex items-center gap-2.5 mb-4">
-              <img src="/NoteZ%20logo2.png" alt="NoteZ" className="h-8 w-8 rounded-lg object-cover shrink-0" />
+              <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="h-8 w-8 object-contain shrink-0" />
               <span className="font-display text-xl font-bold tracking-tight">NoteZ</span>
             </Link>
             <p className="text-sm text-muted-foreground max-w-xs leading-relaxed mb-6">

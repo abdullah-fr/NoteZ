@@ -200,7 +200,7 @@ function playChime() {
       if (Notification.permission === "granted") {
         new Notification("Focus Session Complete! 🎉", {
           body: "Great work! Time for a well-deserved break.",
-          icon: "/NoteZ%20logo2.png",
+          icon: "/NoteZ%20logo.png?v=20260831",
         });
       }
     }
@@ -237,7 +237,7 @@ function playBreakChime() {
       if (Notification.permission === "granted") {
         new Notification("Break Finished! ⚡", {
           body: "Ready to start your next focused session?",
-          icon: "/NoteZ%20logo2.png",
+          icon: "/NoteZ%20logo.png?v=20260831",
         });
       }
     }
