@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
+import { TurnstileCaptcha } from '@/components/auth/TurnstileCaptcha';
+import { GoogleIcon } from '@/components/auth/GoogleIcon';
+import type { TurnstileInstance } from '@marsidev/react-turnstile';
 import { useTranslation } from 'react-i18next';
 import { isTempEmail } from '@/lib/temp-email-domains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mail, Lock, Loader2, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -15,20 +18,38 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+  const [loginCaptchaToken, setLoginCaptchaToken] = useState('');
+  const [forgotCaptchaToken, setForgotCaptchaToken] = useState('');
+  const [forgotCaptchaPending, setForgotCaptchaPending] = useState(false);
+  const [loginCaptchaPending, setLoginCaptchaPending] = useState(false);
+  const [showLoginCaptcha, setShowLoginCaptcha] = useState(false);
+  const loginCaptchaRef = useRef<TurnstileInstance | null>(null);
+  const forgotCaptchaRef = useRef<TurnstileInstance | null>(null);
   const { signIn, signInWithGoogle, resetPassword, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { t } = useTranslation();
 
   useEffect(() => {
     if (user) navigate('/dashboard', { replace: true });
   }, [user, navigate]);
+
+  useEffect(() => {
+    if (searchParams.get('confirmed') !== '1') return;
+
+    toast({ title: t('auth.emailConfirmed'), description: t('auth.emailConfirmedDesc') });
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('confirmed');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams, t, toast]);
 
   function validate(): boolean {
     const errs: typeof errors = {};
@@ -44,9 +65,19 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    if (!loginCaptchaToken) {
+      setShowLoginCaptcha(true);
+      setLoginCaptchaPending(true);
+      return;
+    }
+
+    await submitLogin(loginCaptchaToken);
+  };
+
+  const submitLogin = async (captchaToken: string) => {
     setLoading(true);
 
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(email, password, captchaToken);
 
     if (error) {
       const isUnconfirmed = error.message.toLowerCase().includes('email not confirmed');
@@ -61,7 +92,24 @@ export default function Login() {
       navigate('/dashboard');
     }
 
+    setLoginCaptchaToken('');
+    loginCaptchaRef.current?.reset();
+    setLoginCaptchaPending(false);
+    setShowLoginCaptcha(false);
     setLoading(false);
+  };
+
+  const handleLoginCaptchaToken = (token: string) => {
+    setLoginCaptchaToken(token);
+
+    if (!token) {
+      setLoginCaptchaPending(false);
+      return;
+    }
+
+    if (loginCaptchaPending) {
+      void submitLogin(token);
+    }
   };
 
   const handleGoogleLogin = async () => {
@@ -75,14 +123,12 @@ export default function Login() {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!forgotEmail.trim() || !EMAIL_REGEX.test(forgotEmail)) {
-      toast({ title: t('common.error'), description: t('auth.validation.emailInvalid'), variant: 'destructive' });
-      return;
-    }
+  const submitForgotPassword = async (captchaToken: string) => {
+    setForgotCaptchaPending(false);
     setForgotLoading(true);
-    const { error } = await resetPassword(forgotEmail);
+    const { error } = await resetPassword(forgotEmail, captchaToken);
+    setForgotCaptchaToken('');
+    forgotCaptchaRef.current?.reset();
     setForgotLoading(false);
     if (error) {
       toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
@@ -90,6 +136,43 @@ export default function Login() {
       setForgotSent(true);
       toast({ title: t('auth.resetSent'), description: t('auth.resetSentDesc') });
     }
+  };
+
+  const handleForgotCaptchaToken = (token: string) => {
+    setForgotCaptchaToken(token);
+
+    if (!token) {
+      setForgotCaptchaPending(false);
+      setForgotLoading(false);
+      return;
+    }
+
+    if (forgotCaptchaPending) {
+      void submitForgotPassword(token);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim() || !EMAIL_REGEX.test(forgotEmail)) {
+      toast({ title: t('common.error'), description: t('auth.validation.emailInvalid'), variant: 'destructive' });
+      return;
+    }
+
+    if (!forgotCaptchaToken) {
+      const captcha = forgotCaptchaRef.current;
+      if (!captcha) {
+        toast({ title: t('common.error'), description: t('auth.captchaUnavailable'), variant: 'destructive' });
+        return;
+      }
+
+      setForgotCaptchaPending(true);
+      setForgotLoading(true);
+      captcha.execute();
+      return;
+    }
+
+    await submitForgotPassword(forgotCaptchaToken);
   };
 
   return (
@@ -110,8 +193,19 @@ export default function Login() {
                 exit={{ opacity: 0, x: -20 }}
               >
                 <button
-                  onClick={() => { setShowForgot(false); setForgotSent(false); }}
-                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+                  onClick={() => {
+                    setShowForgot(false);
+                    setForgotSent(false);
+                    setForgotCaptchaToken('');
+                    setForgotCaptchaPending(false);
+                    setForgotLoading(false);
+                    forgotCaptchaRef.current?.reset();
+                    setShowLoginCaptcha(false);
+                    setLoginCaptchaToken('');
+                    setLoginCaptchaPending(false);
+                    loginCaptchaRef.current?.reset();
+                  }}
+                  className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline mb-4 transition-colors"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   {t('auth.backToLogin')}
@@ -124,8 +218,8 @@ export default function Login() {
 
                 {forgotSent ? (
                   <div className="text-center py-4">
-                    <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-                      <Mail className="h-6 w-6 text-emerald-500" />
+                    <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Mail className="h-6 w-6 text-blue-400" />
                     </div>
                     <p className="text-foreground font-medium">{t('auth.resetSent')}</p>
                     <p className="text-sm text-muted-foreground mt-1">{t('auth.resetSentDesc')}</p>
@@ -148,6 +242,11 @@ export default function Login() {
                         />
                       </div>
                     </div>
+                    <TurnstileCaptcha
+                      captchaRef={forgotCaptchaRef}
+                      onToken={handleForgotCaptchaToken}
+                      invisible
+                    />
                     <Button type="submit" className="w-full h-12 glow-purple" disabled={forgotLoading}>
                       {forgotLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : t('auth.sendResetLink')}
                     </Button>
@@ -176,12 +275,7 @@ export default function Login() {
                   className="w-full mb-6 h-12"
                   onClick={handleGoogleLogin}
                 >
-                  <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
-                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                  </svg>
+                  <GoogleIcon className="h-5 w-5 mr-2" />
                   {t('auth.continueGoogle')}
                 </Button>
 
@@ -218,27 +312,54 @@ export default function Login() {
                       <Label htmlFor="password">{t('auth.password')}</Label>
                       <button
                         type="button"
-                        onClick={() => { setShowForgot(true); setForgotEmail(email); }}
-                        className="text-xs text-primary hover:underline"
+                        onClick={() => {
+                          setShowForgot(true);
+                          setForgotEmail(email);
+                          setForgotCaptchaToken('');
+                          setForgotCaptchaPending(false);
+                          setForgotLoading(false);
+                          forgotCaptchaRef.current?.reset();
+                          setShowLoginCaptcha(false);
+                          setLoginCaptchaToken('');
+                          setLoginCaptchaPending(false);
+                          loginCaptchaRef.current?.reset();
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
                       >
                         {t('auth.forgotPassword')}
                       </button>
                     </div>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                      <Input
-                        id="password"
-                        type="password"
-                        autoComplete="current-password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => { setPassword(e.target.value); if (errors.password) setErrors(p => ({ ...p, password: undefined })); }}
-                        className={`pl-10 h-12 ${errors.password ? 'border-destructive' : ''}`}
-                        required
-                      />
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <Input
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          autoComplete="current-password"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => { setPassword(e.target.value); if (errors.password) setErrors(p => ({ ...p, password: undefined })); }}
+                          className={`pl-10 pr-10 h-12 ${errors.password ? 'border-destructive' : ''}`}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((visible) => !visible)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground transition-colors hover:text-foreground"
+                          aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                          aria-pressed={showPassword}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
                     </div>
                     {errors.password && <p className="text-destructive text-xs font-medium">{errors.password}</p>}
                   </div>
+
+                  {showLoginCaptcha && (
+                    <TurnstileCaptcha
+                      captchaRef={loginCaptchaRef}
+                      onToken={handleLoginCaptchaToken}
+                    />
+                  )}
 
                   <Button type="submit" className="w-full h-12 glow-purple" disabled={loading}>
                     {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : t('auth.signIn')}
@@ -247,7 +368,7 @@ export default function Login() {
 
                 <p className="text-center text-muted-foreground mt-6">
                   {t('auth.noAccount')}{' '}
-                  <Link to="/signup" className="text-primary hover:underline">
+                  <Link to="/signup" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline">
                     {t('auth.signUpLink')}
                   </Link>
                 </p>

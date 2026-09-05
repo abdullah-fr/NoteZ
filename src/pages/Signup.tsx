@@ -1,29 +1,166 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
+import { TurnstileCaptcha } from '@/components/auth/TurnstileCaptcha';
+import { GoogleIcon } from '@/components/auth/GoogleIcon';
+import type { TurnstileInstance } from '@marsidev/react-turnstile';
 import { useTranslation } from 'react-i18next';
 import { isTempEmail } from '@/lib/temp-email-domains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mail, Lock, User, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RESEND_COOLDOWN_SECONDS = 30;
 
-function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (pw.length >= 12) score++;
-  if (/[A-Z]/.test(pw)) score++;
-  if (/[0-9]/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
+interface SignupConfirmationProps {
+  email: string;
+  loading: boolean;
+  resendLoading: boolean;
+  onVerify: (code: string) => Promise<void>;
+  onResend: (captchaToken: string) => Promise<boolean>;
+  onChangeEmail: () => void;
+}
 
-  if (score <= 1) return { score: 1, label: 'weak', color: 'bg-red-500' };
-  if (score === 2) return { score: 2, label: 'fair', color: 'bg-orange-500' };
-  if (score === 3) return { score: 3, label: 'good', color: 'bg-amber-500' };
-  return { score: 4, label: 'strong', color: 'bg-emerald-500' };
+function SignupConfirmation({
+  email,
+  loading,
+  resendLoading,
+  onVerify,
+  onResend,
+  onChangeEmail,
+}: SignupConfirmationProps) {
+  const [code, setCode] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS);
+  const [resendCaptchaToken, setResendCaptchaToken] = useState('');
+  const [resendCaptchaPending, setResendCaptchaPending] = useState(false);
+  const [showResendCaptcha, setShowResendCaptcha] = useState(false);
+  const resendCaptchaRef = useRef<TurnstileInstance | null>(null);
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+
+    const timer = window.setTimeout(() => {
+      setResendCooldown((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await onVerify(code);
+  };
+
+  const submitResend = async (captchaToken: string) => {
+    setResendCaptchaPending(false);
+    const didResend = await onResend(captchaToken);
+    setResendCaptchaToken('');
+    resendCaptchaRef.current?.reset();
+    setShowResendCaptcha(false);
+    if (didResend) setResendCooldown(RESEND_COOLDOWN_SECONDS);
+  };
+
+  const handleResendCaptchaToken = (token: string) => {
+    setResendCaptchaToken(token);
+
+    if (!token) {
+      setResendCaptchaPending(false);
+      return;
+    }
+
+    if (resendCaptchaPending) {
+      void submitResend(token);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || resendLoading || resendCaptchaPending) return;
+    if (!resendCaptchaToken) {
+      setShowResendCaptcha(true);
+      setResendCaptchaPending(true);
+      return;
+    }
+
+    await submitResend(resendCaptchaToken);
+  };
+
+  return (
+    <>
+      <div className="text-center mb-8">
+        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/10">
+          <Mail className="h-6 w-6 text-primary" />
+        </div>
+        <h1 className="text-2xl font-bold mb-2">{t('auth.confirmYourEmail')}</h1>
+        <p className="text-muted-foreground text-sm">
+          {t('auth.confirmYourEmailDesc', { email })}
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="signup-confirmation-code">{t('auth.verificationCode')}</Label>
+          <Input
+            id="signup-confirmation-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]*"
+            maxLength={8}
+            placeholder="000000"
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 8))}
+            className="h-14 text-center font-mono text-2xl tracking-[0.35em]"
+            aria-describedby="signup-confirmation-code-help"
+            required
+          />
+          <p id="signup-confirmation-code-help" className="text-xs text-muted-foreground text-center">
+            {t('auth.verificationCodeHint')}
+          </p>
+        </div>
+
+        <Button type="submit" className="w-full h-12 glow-purple" disabled={loading}>
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : t('auth.confirmEmailButton')}
+        </Button>
+      </form>
+
+      {showResendCaptcha && (
+        <TurnstileCaptcha
+          captchaRef={resendCaptchaRef}
+          onToken={handleResendCaptchaToken}
+        />
+      )}
+
+      <div className="mt-6 text-center text-sm text-muted-foreground">
+        <span>{t('auth.didntGetCode')} </span>
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={resendLoading || resendCooldown > 0 || resendCaptchaPending}
+          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline disabled:opacity-50"
+          aria-live="polite"
+        >
+          {resendLoading
+            ? t('auth.resendingCode')
+            : resendCooldown > 0
+              ? t('auth.resendCodeIn', { seconds: resendCooldown })
+              : t('auth.resendCode')}
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={onChangeEmail}
+        className="mt-4 flex w-full items-center justify-center text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+      >
+        {t('auth.useDifferentEmail')}
+      </button>
+    </>
+  );
 }
 
 export default function Signup() {
@@ -31,13 +168,19 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
+  const [confirmationLoading, setConfirmationLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
-  const { signUp, signInWithGoogle, user } = useAuth();
+  const [signupCaptchaToken, setSignupCaptchaToken] = useState('');
+  const [signupCaptchaPending, setSignupCaptchaPending] = useState(false);
+  const [showSignupCaptcha, setShowSignupCaptcha] = useState(false);
+  const signupCaptchaRef = useRef<TurnstileInstance | null>(null);
+  const { signUp, verifySignupCode, resendConfirmation, signInWithGoogle, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { t } = useTranslation();
-
-  const strength = useMemo(() => getPasswordStrength(password), [password]);
 
   useEffect(() => {
     if (user) navigate('/dashboard', { replace: true });
@@ -60,9 +203,24 @@ export default function Signup() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    if (!signupCaptchaToken) {
+      setShowSignupCaptcha(true);
+      setSignupCaptchaPending(true);
+      return;
+    }
+
+    await submitSignup(signupCaptchaToken);
+  };
+
+  const submitSignup = async (captchaToken: string) => {
     setLoading(true);
 
-    const { error } = await signUp(email, password, fullName);
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error } = await signUp(normalizedEmail, password, fullName, captchaToken);
+    setSignupCaptchaToken('');
+    signupCaptchaRef.current?.reset();
+    setSignupCaptchaPending(false);
+    setShowSignupCaptcha(false);
 
     if (error) {
       toast({
@@ -73,12 +231,75 @@ export default function Signup() {
     } else {
       toast({
         title: t('auth.checkEmail'),
-        description: t('auth.confirmEmail', { email }),
+        description: t('auth.confirmEmail', { email: normalizedEmail }),
       });
-      navigate('/login');
+      setConfirmationEmail(normalizedEmail);
     }
 
     setLoading(false);
+  };
+
+  const handleSignupCaptchaToken = (token: string) => {
+    setSignupCaptchaToken(token);
+
+    if (!token) {
+      setSignupCaptchaPending(false);
+      return;
+    }
+
+    if (signupCaptchaPending) {
+      void submitSignup(token);
+    }
+  };
+
+  const handleVerifyCode = async (code: string) => {
+    if (!confirmationEmail) return;
+
+    if (!/^\d{6,8}$/.test(code)) {
+      toast({
+        title: t('common.error'),
+        description: t('auth.verificationCodeInvalid'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setConfirmationLoading(true);
+    const { error } = await verifySignupCode(confirmationEmail, code);
+    setConfirmationLoading(false);
+
+    if (error) {
+      toast({
+        title: t('common.error'),
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: t('auth.emailConfirmed'), description: t('auth.emailConfirmedDesc') });
+    navigate('/dashboard', { replace: true });
+  };
+
+  const handleResendCode = async (captchaToken: string): Promise<boolean> => {
+    if (!confirmationEmail) return false;
+
+    if (!captchaToken) {
+      toast({ title: t('common.error'), description: t('auth.captchaRequired'), variant: 'destructive' });
+      return false;
+    }
+
+    setResendLoading(true);
+    const { error } = await resendConfirmation(confirmationEmail, captchaToken);
+    setResendLoading(false);
+
+    if (error) {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+      return false;
+    }
+
+    toast({ title: t('auth.codeResent'), description: t('auth.codeResentDesc') });
+    return true;
   };
 
   const handleGoogleSignup = async () => {
@@ -101,6 +322,17 @@ export default function Signup() {
         className="w-full max-w-md"
       >
         <div className="glass rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-card overflow-hidden">
+          {confirmationEmail ? (
+            <SignupConfirmation
+              email={confirmationEmail}
+              loading={confirmationLoading}
+              resendLoading={resendLoading}
+              onVerify={handleVerifyCode}
+              onResend={handleResendCode}
+              onChangeEmail={() => setConfirmationEmail(null)}
+            />
+          ) : (
+            <>
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center gap-2 mb-6">
               <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="brand-logo h-10 w-10 object-contain shrink-0" />
@@ -116,12 +348,7 @@ export default function Signup() {
             className="w-full mb-6 h-12"
             onClick={handleGoogleSignup}
           >
-            <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
+            <GoogleIcon className="h-5 w-5 mr-2" />
             {t('auth.continueGoogle')}
           </Button>
 
@@ -143,7 +370,7 @@ export default function Signup() {
                   id="fullName"
                   type="text"
                   autoComplete="name"
-                  placeholder="John Doe"
+                  placeholder="Enter your name here"
                   value={fullName}
                   onChange={(e) => { setFullName(e.target.value); if (errors.name) setErrors(p => ({ ...p, name: undefined })); }}
                   className={`pl-10 h-12 ${errors.name ? 'border-destructive' : ''}`}
@@ -177,41 +404,34 @@ export default function Signup() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   id="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); if (errors.password) setErrors(p => ({ ...p, password: undefined })); }}
-                  className={`pl-10 h-12 ${errors.password ? 'border-destructive' : ''}`}
+                  className={`pl-10 pr-10 h-12 ${errors.password ? 'border-destructive' : ''}`}
                   minLength={8}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
               {errors.password && <p className="text-destructive text-xs font-medium">{errors.password}</p>}
-
-              {/* Password strength meter */}
-              {password.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4].map(level => (
-                      <div
-                        key={level}
-                        className={`h-1.5 flex-1 rounded-full transition-colors ${
-                          level <= strength.score ? strength.color : 'bg-border'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className={`text-[10px] font-medium ${
-                    strength.score <= 1 ? 'text-red-500' :
-                    strength.score === 2 ? 'text-orange-500' :
-                    strength.score === 3 ? 'text-amber-500' : 'text-emerald-500'
-                  }`}>
-                    {t(`auth.passwordStrength.${strength.label}`)}
-                  </p>
-                </div>
-              )}
             </div>
+
+            {showSignupCaptcha && (
+              <TurnstileCaptcha
+                captchaRef={signupCaptchaRef}
+                onToken={handleSignupCaptchaToken}
+              />
+            )}
 
             <Button type="submit" className="w-full h-12 glow-purple" disabled={loading}>
               {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : t('auth.signUp')}
@@ -220,10 +440,12 @@ export default function Signup() {
 
           <p className="text-center text-muted-foreground mt-6">
             {t('auth.haveAccount')}{' '}
-            <Link to="/login" className="text-primary hover:underline">
+            <Link to="/login" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline">
               {t('auth.signInLink')}
             </Link>
           </p>
+            </>
+          )}
         </div>
       </motion.div>
     </div>

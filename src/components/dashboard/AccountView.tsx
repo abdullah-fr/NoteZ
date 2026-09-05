@@ -50,7 +50,7 @@ export default function AccountView() {
     refreshCredits,
     loading: creditsLoading,
   } = useCredits();
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const { theme: activeTheme, setTheme, saving: themeSaving } = useTheme();
 
   const [activeTab, setActiveTab] = useState<Tab>('profile');
@@ -74,7 +74,8 @@ export default function AccountView() {
   /* ── password ── */
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
-  const [showPw, setShowPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPw, setSavingPw] = useState(false);
 
   /* ── delete account ── */
@@ -532,7 +533,7 @@ export default function AccountView() {
                   <label className="block text-[11px] font-medium text-muted-foreground mb-1">New Password</label>
                   <div className="relative">
                     <input
-                      type={showPw ? 'text' : 'password'}
+                      type={showNewPw ? 'text' : 'password'}
                       value={newPw}
                       onChange={(e) => setNewPw(e.target.value)}
                       placeholder="Minimum 8 characters"
@@ -540,23 +541,36 @@ export default function AccountView() {
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPw((v) => !v)}
+                      onClick={() => setShowNewPw((visible) => !visible)}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      aria-label={showNewPw ? t('auth.hidePassword') : t('auth.showPassword')}
+                      aria-pressed={showNewPw}
                     >
-                      {showPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      {showNewPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                     </button>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-medium text-muted-foreground mb-1">Confirm New Password</label>
-                  <input
-                    type={showPw ? 'text' : 'password'}
-                    value={confirmPw}
-                    onChange={(e) => setConfirmPw(e.target.value)}
-                    placeholder="Repeat new password"
-                    className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPw ? 'text' : 'password'}
+                      value={confirmPw}
+                      onChange={(e) => setConfirmPw(e.target.value)}
+                      placeholder="Repeat new password"
+                      className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary pr-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPw((visible) => !visible)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      aria-label={showConfirmPw ? t('auth.hidePassword') : t('auth.showPassword')}
+                      aria-pressed={showConfirmPw}
+                    >
+                      {showConfirmPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    </button>
+                  </div>
                 </div>
 
                 <button

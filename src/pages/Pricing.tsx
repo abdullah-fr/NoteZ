@@ -5,6 +5,7 @@ import {
   Check,
   ArrowRight,
   HelpCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/landing/Navbar';
@@ -14,7 +15,7 @@ import { PLANS } from '@/lib/credits';
 const FAQS = [
   {
     q: 'What is included in each plan?',
-    a: 'Every plan includes the core NoteZ workspace, including notes, folders, study chat, flashcards, exams, and activities. Paid plans add more room for regular AI-assisted study and advanced workflows.',
+    a: 'Every plan includes notes, folders, AI chat, flashcards, practice exams, activities, the calendar, and Focus Timer. Paid plans give you more monthly AI-powered study actions so you can use those workflows more often.',
   },
   {
     q: 'When can I change my plan?',
@@ -36,6 +37,7 @@ const FAQS = [
 
 export default function Pricing() {
   const [yearly, setYearly] = useState(true);
+  const [openFaq, setOpenFaq] = useState<string | null>(null);
 
   const tierList = [PLANS.free, PLANS.pro_student, PLANS.pro_scholar];
 
@@ -65,8 +67,10 @@ export default function Pricing() {
               }`}
             >
               Yearly billing
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
-                yearly ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+              <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-mono font-bold tracking-wide shadow-sm ${
+                yearly
+                  ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
+                  : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
               }`}>
                 Save 25%
               </span>
@@ -116,12 +120,17 @@ export default function Pricing() {
 
                     {/* Price */}
                     <div className="mb-5 pb-5 border-b border-border/50">
-                      <div className="flex items-baseline gap-1">
-                        <span className="font-serif text-4xl font-bold tracking-tight text-foreground">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="font-serif text-5xl sm:text-6xl leading-none font-bold tracking-tight text-foreground">
                           ${price}
                         </span>
+                        {yearly && !isFree && (
+                          <span className="text-base font-mono text-muted-foreground/70 line-through sm:text-lg" aria-label={`Regular monthly price $${tier.monthlyPrice}`}>
+                            ${tier.monthlyPrice}
+                          </span>
+                        )}
                         <span className="text-xs text-muted-foreground font-mono">
-                          {price === 0 ? 'forever' : yearly ? '/month (billed yearly)' : '/month'}
+                          {price === 0 ? 'forever' : '/month'}
                         </span>
                       </div>
 
@@ -176,20 +185,35 @@ export default function Pricing() {
           </div>
 
           <div className="space-y-3.5">
-            {FAQS.map(faq => (
-              <div
-                key={faq.q}
-                className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-1.5 shadow-2xs"
-              >
-                <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <HelpCircle className="h-4 w-4 text-primary shrink-0" />
-                  {faq.q}
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-                  {faq.a}
-                </p>
-              </div>
-            ))}
+            {FAQS.map((faq, index) => {
+              const isOpen = openFaq === faq.q;
+              const faqId = `faq-${index}`;
+
+              return (
+                <div
+                  key={faq.q}
+                  className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-1.5 shadow-2xs"
+                >
+                  <button
+                    type="button"
+                    id={`${faqId}-trigger`}
+                    aria-expanded={isOpen}
+                    aria-controls={`${faqId}-panel`}
+                    onClick={() => setOpenFaq(isOpen ? null : faq.q)}
+                    className="w-full text-left text-sm font-bold text-foreground flex items-center gap-2"
+                  >
+                    <HelpCircle className="h-4 w-4 text-primary shrink-0" />
+                    <span className="flex-1">{faq.q}</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <p id={`${faqId}-panel`} role="region" aria-labelledby={`${faqId}-trigger`} className="text-xs text-muted-foreground leading-relaxed pl-6">
+                      {faq.a}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>

@@ -3,18 +3,17 @@ import { Twitter, Github, Linkedin, Instagram } from 'lucide-react';
 
 const links = {
   Product: [
-    { label: 'Features', href: '/#features' },
+    { label: 'Features', href: '/#features', hash: true },
     { label: 'Pricing', href: '/pricing' },
   ],
   Company: [
-    { label: 'About', href: '/about' },
+    { label: 'About', href: '/about', newTab: true },
     { label: 'Blog', href: '#' },
-    { label: 'Careers', href: '#' },
   ],
   Legal: [
-    { label: 'Privacy', href: '/privacy' },
-    { label: 'Terms', href: '/terms' },
-    { label: 'Security', href: '/security' },
+    { label: 'Privacy', href: '/privacy', newTab: true },
+    { label: 'Terms', href: '/terms', newTab: true },
+    { label: 'Security', href: '/security', newTab: true },
   ],
 };
 
@@ -28,8 +27,8 @@ const socialLinks = [
 export function Footer() {
   return (
     <footer className="border-t border-border/60 bg-card/20">
-      <div className="container mx-auto px-4 py-14 md:py-16">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 md:gap-12 mb-12">
+      <div className="container mx-auto px-4 py-8 md:py-10">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-6 md:gap-12 mb-8">
           <div className="col-span-2">
             <Link to="/" className="inline-flex items-center gap-2.5 mb-4">
               <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="brand-logo h-8 w-8 object-contain shrink-0" />
@@ -60,9 +59,24 @@ export function Footer() {
               <ul className="space-y-2.5">
                 {items.map(l => (
                   <li key={l.label}>
-                    <Link to={l.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      {l.label}
-                    </Link>
+                    {l.newTab ? (
+                      <a
+                        href={l.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {l.label}
+                      </a>
+                    ) : l.hash ? (
+                      <a href={l.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        {l.label}
+                      </a>
+                    ) : (
+                      <Link to={l.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        {l.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -70,7 +84,7 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-8 border-t border-border/60">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-4 border-t border-border/60">
           <p className="text-xs text-muted-foreground">
             © {new Date().getFullYear()} NoteZ. Crafted for curious minds.
           </p>
