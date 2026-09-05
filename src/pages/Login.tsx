@@ -10,8 +10,9 @@ import { isTempEmail } from '@/lib/temp-email-domains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getSafeInternalPath } from '@/lib/navigation';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,10 +38,24 @@ export default function Login() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const nextPath = getSafeInternalPath(searchParams.get('next'));
+
+  const handleReturnToLogin = () => {
+    setShowForgot(false);
+    setForgotSent(false);
+    setForgotCaptchaToken('');
+    setForgotCaptchaPending(false);
+    setForgotLoading(false);
+    forgotCaptchaRef.current?.reset();
+    setShowLoginCaptcha(false);
+    setLoginCaptchaToken('');
+    setLoginCaptchaPending(false);
+    loginCaptchaRef.current?.reset();
+  };
 
   useEffect(() => {
-    if (user) navigate('/dashboard', { replace: true });
-  }, [user, navigate]);
+    if (user) navigate(nextPath ?? '/dashboard', { replace: true });
+  }, [nextPath, user, navigate]);
 
   useEffect(() => {
     if (searchParams.get('confirmed') !== '1') return;
@@ -89,7 +104,7 @@ export default function Login() {
         variant: 'destructive'
       });
     } else {
-      navigate('/dashboard');
+      navigate(nextPath ?? '/dashboard');
     }
 
     setLoginCaptchaToken('');
@@ -113,7 +128,7 @@ export default function Login() {
   };
 
   const handleGoogleLogin = async () => {
-    const { error } = await signInWithGoogle();
+    const { error } = await signInWithGoogle(nextPath ?? '/dashboard');
     if (error) {
       toast({
         title: t('common.error'),
@@ -192,25 +207,6 @@ export default function Login() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <button
-                  onClick={() => {
-                    setShowForgot(false);
-                    setForgotSent(false);
-                    setForgotCaptchaToken('');
-                    setForgotCaptchaPending(false);
-                    setForgotLoading(false);
-                    forgotCaptchaRef.current?.reset();
-                    setShowLoginCaptcha(false);
-                    setLoginCaptchaToken('');
-                    setLoginCaptchaPending(false);
-                    loginCaptchaRef.current?.reset();
-                  }}
-                  className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline mb-4 transition-colors"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  {t('auth.backToLogin')}
-                </button>
-
                 <div className="text-center mb-6">
                   <h1 className="text-2xl font-bold mb-2">{t('auth.resetPassword')}</h1>
                   <p className="text-muted-foreground text-sm">Enter your email and we'll send you a reset link.</p>
@@ -252,6 +248,17 @@ export default function Login() {
                     </Button>
                   </form>
                 )}
+
+                <p className="text-center text-sm text-muted-foreground mt-6">
+                  {t('auth.rememberPassword')}{' '}
+                  <button
+                    type="button"
+                    onClick={handleReturnToLogin}
+                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                  >
+                    {t('auth.loginLink')}
+                  </button>
+                </p>
               </motion.div>
             ) : (
               <motion.div
@@ -368,7 +375,10 @@ export default function Login() {
 
                 <p className="text-center text-muted-foreground mt-6">
                   {t('auth.noAccount')}{' '}
-                  <Link to="/signup" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline">
+                  <Link
+                    to={nextPath ? '/signup?next=' + encodeURIComponent(nextPath) : '/signup'}
+                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                  >
                     {t('auth.signUpLink')}
                   </Link>
                 </p>

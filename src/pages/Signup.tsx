@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { TurnstileCaptcha } from '@/components/auth/TurnstileCaptcha';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Mail, Lock, User, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getSafeInternalPath } from '@/lib/navigation';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -179,12 +180,14 @@ export default function Signup() {
   const signupCaptchaRef = useRef<TurnstileInstance | null>(null);
   const { signUp, verifySignupCode, resendConfirmation, signInWithGoogle, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const nextPath = getSafeInternalPath(searchParams.get('next'));
 
   useEffect(() => {
-    if (user) navigate('/dashboard', { replace: true });
-  }, [user, navigate]);
+    if (user) navigate(nextPath ?? '/dashboard', { replace: true });
+  }, [nextPath, user, navigate]);
 
   function validate(): boolean {
     const errs: typeof errors = {};
@@ -216,7 +219,7 @@ export default function Signup() {
     setLoading(true);
 
     const normalizedEmail = email.trim().toLowerCase();
-    const { error } = await signUp(normalizedEmail, password, fullName, captchaToken);
+    const { error, session } = await signUp(normalizedEmail, password, fullName, captchaToken, nextPath ?? '/dashboard');
     setSignupCaptchaToken('');
     signupCaptchaRef.current?.reset();
     setSignupCaptchaPending(false);
@@ -228,6 +231,12 @@ export default function Signup() {
         description: error.message,
         variant: 'destructive'
       });
+    } else if (session) {
+      toast({
+        title: t('auth.accountCreated'),
+        description: t('auth.checkoutRedirect'),
+      });
+      navigate(nextPath ?? '/dashboard', { replace: true });
     } else {
       toast({
         title: t('auth.checkEmail'),
@@ -278,7 +287,7 @@ export default function Signup() {
     }
 
     toast({ title: t('auth.emailConfirmed'), description: t('auth.emailConfirmedDesc') });
-    navigate('/dashboard', { replace: true });
+    navigate(nextPath ?? '/dashboard', { replace: true });
   };
 
   const handleResendCode = async (captchaToken: string): Promise<boolean> => {
@@ -290,7 +299,7 @@ export default function Signup() {
     }
 
     setResendLoading(true);
-    const { error } = await resendConfirmation(confirmationEmail, captchaToken);
+    const { error } = await resendConfirmation(confirmationEmail, captchaToken, nextPath ?? '/dashboard');
     setResendLoading(false);
 
     if (error) {
@@ -303,7 +312,7 @@ export default function Signup() {
   };
 
   const handleGoogleSignup = async () => {
-    const { error } = await signInWithGoogle();
+    const { error } = await signInWithGoogle(nextPath ?? '/dashboard');
     if (error) {
       toast({
         title: t('common.error'),
@@ -440,7 +449,10 @@ export default function Signup() {
 
           <p className="text-center text-muted-foreground mt-6">
             {t('auth.haveAccount')}{' '}
-            <Link to="/login" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline">
+            <Link
+              to={nextPath ? '/login?next=' + encodeURIComponent(nextPath) : '/login'}
+              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+            >
               {t('auth.signInLink')}
             </Link>
           </p>

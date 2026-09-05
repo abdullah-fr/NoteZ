@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
+import { getSafeInternalPath } from '@/lib/navigation';
 
 export default function AuthCallback() {
   const { user, loading } = useAuth();
@@ -11,6 +12,7 @@ export default function AuthCallback() {
   const { toast } = useToast();
   const { t } = useTranslation();
   const [handled, setHandled] = useState(false);
+  const nextPath = getSafeInternalPath(new URLSearchParams(window.location.search).get('next'));
 
   useEffect(() => {
     if (loading || handled) return;
@@ -26,17 +28,23 @@ export default function AuthCallback() {
         description: t('auth.confirmationFailedDesc'),
         variant: 'destructive',
       });
-      navigate('/login', { replace: true });
+      const loginPath = nextPath
+        ? '/login?next=' + encodeURIComponent(nextPath)
+        : '/login';
+      navigate(loginPath, { replace: true });
       return;
     }
 
     if (user) {
-      navigate('/dashboard', { replace: true });
+      navigate(nextPath ?? '/dashboard', { replace: true });
       return;
     }
 
-    navigate('/login?confirmed=1', { replace: true });
-  }, [handled, loading, navigate, t, toast, user]);
+    const confirmedPath = nextPath
+      ? '/login?confirmed=1&next=' + encodeURIComponent(nextPath)
+      : '/login?confirmed=1';
+    navigate(confirmedPath, { replace: true });
+  }, [handled, loading, navigate, nextPath, t, toast, user]);
 
   return (
     <div className="min-h-screen flex items-center justify-center animated-bg px-4">

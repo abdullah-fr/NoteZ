@@ -4,11 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Menu, X, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/lib/auth';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { isDark, setTheme } = useTheme();
+  const { user, loading: authLoading } = useAuth();
+  const isAuthenticated = !authLoading && Boolean(user);
 
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
@@ -42,8 +45,18 @@ export function Navbar() {
             >
               {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
-            <Link to="/login"><Button variant="ghost" size="sm">Log in</Button></Link>
-            <Link to="/signup"><Button size="sm" className="ml-1">Get started</Button></Link>
+            {authLoading ? (
+              <div className="h-9 w-28 rounded-lg bg-muted/50" aria-hidden="true" />
+            ) : isAuthenticated ? (
+              <Link to="/dashboard">
+                <Button size="sm">Open dashboard</Button>
+              </Link>
+            ) : (
+              <>
+                <Link to="/login"><Button variant="ghost" size="sm">Log in</Button></Link>
+                <Link to="/signup"><Button size="sm" className="ml-1">Get started</Button></Link>
+              </>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -79,8 +92,18 @@ export function Navbar() {
               >
                 {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
-              <Link to="/login" onClick={() => setIsOpen(false)}><Button variant="ghost" className="w-full justify-start">Log in</Button></Link>
-              <Link to="/signup" onClick={() => setIsOpen(false)}><Button className="w-full">Get started</Button></Link>
+              {authLoading ? (
+                <div className="h-10 w-full rounded-lg bg-muted/50" aria-hidden="true" />
+              ) : isAuthenticated ? (
+                <Link to="/dashboard" onClick={() => setIsOpen(false)}>
+                  <Button className="w-full">Open dashboard</Button>
+                </Link>
+              ) : (
+                <>
+                  <Link to="/login" onClick={() => setIsOpen(false)}><Button variant="ghost" className="w-full justify-start">Log in</Button></Link>
+                  <Link to="/signup" onClick={() => setIsOpen(false)}><Button className="w-full">Get started</Button></Link>
+                </>
+              )}
             </div>
           </motion.div>
         )}

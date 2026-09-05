@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useCredits } from "@/contexts/CreditsContext";
 import { useTimer, type FocusGoal } from "@/lib/timer";
 import type { CalendarEvent } from "@/lib/calendar";
 
@@ -40,6 +42,8 @@ import {
   Globe,
   Layers,
   ListChecks,
+  Crown,
+  ArrowUpRight,
   type LucideIcon,
 } from "lucide-react";
 
@@ -78,16 +82,13 @@ const NAV: NavItem[] = [
 
 const GROUPS = ["Study", "Practice", "Tools", "Utilities"] as const;
 
-const LANGUAGES = [
-  { code: 'en', label: 'English', flag: '🇬🇧' },
-  { code: 'es', label: 'Español', flag: '🇪🇸' },
-];
-
 export default function Dashboard() {
   const { user, signOut } = useAuth();
+  const { tier, loading: creditsLoading } = useCredits();
+  const navigate = useNavigate();
   const { hasActiveSession, hasTaskSession, hasExamSession, selectMinutes, setActiveGoal, start: startFocusTimer } = useTimer();
 
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -96,10 +97,13 @@ export default function Dashboard() {
   const [folderResetKey, setFolderResetKey] = useState(0);
   const [chatResetKey, setChatResetKey] = useState(0);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [isInsideEditor, setIsInsideEditor] = useState(false);
   // Track pre-chat sidebar state so we can restore it when leaving chat
   const [preChatSidebarOpen, setPreChatSidebarOpen] = useState<boolean | null>(null);
+  const handleSignOut = () => {
+    navigate("/", { replace: true });
+    void signOut();
+  };
   const closeSidebarForFolder = useCallback(() => {
     setIsInsideEditor(true);
   }, []);
@@ -135,14 +139,6 @@ export default function Dashboard() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
-
-  // Close lang menu on outside click
-  useEffect(() => {
-    if (!langMenuOpen) return;
-    const handler = () => setLangMenuOpen(false);
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [langMenuOpen]);
 
   const grouped = useMemo(() => {
     const g: Record<string, NavItem[]> = { Study: [], Practice: [], Tools: [], Utilities: [] };
@@ -396,6 +392,31 @@ export default function Dashboard() {
                 <SideNavList />
               </nav>
 
+              {/* Paid plan discovery for free users */}
+              {!creditsLoading && tier === 'free' && (
+                <div className="px-1.5 pb-1.5">
+                  <Link
+                    to="/pricing"
+                    className="group block rounded-md border border-border/80 bg-card/60 p-2 transition-colors hover:border-border hover:bg-secondary/60"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-border bg-secondary text-muted-foreground transition-colors group-hover:text-foreground">
+                        <Crown className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[10px] font-semibold text-foreground">
+                          Upgrade plan
+                        </p>
+                        <p className="mt-0.5 text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                          Pro · Max
+                        </p>
+                      </div>
+                      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                    </div>
+                  </Link>
+                </div>
+              )}
+
               {/* Account footer */}
               <div className="border-t border-border p-1.5">
 
@@ -420,7 +441,7 @@ export default function Dashboard() {
                     </span>
                     <Settings className="h-3 w-3 shrink-0 opacity-50" />
                   </button>
-                  <Button variant="ghost" size="icon" onClick={signOut} aria-label={t('sidebar.signOut')} className="h-7 w-7 shrink-0">
+                  <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label={t('sidebar.signOut')} className="h-7 w-7 shrink-0">
                     <LogOut className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -456,13 +477,16 @@ export default function Dashboard() {
               </nav>
 
               <div className="border-t border-border p-2 space-y-2 flex flex-col items-center">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setLangMenuOpen(o => !o); }}
-                  title="Switch Language"
-                  className="h-7 w-7 rounded-md flex items-center justify-center text-[12px] hover:bg-secondary transition-colors"
-                >
-                  {LANGUAGES.find(l => l.code === i18n.language)?.flag || '🌐'}
-                </button>
+                {!creditsLoading && tier === 'free' && (
+                  <Link
+                    to="/pricing"
+                    title="Explore Pro and Max plans"
+                    aria-label="Explore Pro and Max plans"
+                    className="h-7 w-7 rounded-md flex items-center justify-center text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    <Crown className="h-3.5 w-3.5" />
+                  </Link>
+                )}
 
                 <button
                   onClick={() => handleNavigate("account")}
@@ -477,7 +501,7 @@ export default function Dashboard() {
                 </button>
 
                 <button
-                  onClick={signOut}
+                  onClick={handleSignOut}
                   title={t('sidebar.signOut')}
                   className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                 >
@@ -525,7 +549,7 @@ export default function Dashboard() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={signOut}
+                onClick={handleSignOut}
                 aria-label={t('sidebar.signOut')}
                 className="h-8 w-8"
               >
@@ -645,7 +669,7 @@ export default function Dashboard() {
             <CommandItem
               value="sign out log out"
               onSelect={() => {
-                signOut();
+                handleSignOut();
                 setPaletteOpen(false);
               }}
             >

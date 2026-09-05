@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { getSafeInternalPath } from '@/lib/navigation';
 import { clearLegacyUserStorage, clearOtherUsersStorage, clearUserStorage } from '@/lib/user-storage';
 
 interface AuthContextType {
@@ -8,10 +9,10 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string, captchaToken?: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, captchaToken?: string, redirectPath?: string) => Promise<{ error: Error | null; session: Session | null }>;
   verifySignupCode: (email: string, token: string) => Promise<{ error: Error | null }>;
-  resendConfirmation: (email: string, captchaToken?: string) => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  resendConfirmation: (email: string, captchaToken?: string, redirectPath?: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: (redirectPath?: string) => Promise<{ error: Error | null }>;
   resetPassword: (email: string, captchaToken?: string) => Promise<{ error: Error | null }>;
   updatePassword: (password: string) => Promise<{ error: Error | null }>;
   signOut: (scope?: 'global' | 'local') => Promise<void>;
@@ -60,6 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  const getAuthCallbackUrl = (redirectPath?: string) => {
+    const safeRedirectPath = getSafeInternalPath(redirectPath ?? null) ?? '/dashboard';
+    return `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeRedirectPath)}`;
+  };
+
   const signIn = async (email: string, password: string, captchaToken?: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -69,17 +75,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error as Error | null };
   };
 
-  const signUp = async (email: string, password: string, fullName: string, captchaToken?: string) => {
-    const { error } = await supabase.auth.signUp({
+  const signUp = async (email: string, password: string, fullName: string, captchaToken?: string, redirectPath?: string) => {
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: getAuthCallbackUrl(redirectPath),
         data: { full_name: fullName },
         captchaToken,
       }
     });
-    return { error: error as Error | null };
+    return { error: error as Error | null, session: data.session };
   };
 
   const verifySignupCode = async (email: string, token: string) => {
@@ -91,23 +97,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error as Error | null };
   };
 
-  const resendConfirmation = async (email: string, captchaToken?: string) => {
+  const resendConfirmation = async (email: string, captchaToken?: string, redirectPath?: string) => {
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: getAuthCallbackUrl(redirectPath),
         captchaToken,
       },
     });
     return { error: error as Error | null };
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (redirectPath = '/dashboard') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin + '/dashboard',
+        redirectTo: getAuthCallbackUrl(redirectPath),
       },
     });
     return { error: error as Error | null };

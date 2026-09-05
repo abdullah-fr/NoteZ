@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/use-theme';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getSafeClientErrorMessage } from '@/lib/client-logging';
 import {
   User, Lock, LogOut, Trash2,
@@ -40,6 +40,11 @@ const LANGUAGES = [
 
 export default function AccountView() {
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const handleSignOut = () => {
+    navigate('/', { replace: true });
+    void signOut();
+  };
   const {
     balance,
     allowance,
@@ -134,6 +139,7 @@ export default function AccountView() {
       // The auth record has already been removed, so only clear this device's
       // session. AuthProvider clears all account-scoped caches before this
       // resolves and avoids a doomed remote logout request.
+      navigate('/', { replace: true });
       await signOut('local');
     } catch (err: unknown) {
       toast({
@@ -600,7 +606,7 @@ export default function AccountView() {
 
                 <button
                   type="button"
-                  onClick={() => signOut()}
+                  onClick={handleSignOut}
                   className="px-3 py-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-xs text-foreground font-medium transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
                   <LogOut className="h-3 w-3" />

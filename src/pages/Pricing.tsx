@@ -1,16 +1,21 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Check,
   ArrowRight,
   HelpCircle,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Navbar } from '@/components/landing/Navbar';
 import { Footer } from '@/components/landing/Footer';
 import { PLANS } from '@/lib/credits';
+import { useAuth } from '@/lib/auth';
+import { useToast } from '@/hooks/use-toast';
+import { ANNUAL_TOTALS, getPaidPlan, isPaidPlan, type PaidPlan } from '@/lib/billing';
+import { createLemonCheckout } from '@/services/billing.service';
 
 const FAQS = [
   {
@@ -38,8 +43,47 @@ const FAQS = [
 export default function Pricing() {
   const [yearly, setYearly] = useState(true);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState<PaidPlan | null>(null);
+  const checkoutRequestRef = useRef<PaidPlan | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
 
   const tierList = [PLANS.free, PLANS.pro_student, PLANS.pro_scholar];
+  const requestedCheckout = searchParams.get('checkout');
+  const requestedPlan = isPaidPlan(requestedCheckout) ? requestedCheckout : null;
+
+  const startCheckout = useCallback(async (plan: PaidPlan) => {
+    if (!user) {
+      navigate('/signup?next=' + encodeURIComponent('/pricing?checkout=' + plan));
+      return;
+    }
+
+    setCheckoutLoading(plan);
+    try {
+      const checkoutUrl = await createLemonCheckout(plan);
+      window.location.assign(checkoutUrl);
+    } catch (error) {
+      toast({
+        title: 'Checkout unavailable',
+        description: error instanceof Error ? error.message : 'Unable to start checkout.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCheckoutLoading(null);
+    }
+  }, [navigate, toast, user]);
+
+  useEffect(() => {
+    if (!user || !requestedPlan || checkoutRequestRef.current === requestedPlan) return;
+
+    checkoutRequestRef.current = requestedPlan;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('checkout');
+    setSearchParams(nextParams, { replace: true });
+    void startCheckout(requestedPlan);
+  }, [requestedPlan, searchParams, setSearchParams, startCheckout, user]);
 
   return (
     <div className="min-h-screen bg-background animated-bg overflow-x-hidden text-foreground">
@@ -72,7 +116,7 @@ export default function Pricing() {
                   ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
                   : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
               }`}>
-                Save 25%
+                Save up to 33%
               </span>
             </button>
           </div>
@@ -87,6 +131,10 @@ export default function Pricing() {
               const price = yearly ? tier.yearlyPrice : tier.monthlyPrice;
               const isPopular = tier.highlighted;
               const isFree = tier.id === 'free';
+              const annualTotal = !isFree && tier.id in ANNUAL_TOTALS
+                ? ANNUAL_TOTALS[tier.id as keyof typeof ANNUAL_TOTALS]
+                : null;
+              const checkoutPlan = isFree ? null : getPaidPlan(tier.id, yearly);
 
               return (
                 <motion.div
@@ -133,22 +181,43 @@ export default function Pricing() {
                           {price === 0 ? 'forever' : '/month'}
                         </span>
                       </div>
-
+                      {yearly && annualTotal !== null && (
+                        <p className="mt-2 text-xs font-mono text-muted-foreground">
+                          {'Billed $' + annualTotal + '/year'}
+                        </p>
+                      )}
                     </div>
 
                     {/* CTA Button */}
-                    <Button
-                      asChild
-                      variant={isPopular ? 'default' : 'outline'}
-                      className={`w-full mb-6 font-bold text-xs h-10 ${
-                        isPopular ? 'bg-primary text-primary-foreground shadow-md' : 'border-border'
-                      }`}
-                    >
-                      <Link to="/signup">
-                        {tier.id === 'free' ? 'Get Started Free' : `Upgrade to ${tier.name}`}
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Link>
-                    </Button>
+                    {isFree ? (
+                      <Button
+                        asChild
+                        variant={isPopular ? 'default' : 'outline'}
+                        className={'w-full mb-6 font-bold text-xs h-10 ' + (isPopular
+                          ? 'bg-primary text-primary-foreground shadow-md'
+                          : 'border-border')}
+                      >
+                        <Link to="/signup">
+                          Get Started Free
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    ) : checkoutPlan ? (
+                      <Button
+                        type="button"
+                        variant={isPopular ? 'default' : 'outline'}
+                        className={'w-full mb-6 font-bold text-xs h-10 ' + (isPopular
+                          ? 'bg-primary text-primary-foreground shadow-md'
+                          : 'border-border')}
+                        disabled={checkoutLoading !== null}
+                        onClick={() => void startCheckout(checkoutPlan)}
+                      >
+                        {checkoutLoading === checkoutPlan
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : 'Upgrade to ' + tier.name}
+                        {checkoutLoading !== checkoutPlan && <ArrowRight className="ml-2 h-4 w-4" />}
+                      </Button>
+                    ) : null}
 
                     {/* Features list */}
                     <div className="space-y-2.5">

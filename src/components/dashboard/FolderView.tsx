@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder, Plus, Trash, Trash2, Edit3, Save, X,
@@ -347,6 +348,11 @@ export default function FolderView({
   onToggleSidebar?: () => void;
 }) {
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const handleSignOut = () => {
+    navigate('/', { replace: true });
+    void signOut();
+  };
   const { folders, setFolders, setTrashItems, trashItems, loading: foldersLoading } = useFolderStorage(user?.id);
   const [view, setView] = useState<'folders' | 'notes' | 'trash'>('folders');
   const [folderScope, setFolderScope] = useState<'active' | 'archived'>(initialScope);
@@ -897,7 +903,7 @@ export default function FolderView({
                   <Settings className="h-3.5 w-3.5" />
                 </button>
                 {signOut && (
-                  <button onClick={signOut} title="Sign out" className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground">
+                  <button onClick={handleSignOut} title="Sign out" className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground">
                     <LogOut className="h-3.5 w-3.5" />
                   </button>
                 )}
