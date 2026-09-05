@@ -17,11 +17,61 @@ async function removeUploads(
   admin: ReturnType<typeof createClient>,
   filePaths: string[],
 ) {
+  if (filePaths.length === 0) return;
+
   const batchSize = 100;
   for (let i = 0; i < filePaths.length; i += batchSize) {
     const { error } = await admin.storage.from("uploads").remove(filePaths.slice(i, i + batchSize));
     if (error) throw new Error(`Could not delete uploaded source files: ${error.message}`);
   }
+}
+
+type StorageEntry = {
+  name: string;
+  id?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+/**
+ * Storage is independent from Postgres, so source rows are not a complete
+ * inventory: interrupted uploads can leave orphaned objects. Enumerate the
+ * whole authenticated user's prefix, including nested folders, before the
+ * auth/database transaction starts.
+ */
+async function listUploadPaths(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string[]> {
+  const paths: string[] = [];
+  const pageSize = 100;
+
+  async function walk(prefix: string): Promise<void> {
+    let offset = 0;
+    while (true) {
+      const { data, error } = await admin.storage.from("uploads").list(prefix, {
+        limit: pageSize,
+        offset,
+      });
+      if (error) throw new Error(`Could not enumerate uploaded source files: ${error.message}`);
+
+      const entries = (data ?? []) as StorageEntry[];
+      for (const entry of entries) {
+        if (!entry.name) continue;
+        const path = `${prefix}/${entry.name}`;
+        if (entry.id || entry.metadata) {
+          paths.push(path);
+        } else {
+          await walk(path);
+        }
+      }
+
+      if (entries.length < pageSize) break;
+      offset += entries.length;
+    }
+  }
+
+  await walk(userId);
+  return paths;
 }
 
 serve(async (req) => {
@@ -50,7 +100,10 @@ serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Files live outside Postgres, so remove them before the transactional auth delete below.
+    // Files live outside Postgres, so remove every object under this user's
+    // storage prefix before the transactional auth delete below. The source
+    // rows are checked too, so a malformed path cannot make us touch another
+    // account's object.
     const { data: sources, error: sourcesError } = await admin
       .from("sources")
       .select("file_path")
@@ -58,7 +111,17 @@ serve(async (req) => {
       .not("file_path", "is", null);
     if (sourcesError) throw new Error(`Could not load source files: ${sourcesError.message}`);
 
-    const filePaths = [...new Set((sources ?? []).flatMap((source) => source.file_path ? [source.file_path] : []))];
+    const userPrefix = `${userId}/`;
+    const referencedPaths = (sources ?? [])
+      .flatMap((source) => typeof source.file_path === "string" ? [source.file_path] : []);
+    if (referencedPaths.some((filePath) => !filePath.startsWith(userPrefix))) {
+      throw new Error("Source file ownership mismatch");
+    }
+
+    const filePaths = [...new Set([
+      ...(await listUploadPaths(admin, userId)),
+      ...referencedPaths,
+    ])];
     await removeUploads(admin, filePaths);
 
     // Deleting auth.users invokes the database trigger added in the accompanying migration.

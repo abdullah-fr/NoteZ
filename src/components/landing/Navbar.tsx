@@ -24,7 +24,7 @@ export function Navbar() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2.5">
-            <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="h-8 w-8 object-contain shrink-0" />
+            <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="brand-logo h-8 w-8 object-contain shrink-0" />
             <span className="font-display text-xl font-bold tracking-tight">NoteZ</span>
           </Link>
 

@@ -184,7 +184,7 @@ export default function TrashView({ onBack }: { onBack?: () => void }) {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => restoreItem(item)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border bg-card text-[11px] font-medium text-foreground hover:bg-secondary transition-colors"

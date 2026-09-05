@@ -208,8 +208,8 @@ function NoteForm({
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full flex flex-col min-h-0 bg-background">
       {/* Single Sticky Header Bar matching Image 2 & 4: [ Editor Sidebar Toggle ]   Note Title */}
-      <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/60 backdrop-blur-md px-4 py-2 shrink-0">
-        <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-lg">
+      <div className="sticky top-0 z-20 flex flex-col items-stretch gap-3 border-b border-border bg-card/60 backdrop-blur-md px-4 py-2 shrink-0 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:max-w-lg sm:flex-1">
           {!notesSidebarOpen && onToggleNotesSidebar && (
             <button
               type="button"
@@ -229,7 +229,7 @@ function NoteForm({
           />
         </div>
 
-        <div className="flex w-full sm:w-auto max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+        <div className="flex w-full max-w-full flex-wrap items-center justify-start gap-1.5 sm:w-auto sm:justify-end sm:gap-2">
           {saveSuccessMsg && (
             <span className="text-xs font-medium text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg animate-in fade-in">
               {saveSuccessMsg}
@@ -740,7 +740,7 @@ export default function FolderView({
   if (folderScope === 'archived') {
     return (
       <div className="h-full flex flex-col overflow-y-auto">
-        <div className="sticky top-0 z-20 border-b border-border bg-card/60 backdrop-blur-md px-4 md:px-6 py-3 flex items-center justify-between gap-3 shrink-0">
+        <div className="sticky top-0 z-20 border-b border-border bg-card/60 backdrop-blur-md px-4 md:px-6 py-3 flex flex-col gap-3 shrink-0 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setFolderScope('active')}
@@ -765,7 +765,7 @@ export default function FolderView({
             </div>
           </div>
 
-          <div className="relative w-52 sm:w-60">
+          <div className="relative w-full sm:w-60 sm:shrink-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               value={search}
@@ -871,7 +871,7 @@ export default function FolderView({
                 ) : visibleNotes.map(note => (
                   <div key={note.id} className={`group mb-1 flex items-center gap-1 rounded-lg transition-colors ${activeNote?.id === note.id ? 'bg-primary/10 border border-primary/40 text-foreground font-semibold' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
                     <button onClick={() => editNote(note)} title={note.title} className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12px]">{note.title || 'Untitled note'}</button>
-                    <button onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} className="mr-1 hidden h-5 w-5 shrink-0 items-center justify-center rounded text-foreground hover:bg-secondary group-hover:flex"><Trash2 className="h-3 w-3 text-destructive" /></button>
+                    <button onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground opacity-100 hover:bg-secondary md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"><Trash2 className="h-3 w-3 text-destructive" /></button>
                   </div>
                 ))}
               </div>
@@ -972,8 +972,9 @@ export default function FolderView({
   return (
     <div className="h-full flex flex-col overflow-y-auto">
       {/* Sticky Header with Left Search Bar & Inline Toggle */}
-      <div className="sticky top-0 z-20 border-b border-border bg-card/60 backdrop-blur-md px-4 md:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="sticky top-0 z-20 border-b border-border bg-card/60 backdrop-blur-md px-4 md:px-6 py-3 flex flex-col gap-3 shrink-0 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex min-w-0 items-center gap-3">
           {folderScope === 'archived' && (
             <button
               onClick={() => setFolderScope('active')}
@@ -1001,8 +1002,10 @@ export default function FolderView({
             <span className="text-[11px] font-mono text-muted-foreground">{filteredFolders.length}</span>
           </div>
 
+          </div>
+
           {/* Search Bar on Left side right next to Folders title */}
-          <div className="relative w-44 sm:w-56">
+          <div className="relative w-full sm:w-56 sm:shrink-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               value={search}
@@ -1013,7 +1016,7 @@ export default function FolderView({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           <div ref={sortMenuRef} className="relative">
             <button
               type="button"
@@ -1254,8 +1257,8 @@ export default function FolderView({
                     <span className="hidden text-[11px] text-muted-foreground lg:block">{formatFolderDate(folder.createdAt)}</span>
                     <span className="hidden text-[11px] text-muted-foreground lg:block">{formatFolderDate(folderModifiedAt(folder))}</span>
                     <span className="hidden items-center gap-1 text-[11px] font-mono text-muted-foreground lg:flex"><HardDrive className="h-3 w-3" />{formatBytes(folderSizeBytes(folder))}</span>
-                    <div className="flex items-center justify-end gap-1">
-                      <div className={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${selectMode ? 'pointer-events-none hidden' : ''}`}>
+                    <div className="col-span-2 flex items-center justify-end gap-1 justify-self-end lg:col-span-1 lg:justify-self-auto">
+                      <div className={`flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${selectMode ? 'pointer-events-none hidden' : ''}`}>
                         <button onClick={e => { e.stopPropagation(); editFolder(folder); }} className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"><Edit3 className="h-3 w-3" /></button>
                         <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }} title="Move to Trash" className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-foreground transition-colors"><Trash2 className="h-3 w-3 text-destructive" /></button>
                       </div>
@@ -1282,7 +1285,7 @@ export default function FolderView({
                   <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
                     <Folder className="h-4 w-4" />
                   </div>
-                  <div className={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${selectMode || editingFolderId === folder.id ? 'pointer-events-none hidden' : ''}`}>
+                  <div className={`flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${selectMode || editingFolderId === folder.id ? 'pointer-events-none hidden' : ''}`}>
                     <button onClick={e => { e.stopPropagation(); editFolder(folder); }} className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit3 className="h-3 w-3" /></button>
                     <button onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }} title="Move to Trash" className="h-6 w-6 rounded flex items-center justify-center hover:bg-secondary text-foreground"><Trash2 className="h-3 w-3 text-destructive" /></button>
                   </div>

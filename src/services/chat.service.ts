@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getSafeClientErrorMessage, getSafeSourceErrorMessage } from '@/lib/client-logging';
+import { validateUploadFile } from '@/services/upload-policy';
 
 export interface Conversation {
   id: string;
@@ -101,6 +102,7 @@ export async function uploadChatFile(
   userId: string,
   file: File,
 ): Promise<{ path: string }> {
+  validateUploadFile(file);
   const path = `${userId}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g, '_')}`;
   const { error } = await supabase.storage
     .from('uploads')
@@ -123,7 +125,10 @@ export async function createSourceRecord(
     .insert({ user_id: userId, title, kind, file_path: filePath, status: 'pending' })
     .select('id, title, status, error')
     .single();
-  if (error) throw error;
+  if (error) {
+    await supabase.storage.from('uploads').remove([filePath]);
+    throw error;
+  }
   return data as AttachedSource;
 }
 

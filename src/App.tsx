@@ -18,6 +18,10 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Pricing from "./pages/Pricing";
+import About from "./pages/About";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
+import Security from "./pages/Security";
 import NotFound from "./pages/NotFound";
 
 // Apply persisted theme on every cold load before first paint
@@ -54,6 +58,13 @@ function UserScopedApp() {
   const queryClient = useMemo(() => new QueryClient(), [userId]);
 
   useEffect(() => {
+    // Query caches are memory-only today, but clear each identity's cache as
+    // soon as that identity is replaced so a future provider cannot retain a
+    // previous account's result during an auth transition.
+    return () => queryClient.clear();
+  }, [queryClient]);
+
+  useEffect(() => {
     if (loading) return;
 
     clearLegacyUserStorage();
@@ -75,6 +86,10 @@ function UserScopedApp() {
                   <Route path="/login" element={<Login />} />
                   <Route path="/signup" element={<Signup />} />
                   <Route path="/pricing" element={<Pricing />} />
+                  <Route path="/about" element={<About />} />
+                  <Route path="/privacy" element={<Privacy />} />
+                  <Route path="/terms" element={<Terms />} />
+                  <Route path="/security" element={<Security />} />
                   <Route
                     path="/dashboard"
                     element={

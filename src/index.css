@@ -200,6 +200,20 @@
     color: hsl(var(--foreground));
   }
 
+  /* The brand mark is white/silver for the dark interface. Render it as a
+     crisp black mark on the white interface so it does not wash out against
+     the light background. */
+  .brand-logo {
+    display: block;
+    transition: none !important;
+    animation: none !important;
+  }
+
+  [data-theme="warm-paper"] .brand-logo,
+  [data-theme="light"] .brand-logo {
+    filter: grayscale(1) contrast(1.08) brightness(0.72);
+  }
+
   /* Keep the handwritten wordmark luminous in dark mode, but crisp on the
      white theme where the glow makes the black strokes look soft. */
   .hero-wordmark {

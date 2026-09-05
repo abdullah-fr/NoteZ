@@ -210,6 +210,36 @@ export type Database = {
         }
         Relationships: []
       }
+      feedback: {
+        Row: {
+          attachments: Json
+          category: string
+          created_at: string
+          id: string
+          message: string
+          rating: number
+          user_id: string
+        }
+        Insert: {
+          attachments?: Json
+          category: string
+          created_at?: string
+          id?: string
+          message: string
+          rating: number
+          user_id: string
+        }
+        Update: {
+          attachments?: Json
+          category?: string
+          created_at?: string
+          id?: string
+          message?: string
+          rating?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       flashcards: {
         Row: {
           answer: string

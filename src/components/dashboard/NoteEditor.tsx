@@ -503,7 +503,7 @@ function ToolbarPlugin({
   }, [onSave]);
 
   const btn = (active = false) =>
-    `h-7 w-7 flex items-center justify-center rounded-md transition-colors ${
+    `h-7 w-7 shrink-0 flex items-center justify-center rounded-md transition-colors ${
       active
         ? 'bg-secondary text-foreground font-semibold shadow-sm'
         : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
@@ -670,7 +670,7 @@ function ToolbarPlugin({
   };
 
   return (
-    <div ref={toolbarRef} className="relative z-30 flex items-center gap-1 px-3 py-1.5 border-b border-border bg-card/80 backdrop-blur-md flex-wrap shrink-0 overflow-visible">
+    <div ref={toolbarRef} className="relative z-30 flex items-center gap-1.5 px-3 py-1.5 border-b border-border bg-card/80 backdrop-blur-md flex-wrap shrink-0 overflow-visible sm:gap-1">
       {/* Undo / Redo */}
       <button type="button" disabled={!canUndo} onMouseDown={e => { e.preventDefault(); if (canUndo) editor.dispatchCommand(UNDO_COMMAND, undefined); }} className={`${btn()} disabled:cursor-not-allowed disabled:opacity-30`} title="Undo (⌘Z)">
         <Undo2 className="h-3.5 w-3.5" />
@@ -679,7 +679,7 @@ function ToolbarPlugin({
         <Redo2 className="h-3.5 w-3.5" />
       </button>
 
-      <div className="w-px h-4 bg-border mx-0.5" />
+      <div className="hidden h-4 w-px bg-border sm:block sm:mx-0.5" />
 
       {/* AI Assist Button */}
       <div className="relative z-40">
@@ -714,7 +714,7 @@ function ToolbarPlugin({
         )}
       </div>
 
-      <div className="w-px h-4 bg-border mx-0.5" />
+      <div className="hidden h-4 w-px bg-border sm:block sm:mx-0.5" />
 
       {/* Font Family Dropdown */}
       <div className="relative z-40">
@@ -794,7 +794,7 @@ function ToolbarPlugin({
         </button>
       </div>
 
-      <div className="w-px h-4 bg-border mx-0.5" />
+      <div className="hidden h-4 w-px bg-border sm:block sm:mx-0.5" />
 
       {/* Bold, Italic, Underline, Strikethrough, Code */}
       <button type="button" onMouseDown={e => { e.preventDefault(); format('bold'); }} className={btn()} title="Bold (⌘B)">
@@ -865,7 +865,7 @@ function ToolbarPlugin({
         )}
       </div>
 
-      <div className="w-px h-4 bg-border mx-0.5" />
+      <div className="hidden h-4 w-px bg-border sm:block sm:mx-0.5" />
 
       {/* Alignment Controls */}
       <button type="button" onMouseDown={e => { e.preventDefault(); editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, 'left'); }} className={btn()} title="Align Left">
@@ -881,7 +881,7 @@ function ToolbarPlugin({
         <AlignJustify className="h-3.5 w-3.5" />
       </button>
 
-      <div className="w-px h-4 bg-border mx-0.5" />
+      <div className="hidden h-4 w-px bg-border sm:block sm:mx-0.5" />
 
       {/* Link Tool */}
       <div className="relative z-40">
@@ -920,7 +920,7 @@ function ToolbarPlugin({
         )}
       </div>
 
-      <div className="w-px h-4 bg-border mx-0.5" />
+      <div className="hidden h-4 w-px bg-border sm:block sm:mx-0.5" />
 
       {/* Clear Text Button */}
       <button
@@ -1261,7 +1261,7 @@ export default function NoteEditor({
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
-                  className="note-editor-content h-full min-h-full outline-none pl-4 md:pl-6 pr-16 md:pr-20 py-4 text-[13px] text-foreground leading-relaxed"
+                  className="note-editor-content h-full min-h-full outline-none pl-4 pr-4 py-4 text-[13px] text-foreground leading-relaxed md:pl-6 md:pr-20"
                   style={{ minHeight }}
                   aria-label="Note editor"
                 />
@@ -1280,7 +1280,7 @@ export default function NoteEditor({
             ref={railRef}
             onMouseEnter={() => setRailHovered(true)}
             onMouseLeave={() => { setRailHovered(false); setRailPopoverPosition(null); }}
-            className="group absolute right-3 top-0 bottom-0 z-40 flex items-center pr-3 pl-4 cursor-pointer select-none"
+            className="group absolute right-3 top-0 bottom-0 z-40 hidden items-center pr-3 pl-4 cursor-pointer select-none md:flex"
           >
             {/* Resting Vertical Dash Indicators */}
             <div className="flex flex-col gap-2 py-4 items-end pointer-events-auto">

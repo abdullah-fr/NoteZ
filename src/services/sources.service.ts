@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { reportCreditFunctionError, syncCreditsAfterRequest } from '@/lib/credits';
 import { getSafeClientErrorMessage, getSafeSourceErrorMessage } from '@/lib/client-logging';
+import { validateUploadFile } from '@/services/upload-policy';
 
 export type SourceKind = 'pdf' | 'docx' | 'txt' | 'url' | 'youtube' | 'text' | 'audio' | 'video';
 export type SourceStatus = 'pending' | 'processing' | 'ready' | 'failed';
@@ -32,6 +33,7 @@ export async function fetchSources(userId: string): Promise<Source[]> {
 }
 
 export async function uploadSourceFile(userId: string, file: File): Promise<Source> {
+  validateUploadFile(file);
   const path = `${userId}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`;
   const { error: upErr } = await supabase.storage
     .from('uploads')
@@ -44,7 +46,13 @@ export async function uploadSourceFile(userId: string, file: File): Promise<Sour
     .insert({ user_id: userId, title: file.name, kind, file_path: path, status: 'pending' })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    // Do not leave an untracked private object behind when the row insert is
+    // rejected. Storage and Postgres cannot share one transaction, so clean
+    // up the object immediately and let the database error reach the caller.
+    await supabase.storage.from('uploads').remove([path]);
+    throw error;
+  }
   return data as Source;
 }
 

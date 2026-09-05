@@ -66,8 +66,15 @@ export function publicSourceError(error: unknown): string {
     /^Source not found$/,
     /^Could not read uploaded file$/,
     /^Could not extract meaningful text from source$/,
-    /^File too large — max 120 MB for audio\/video$/,
+    /^File too large — max 120 MB$/,
     /^Transcription returned empty — try a shorter clip$/,
+    /^URLs with embedded credentials are not allowed$/,
+    /^Only standard web ports are allowed$/,
+    /^The source URL returned an unsupported content type$/,
+    /^The source URL is too large$/,
+    /^The source URL did not respond in time$/,
+    /^The source URL could not be fetched$/,
+    /^Too many redirects$/,
   ];
   return safeMessages.some(pattern => pattern.test(message))
     ? message

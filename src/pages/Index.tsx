@@ -4,6 +4,7 @@ import { Hero } from '@/components/landing/Hero';
 import { Features } from '@/components/landing/Features';
 import { CTA } from '@/components/landing/CTA';
 import { Testimonials } from '@/components/landing/Testimonials';
+import { Footer } from '@/components/landing/Footer';
 
 const Index = () => {
   return (
@@ -26,6 +27,9 @@ const Index = () => {
 
         {/* 5. NoteZ onboarding call to action */}
         <CTA />
+
+        {/* 6. Landing page footer */}
+        <Footer />
       </main>
     </div>
   );

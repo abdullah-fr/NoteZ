@@ -13,8 +13,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X,
   CheckSquare, Flag, Video, Clock, ChevronDown, StickyNote,
-  Trash2, Link2, Sparkles, Circle,
-  Play, Folder, Edit2, Check, ExternalLink
+  Trash2, Link2, Circle,
+  Play, Folder, Edit2, Check, ListChecks, ExternalLink
 } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
@@ -656,13 +656,13 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
       <div className="flex-none lg:flex-1 lg:min-h-0 grid grid-cols-1 content-start lg:content-stretch lg:grid-cols-[minmax(0,1fr)_minmax(320px,36%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,35%)] gap-3 sm:gap-4 overflow-y-visible lg:overflow-hidden">
 
         {/* ── LEFT COLUMN: Calendar Display (Month / Week / Day) + Upcoming Important ── */}
-        <div className="flex flex-col min-h-0 lg:overflow-hidden gap-3 sm:gap-3.5">
+        <div className="contents lg:flex lg:flex-col lg:min-h-0 lg:overflow-hidden lg:gap-3.5">
 
           {/* ══════════════════════════════════════════════════════════
               VIEW 1: MONTH VIEW (7x5/6 GRID)
           ══════════════════════════════════════════════════════════ */}
           {viewMode === "month" && (
-            <div className="rounded-3xl border border-border/70 bg-card/85 p-3 sm:p-4 flex-1 min-h-[350px] sm:min-h-[390px] lg:min-h-0 flex flex-col justify-between shadow-xs">
+            <div className="order-1 lg:order-none rounded-3xl border border-border/70 bg-card/85 p-3 sm:p-4 flex-1 min-h-[350px] sm:min-h-[390px] lg:min-h-0 flex flex-col justify-between shadow-xs">
               <div className="w-full flex flex-col h-full min-h-0">
 
                 {/* Day-of-week headers */}
@@ -699,7 +699,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                         } ${!inMonth ? "opacity-25" : ""}`}
                       >
                         {/* Day Number */}
-                        <span className={`text-xs sm:text-sm font-mono leading-none self-start ${
+                        <span className={`absolute inset-0 flex items-center justify-center text-xs sm:text-sm font-mono leading-none lg:static lg:block lg:self-start ${
                           isSel ? "text-primary-foreground font-bold" : inMonth ? "text-foreground" : "text-muted-foreground"
                         }`}>
                           {format(day, "d")}
@@ -745,7 +745,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
               VIEW 2: WEEK VIEW (7 HORIZONTAL DAY COLUMNS)
           ══════════════════════════════════════════════════════════ */}
           {viewMode === "week" && (
-            <div className="rounded-3xl border border-border/70 bg-card/85 p-3.5 sm:p-4 flex-1 min-h-[350px] lg:min-h-0 flex flex-col shadow-xs overflow-hidden">
+            <div className="order-1 lg:order-none rounded-3xl border border-border/70 bg-card/85 p-3.5 sm:p-4 flex-1 min-h-[350px] lg:min-h-0 flex flex-col shadow-xs overflow-hidden">
               <div className="flex items-center justify-between mb-2 shrink-0">
                 <span className="text-xs font-mono text-muted-foreground font-bold uppercase tracking-wider">
                   Week of {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
@@ -766,7 +766,9 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                     <div
                       key={day.toISOString()}
                       onClick={() => setSelectedDate(day)}
-                      className="rounded-2xl border border-border/60 bg-secondary/20 p-2 flex flex-col cursor-pointer transition-all hover:bg-secondary/40"
+                      className={`rounded-2xl border p-2 flex flex-col cursor-pointer transition-all hover:bg-secondary/40 ${
+                        isSel ? "border-primary" : "border-border/60"
+                      }`}
                     >
                       {/* Day Header */}
                       <div className="flex items-center justify-between pb-1.5 border-b border-border/40 mb-1.5">
@@ -774,7 +776,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                           {format(day, "EEE")}
                         </span>
                         <span className={`text-xs font-mono font-bold px-1.5 py-0.2 rounded-md ${
-                          isSel ? "bg-primary text-primary-foreground" : isNow ? "text-primary" : "text-foreground"
+                          isNow ? "text-primary" : "text-foreground"
                         }`}>
                           {format(day, "d")}
                         </span>
@@ -820,7 +822,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
               VIEW 3: DAY VIEW (DETAILED CHRONOLOGICAL TIMELINE)
           ══════════════════════════════════════════════════════════ */}
           {viewMode === "day" && (
-            <div className="rounded-3xl border border-border/70 bg-card/85 p-3.5 sm:p-4 flex-1 min-h-[350px] lg:min-h-0 flex flex-col shadow-xs overflow-hidden">
+            <div className="order-1 lg:order-none rounded-3xl border border-border/70 bg-card/85 p-3.5 sm:p-4 flex-1 min-h-[350px] lg:min-h-0 flex flex-col shadow-xs overflow-hidden">
               <div className="flex items-center justify-between mb-2 shrink-0">
                 <span className="text-xs font-mono text-muted-foreground font-bold uppercase tracking-wider">
                   Timeline for {format(selectedDate, "EEEE, MMMM d, yyyy")}
@@ -837,7 +839,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
               <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                 {selectedDayEvents.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center py-12 text-center">
-                    <Sparkles className="h-7 w-7 text-muted-foreground/30 mb-2" />
+                    <CalendarIcon className="h-7 w-7 text-muted-foreground/30 mb-2" />
                     <p className="text-xs font-semibold text-foreground">No events for this day</p>
                     <p className="text-[11px] text-muted-foreground font-mono mt-0.5">Click + Add Activity to schedule</p>
                   </div>
@@ -888,7 +890,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
           {/* ══════════════════════════════════════════════════════════
               Upcoming Important (Clean Cards with Colored Icons Only)
           ══════════════════════════════════════════════════════════ */}
-          <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs space-y-2">
+          <div className="order-4 lg:order-none rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
                 Upcoming Important
@@ -955,10 +957,10 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
         </div>{/* End left column */}
 
         {/* ── RIGHT COLUMN: Today's Progress + Today's Plan + Quick Actions ── */}
-        <div className="flex flex-col lg:min-h-0 gap-3 sm:gap-3.5 lg:overflow-hidden lg:h-full">
+        <div className="contents lg:flex lg:flex-col lg:min-h-0 lg:gap-3.5 lg:overflow-hidden lg:h-full">
 
           {/* 1. Selected Date Title & Activity Count Header */}
-          <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs flex items-center justify-between">
+          <div className="hidden lg:flex rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-bold text-foreground leading-tight">
                 {format(selectedDate, "EEEE, MMMM d, yyyy")}
@@ -973,7 +975,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
           </div>
 
           {/* 2. Today's Progress (Donut + Linear Bar + Metrics) */}
-          <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs space-y-2.5">
+          <div className="order-3 lg:order-none rounded-2xl border border-border/70 bg-card/85 p-3.5 shrink-0 shadow-xs space-y-2.5">
             <div className="flex items-center gap-3.5">
               <ProgressDonut completedCount={completedCount} totalCount={totalCount} />
               <div className="flex-1 min-w-0 space-y-1.5">
@@ -1005,7 +1007,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
           </div>
 
           {/* 3. Today's Plan (Activity Cards List with Start Focus & Checkmark) */}
-          <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 flex-1 min-h-[220px] lg:min-h-0 flex flex-col shadow-xs overflow-hidden">
+          <div className="order-2 lg:order-none rounded-2xl border border-border/70 bg-card/85 p-3.5 flex-1 min-h-[220px] lg:min-h-0 flex flex-col shadow-xs overflow-hidden">
             <div className="flex items-center justify-between mb-2 shrink-0">
               <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground font-bold">
                 Today's Plan
@@ -1022,7 +1024,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
             <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 space-y-2">
               {selectedDayEvents.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center py-8 text-center">
-                  <Sparkles className="h-6 w-6 text-muted-foreground/40 mb-1.5" />
+                  <ListChecks className="h-6 w-6 text-muted-foreground/40 mb-1.5" />
                   <p className="text-xs font-semibold text-foreground">No activities for this day</p>
                   <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
                     Click + Add Activity or use Quick Actions below
@@ -1123,7 +1125,7 @@ export default function CalendarView({ onStartFocus }: { onStartFocus?: (event: 
                         <button
                           type="button"
                           onClick={() => removeEvent(ev.id)}
-                          className="opacity-0 group-hover:opacity-100 rounded-md p-1 text-foreground hover:bg-secondary transition-opacity"
+                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 rounded-md p-1 text-foreground hover:bg-secondary transition-opacity"
                           title="Delete activity"
                         >
                           <Trash2 className="h-3.5 w-3.5 text-destructive" />

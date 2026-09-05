@@ -1836,7 +1836,7 @@ function Bubble({
                       <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />
                       <span className="text-[12px] text-foreground/90 group-hover:text-foreground font-medium truncate">{fu}</span>
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground group-hover:text-primary shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[10px] font-mono text-muted-foreground group-hover:text-primary shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       Insert ↵
                     </span>
                   </motion.button>

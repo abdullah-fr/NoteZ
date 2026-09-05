@@ -1119,8 +1119,7 @@ export default function FocusTimerView() {
               })}
             </div>
             <p className="text-xs font-mono text-muted-foreground/70 pt-0.5">
-              Recently used: {recentlyUsed.join(" · ")}
-            </p>
+also            </p>
           </div>
 
         </div>{/* End left column */}

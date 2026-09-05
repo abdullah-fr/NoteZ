@@ -10,6 +10,7 @@ export type MeteredAction =
   | "generate_flashcards"
   | "editor_ai_assist"
   | "activities_breakdown"
+  | "coach_advice"
   | "source_processing";
 
 export const CREDIT_COSTS: Record<MeteredAction, number> = {
@@ -18,6 +19,7 @@ export const CREDIT_COSTS: Record<MeteredAction, number> = {
   generate_flashcards: 1,
   editor_ai_assist: 1,
   activities_breakdown: 1,
+  coach_advice: 1,
   source_processing: 1,
 };
 
@@ -27,6 +29,7 @@ export const ACTION_LABELS: Record<MeteredAction, string> = {
   generate_flashcards: "Generate Flashcards",
   editor_ai_assist: "Editor AI Assist",
   activities_breakdown: "Syllabus Breakdown",
+  coach_advice: "Coach Advice",
   source_processing: "Process Study Source",
 };
 

@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { clearLegacyUserStorage, clearOtherUsersStorage, clearUserStorage } from '@/lib/user-storage';
 
 interface AuthContextType {
   user: User | null;
@@ -10,7 +11,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
+  signOut: (scope?: 'global' | 'local') => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,20 +20,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeUserIdRef = useRef<string | null>(null);
+
+  const applySession = (nextSession: Session | null) => {
+    const previousUserId = activeUserIdRef.current;
+    const nextUserId = nextSession?.user?.id ?? null;
+
+    // Clear the previous account's browser cache before the next identity is
+    // allowed to render. This also covers account switches that happen in a
+    // second tab or after an expired session is replaced.
+    if (previousUserId && previousUserId !== nextUserId) {
+      clearUserStorage(previousUserId);
+    }
+    // Also remove namespaces left by accounts that are no longer represented
+    // by the current auth session (for example, a deleted account or a
+    // previous tab that expired before this provider mounted).
+    clearOtherUsersStorage(nextUserId);
+
+    activeUserIdRef.current = nextUserId;
+    setSession(nextSession);
+    setUser(nextSession?.user ?? null);
+    setLoading(false);
+  };
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+      (_event, nextSession) => {
+        applySession(nextSession);
       }
     );
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+      applySession(session);
     });
 
     return () => subscription.unsubscribe();
@@ -72,13 +91,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error as Error | null };
   };
 
-  const signOut = async () => {
+  const signOut = async (scope: 'global' | 'local' = 'global') => {
+    const currentUserId = activeUserIdRef.current ?? user?.id ?? null;
+
     // Clear the in-memory identity before awaiting the network request. This
     // forces user-scoped providers/routes to unmount immediately, so the
     // previous account's private data cannot remain visible during sign-out.
     setSession(null);
     setUser(null);
-    await supabase.auth.signOut();
+    activeUserIdRef.current = null;
+    clearUserStorage(currentUserId);
+    clearLegacyUserStorage();
+
+    try {
+      const { error } = await supabase.auth.signOut({ scope });
+      // If global logout fails because the account was already deleted or the
+      // network is unavailable, still remove the local session. A failed
+      // remote logout must never leave the old account visible on this device.
+      if (error && scope !== 'local') {
+        await supabase.auth.signOut({ scope: 'local' });
+      }
+    } catch {
+      if (scope !== 'local') {
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch {
+          // Local state and account-scoped caches were already cleared above.
+        }
+      }
+    }
   };
 
   return (

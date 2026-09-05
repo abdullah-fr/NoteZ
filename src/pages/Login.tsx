@@ -163,7 +163,7 @@ export default function Login() {
               >
                 <div className="text-center mb-8">
                   <Link to="/" className="inline-flex items-center gap-2 mb-6">
-                    <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="h-10 w-10 object-contain shrink-0" />
+                    <img src="/NoteZ%20logo2.png?v=20260831" alt="NoteZ" className="brand-logo h-10 w-10 object-contain shrink-0" />
                     <span className="text-2xl font-bold">NoteZ</span>
                   </Link>
                   <h1 className="text-2xl font-bold mb-2">{t('auth.welcomeBack')}</h1>

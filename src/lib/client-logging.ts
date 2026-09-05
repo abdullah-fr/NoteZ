@@ -52,6 +52,7 @@ export function getSafeSourceErrorMessage(error: unknown): string {
     /^Source not found$/,
     /^Could not read uploaded file$/,
     /^Could not extract meaningful text from source$/,
+    /^File too large — max 120 MB$/,
     /^File too large — max 120 MB for audio\/video$/,
     /^Transcription returned empty — try a shorter clip$/,
   ];

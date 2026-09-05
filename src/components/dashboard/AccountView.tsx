@@ -14,6 +14,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/use-theme';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { getSafeClientErrorMessage } from '@/lib/client-logging';
 import {
   User, Lock, LogOut, Trash2,
   Save, Eye, EyeOff, Shield, Globe, Check,
@@ -116,21 +117,29 @@ export default function AccountView() {
   }
 
   async function deleteAccount() {
-    if (deleteEmailInput.trim().toLowerCase() !== user?.email?.toLowerCase()) {
+    const currentUser = user;
+    if (deleteEmailInput.trim().toLowerCase() !== currentUser?.email?.toLowerCase()) {
       toast({ title: 'Email does not match', description: 'Please enter your exact email to confirm deletion.', variant: 'destructive' });
       return;
     }
 
     setDeleting(true);
     try {
-      const { error } = await supabase.functions.invoke('delete-account', {
-        body: { userId: user?.id },
-      });
+      // The Edge Function derives the account ID from the authenticated
+      // Authorization header. Do not trust or send a client-supplied ID.
+      const { error } = await supabase.functions.invoke('delete-account');
       if (error) throw error;
       toast({ title: 'Account deleted', description: 'Your account and data have been removed.' });
-      await signOut();
-    } catch (err: any) {
-      toast({ title: 'Could not delete account', description: err.message || 'Please contact support.', variant: 'destructive' });
+      // The auth record has already been removed, so only clear this device's
+      // session. AuthProvider clears all account-scoped caches before this
+      // resolves and avoids a doomed remote logout request.
+      await signOut('local');
+    } catch (err: unknown) {
+      toast({
+        title: 'Could not delete account',
+        description: getSafeClientErrorMessage(err, 'Please try again or contact support.'),
+        variant: 'destructive',
+      });
     } finally {
       setDeleting(false);
     }

@@ -5,6 +5,7 @@
  * tokens are intentionally managed separately by the Supabase client.
  */
 const USER_STORAGE_PREFIX = 'notez:user:';
+const CREDITS_STORAGE_PREFIX = 'notez_credits_v3_';
 
 export function getUserStorageKey(userId: string, key: string): string {
   return `${USER_STORAGE_PREFIX}${userId}:${key}`;
@@ -42,6 +43,66 @@ export function removeUserStorage(userId: string | null | undefined, key: string
     localStorage.removeItem(getUserStorageKey(userId, key));
   } catch {
     // Ignore unavailable storage.
+  }
+}
+
+/**
+ * Remove every browser cache owned by one account.
+ *
+ * Keep global presentation preferences (theme and language) intact, but do
+ * not leave account data behind after sign-out or account deletion. The
+ * credits cache has its own historical key format, so it is cleared here as
+ * well as the newer notez:user:<id>: namespace.
+ */
+export function clearUserStorage(userId: string | null | undefined): void {
+  if (!userId || typeof window === 'undefined') return;
+
+  const userPrefix = getUserStorageKey(userId, '');
+  const creditsKey = `${CREDITS_STORAGE_PREFIX}${userId}`;
+  const isOwnedKey = (key: string | null): boolean =>
+    Boolean(key && (key === creditsKey || key.startsWith(userPrefix)));
+
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (isOwnedKey(key) && key) storage.removeItem(key);
+      }
+    } catch {
+      // Ignore unavailable storage; Supabase remains the source of truth.
+    }
+  }
+}
+
+/**
+ * Remove account-scoped browser caches that do not belong to the active user.
+ *
+ * A browser can contain keys left by an account that was deleted, or by a
+ * session that expired before the auth provider observed the identity change.
+ * Keeping only the current user's namespace prevents those stale keys from
+ * surviving a fresh sign-in while preserving the active account's cache.
+ */
+export function clearOtherUsersStorage(keepUserId: string | null | undefined): void {
+  if (typeof window === 'undefined') return;
+
+  const keepUserPrefix = keepUserId ? getUserStorageKey(keepUserId, '') : null;
+  const keepCreditsKey = keepUserId ? `${CREDITS_STORAGE_PREFIX}${keepUserId}` : null;
+  const isOtherUserKey = (key: string | null): boolean => Boolean(
+    key &&
+    (key.startsWith(USER_STORAGE_PREFIX) || key.startsWith(CREDITS_STORAGE_PREFIX)) &&
+    key !== keepCreditsKey &&
+    (!keepUserPrefix || !key.startsWith(keepUserPrefix)),
+  );
+
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (isOtherUserKey(key) && key) storage.removeItem(key);
+      }
+    } catch {
+      // Ignore unavailable storage; Supabase remains the source of truth.
+    }
   }
 }
 
